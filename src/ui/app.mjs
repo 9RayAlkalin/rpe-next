@@ -70,6 +70,7 @@ const displayFields = [
   ['pick-preview-noise-areas', 'pickPreviewNoiseAreas', true],
   ['seamless-noise-areas', 'seamlessNoiseAreas', true],
   ['judgement-offset', 'judgementOffset', 92],
+  ['judgement-color', 'judgementColor', '#ffffff'],
   ['default-line-thickness', 'lineScale', 1.5],
   ['line-switcher-enabled', 'lineSwitcher', true],
   ['clipboard-history-enabled', 'clipboardHistory', true],
@@ -1648,6 +1649,7 @@ function applyDisplaySettings() {
   element('.editor-toolbar').classList.add(`mode-${toolbarMode}`);
   element('#toolbar-mode').title = `工具栏：${toolbarMode === 'icons' ? '图标' : toolbarMode === 'wide' ? '完整' : '紧凑'}（点击切换）`;
   timeline.barWidth = Number(element('#bar-width').value); timeline.barAlpha = Number(element('#bar-alpha').value); timeline.judgementOffset = Number(element('#judgement-offset').value);
+  timeline.judgementColor = element('#judgement-color').value;
   timeline.eventValueFontSize = Number(element('#event-value-size').value); timeline.eventValueThreshold = Number(element('#event-value-threshold').value); timeline.eventCurveThreshold = Number(element('#event-curve-threshold').value); timeline.eventOpacity = Number(element('#event-opacity').value); timeline.eventBarWidth = Number(element('#event-bar-width').value);
   timeline.seamlessEvents = element('#seamless-events').checked;
   session.cutDensity = Number(element('#event-cut-density').value);
@@ -1684,6 +1686,7 @@ element('#fps-unlimited').addEventListener('change', applyFpsLimit);
 for (const [id, key] of displayFields) element(`#${id}`).addEventListener(element(`#${id}`).type === 'number' ? 'change' : 'input', event => {
   const control = event.target;
   if (control.type === 'checkbox') editorPreferences[key] = control.checked;
+  else if (control.type === 'color') editorPreferences[key] = control.value;
   else if (control.value.trim() && control.validity.valid && Number.isFinite(Number(control.value))) editorPreferences[key] = Number(control.value);
   else return;
   applyDisplaySettings(); persistEditor();

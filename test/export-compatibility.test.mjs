@@ -13,6 +13,34 @@ import { parseInfo } from '../src/platform/legacy-text.mjs';
 const encode = text => new TextEncoder().encode(text);
 const decode = bytes => new TextDecoder().decode(bytes);
 
+test('JSON 与 PEZ 默认紧凑导出，可关闭且不改变属性、文本空白或负零', async () => {
+  const chart = createChart(); chart.META.name = '  保留 空格\n和换行  ';
+  chart.judgeLineList[0].eventLayers[0].moveXEvents[0].start = -0;
+  chart.effects = [];
+  chart.custom = { empty: [], zero: 0, marker: '\u0000rpe-negative-zero\u0000', enabled: false };
+  const assets = new Map([['extra.json', encode('{"custom": {"zero": -0, "label": "保留 空格"}}')]]);
+  for (const compatibility of ['next', 'rpe']) for (const format of ['json', 'pez']) {
+    const outputs = [];
+    for (const compact of [undefined, false]) {
+      const result = createChartExport(chart, assets, 'chart.json', { compatibility, format, compact });
+      const entries = format === 'pez' ? await readZip(await result.blob.arrayBuffer()) : null;
+      const text = entries ? decode(entries.get('chart.json')) : await result.blob.text();
+      assert.equal(text.includes('\n'), compact === false);
+      const parsed = JSON.parse(text);
+      assert.equal(parsed.META.name, chart.META.name);
+      assert.deepEqual(parsed.custom, chart.custom);
+      assert.ok(Object.is(parsed.judgeLineList[0].eventLayers[0].moveXEvents[0].start, -0));
+      if (entries) {
+        const extra = decode(entries.get('extra.json'));
+        assert.equal(extra.includes('\n'), compact === false);
+        assert.ok(Object.is(JSON.parse(extra).custom.zero, -0));
+      }
+      outputs.push(parsed);
+    }
+    assert.deepEqual(outputs[0], outputs[1]);
+  }
+});
+
 test('PEZ 根目录生成原 RPE 入口，引用真实资源路径并同步当前元数据', async () => {
   const chart = createChart();
   Object.assign(chart.META, { name: '新曲名', composer: '作曲', charter: '谱师', level: 'IN 15', song: 'MUSIC.ogg', background: '../images/COVER.png' });

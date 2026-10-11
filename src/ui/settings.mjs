@@ -31,6 +31,7 @@ export function createSettingsPanel() {
   const lineHint = document.createElement('p'); lineHint.className = 'hint'; lineHint.textContent = '实时生效，仅调整默认 line.png 的粗细，不改变长度、自定义贴图或谱面事件。1 为此前粗细，默认 1.5。'; body.lastElementChild.append(lineHint);
   group('自动保存', [['autosave-enabled', '启用自动保存', 'checkbox', true], ['autosave-seconds', '自动保存间隔（秒）', 'number', 60, 1, 3600, 1], ['autosave-limit', '每谱保留备份数', 'number', 10, 1, 100, 1]]);
   const hint = document.createElement('p'); hint.className = 'hint'; hint.textContent = '按固定间隔保存包含媒体的恢复副本，持续编辑不会推迟保存；手动保存更新谱面库。Y 缩放为绝对像素/秒，不随 BPM 或预览比例变化。'; body.append(hint);
+  group('编辑区域判定线', [['judgement-color', '底部判定线颜色', 'color', '#ffffff']]);
   for (const selector of ['.preview-settings', '.display-settings', '.compatibility-details']) body.append(document.querySelector(selector));
   const hotkeys = document.createElement('button'); hotkeys.id = 'advanced-preferences'; hotkeys.textContent = '快捷键设置';
   const close = document.createElement('button'); close.textContent = '完成'; close.onclick = () => dialog.close();

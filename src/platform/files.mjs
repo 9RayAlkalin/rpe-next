@@ -1,4 +1,4 @@
-import { serializeChart, EVENT_TYPES, EXTENDED_TYPES } from '../core/chart.mjs';
+import { serializeChart, stringifyPreservingNumbers, EVENT_TYPES, EXTENDED_TYPES } from '../core/chart.mjs';
 import { parseDocument } from '../core/formats.mjs';
 import { readZip, writeZip, crc32 } from './archive.mjs';
 import { decodeLegacy, parseInfo } from './legacy-text.mjs';
@@ -212,7 +212,7 @@ export function packageEntries(chart, assets, chartName, options = {}) {
     let suffix = 1;
     while ([...output.keys()].some(name => normalizePath(name) === normalizePath(outputName))) outputName = `${stem}.rpe-${suffix++}.json`;
   }
-  output.set(outputName, new TextEncoder().encode(serializeChart(chart)));
+  output.set(outputName, new TextEncoder().encode(serializeChart(chart, { compact: options.compact !== false })));
   const effects = [chart.effects, chart.shaderEvents, chart.META?.effects].filter(Array.isArray).flat();
   for (const [lineIndex, line] of (chart.judgeLineList ?? []).entries()) for (const event of line.extended?.paintEvents ?? []) effects.push(serializeShaderEvent(event, lineIndex));
   effects.sort((left, right) => {
@@ -224,7 +224,7 @@ export function packageEntries(chart, assets, chartName, options = {}) {
     const path = directory ? `${directory}/extra.json` : 'extra.json';
     const existing = [...output.keys()].find(name => normalizePath(name) === normalizePath(path));
     const extra = existing ? JSON.parse(decodeLegacy(output.get(existing))) : {};
-    output.set(existing ?? path, new TextEncoder().encode(JSON.stringify({ ...extra, effects }, null, 2)));
+    output.set(existing ?? path, new TextEncoder().encode(stringifyPreservingNumbers({ ...extra, effects }, options.compact === false ? 2 : 0)));
   }
   if (outputName !== chartName) {
     for (const [name, bytes] of matchingInfo(assets, chartName)) {
@@ -251,6 +251,6 @@ export function createChartExport(chart, assets, chartName, options = {}) {
   delete snapshot.chartTime;
   const stem = String(name).trim().replace(/\.(json|pez|pec|zip)$/i, '');
   if (!stem) throw new Error('请输入导出文件名');
-  const blob = format === 'pez' ? writeZip(packageEntries(snapshot, assets, chartName, options)) : new Blob([serializeChart(snapshot)], { type: 'application/json' });
+  const blob = format === 'pez' ? writeZip(packageEntries(snapshot, assets, chartName, options)) : new Blob([serializeChart(snapshot, { compact: options.compact !== false })], { type: 'application/json' });
   return { blob, name: stem + '.' + format };
 }

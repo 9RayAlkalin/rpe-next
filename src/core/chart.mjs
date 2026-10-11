@@ -43,18 +43,18 @@ export function noteIsAbove(note) {
   return Number(note.above ?? 1) === 1;
 }
 
-export function serializeChart(chart) {
+export function serializeChart(chart, { compact = false } = {}) {
   assertChart(chart);
   chart = integerChartAlpha(chart);
   const snapshot = chart.blockAreaList?.length ? { ...chart, META: { ...chart.META, RPEVersion: Math.max(chart.META.RPEVersion ?? 0, NOISE_VERSION) } } : chart;
-  return stringifyPreservingNumbers(snapshot) + '\n';
+  return stringifyPreservingNumbers(snapshot, compact ? 0 : 2) + (compact ? '' : '\n');
 }
 
-export function stringifyPreservingNumbers(value) {
-  const ordinary = JSON.stringify(value, null, 2);
+export function stringifyPreservingNumbers(value, space = 2) {
+  const ordinary = JSON.stringify(value, null, space);
   let marker = '\u0000rpe-negative-zero\u0000';
   while (ordinary.includes(JSON.stringify(marker))) marker += '#';
-  return JSON.stringify(value, (key, entry) => Object.is(entry, -0) ? marker : entry, 2).replaceAll(JSON.stringify(marker), '-0');
+  return JSON.stringify(value, (key, entry) => Object.is(entry, -0) ? marker : entry, space).replaceAll(JSON.stringify(marker), '-0');
 }
 
 export function assertChart(chart) {

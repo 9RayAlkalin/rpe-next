@@ -495,7 +495,7 @@ export class Timeline {
       context.beginPath(); context.moveTo(0, vertical); context.lineTo(width, vertical); context.stroke();
       if (tick % this.division === 0) { context.fillStyle = '#dddddd'; context.fillText(String(beat), 5, vertical - 4); }
     }
-    context.strokeStyle = '#ffd76a';
+    context.strokeStyle = this.judgementColor ?? '#ffffff';
     context.beginPath(); context.moveTo(0, this.vertical(playBeat, height)); context.lineTo(width, this.vertical(playBeat, height)); context.stroke();
     context.lineWidth = 1;
   }
@@ -523,7 +523,7 @@ export class Timeline {
     }
     const playSeconds = this.tempo.seconds(playBeat, this.factor);
     const playLineBeat = this.tempo.beat(playSeconds, factor);
-    context.strokeStyle = '#ffd76a';
+    context.strokeStyle = this.judgementColor ?? '#ffffff';
     context.beginPath(); context.moveTo(left, this.verticalForLine(playLineBeat, lineIndex, height)); context.lineTo(left + width, this.verticalForLine(playLineBeat, lineIndex, height)); context.stroke();
     context.restore(); context.lineWidth = 1;
   }

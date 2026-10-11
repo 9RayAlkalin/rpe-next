@@ -9,6 +9,8 @@ export function showExportDialog(chart, assets, chartName, onExport, identifier)
   const format = document.createElement('select');
   for (const [value, title] of [['next:json', 'RPE Next · JSON'], ['next:pez', 'RPE Next · PEZ'], ['rpe:json', '原 RPE · JSON'], ['rpe:pez', '原 RPE · PEZ']]) format.append(new Option(title, value));
   format.value = 'next:pez'; field('导出格式', format);
+  const compact = document.createElement('input'); compact.type = 'checkbox'; compact.checked = true;
+  field('压缩 JSON（仅去掉多余空格和换行，保留全部属性）', compact);
   const noiseIssues = diagnoseNoiseAreas(chart.blockAreaList);
   const noiseWarning = document.createElement('div'); noiseWarning.className = 'noise-export-warning'; host.append(noiseWarning);
   const acknowledgement = document.createElement('input'); acknowledgement.type = 'checkbox';
@@ -33,7 +35,7 @@ export function showExportDialog(chart, assets, chartName, onExport, identifier)
       const [compatibility, container] = format.value.split(':');
       if (noiseIssues.length && !acknowledgement.checked) throw new Error('请先阅读并勾选确认噪域检查提示');
       if (compatibility === 'rpe' && chart.blockAreaList?.length && !removeNoise.checked) throw new Error('原 RPE 无法表示噪域，请改用 Next 格式，或勾选移除噪域');
-      const result = createChartExport(chart, assets, chartName, { compatibility, format: container, name: name.value, identifier, removeNoiseAreas: compatibility === 'rpe' && removeNoise.checked, split: { simplify: simplify.checked, tolerance: Number(tolerance.value) } });
+      const result = createChartExport(chart, assets, chartName, { compatibility, format: container, compact: compact.checked, name: name.value, identifier, removeNoiseAreas: compatibility === 'rpe' && removeNoise.checked, split: { simplify: simplify.checked, tolerance: Number(tolerance.value) } });
       download(result.blob, result.name); document.querySelector('#modal').close(); onExport(result.name);
     } catch (error) { document.querySelector('#modal-error').textContent = error.message; }
   };

@@ -503,7 +503,7 @@ export class NoiseAreaEditor {
     this.canvas.setAttribute('aria-description', `噪域数量: ${this.areas().length}；当前右侧内部事件：${owner}`);
     context.fillText(owner, layout.eventLeft + 4, 19, width - layout.eventLeft - 8);
     context.textAlign = 'center'; for (const [column, [, label]] of NOISE_TRACKS.entries()) context.fillText(label, layout.eventLeft + (column + 0.5) * layout.eventWidth, 43, Math.max(1, layout.eventWidth - 3));
-    context.strokeStyle = '#eee'; context.lineWidth = 2; context.beginPath(); context.moveTo(0, this.y(timeline.origin)); context.lineTo(width, this.y(timeline.origin)); context.stroke();
+    context.strokeStyle = timeline.judgementColor ?? '#ffffff'; context.lineWidth = 2; context.beginPath(); context.moveTo(0, this.y(timeline.origin)); context.lineTo(width, this.y(timeline.origin)); context.stroke();
   }
   drawOwner(context, layout) {
     const area = this.area(); if (!area) return;

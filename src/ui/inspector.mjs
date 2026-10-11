@@ -63,7 +63,7 @@ export function renderProperties(session, reportError) {
     const apply = () => {
       try {
         if (key === 'lineIndex') { session.moveSelectionToLine(Number(input.value)); return; }
-        const value = kind === 'beat' ? parseBeat(input.value) : beatDuration ? beatValue(parseBeat(input.value)) : Number(input.value);
+        const value = kind === 'beat' ? parseBeat(input.value) : beatDuration ? beatValue(parseBeat(input.value)) : key === 'alpha' ? Math.trunc(Number(input.value)) : Number(input.value);
         if (kind !== 'beat' && (input.value.trim() === '' || !Number.isFinite(value))) throw new Error('请输入有限数字');
         if (key === 'size' && value <= 0) throw new Error('大小必须大于零');
         applyNoteTransform(session, `修改${labelText}`, (current, entry) => {

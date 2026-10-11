@@ -1,4 +1,5 @@
 import { beatValue, fromNumber } from './beat.mjs';
+import { integerChartAlpha } from './alpha-values.mjs';
 import { TempoMap } from './tempo.mjs';
 import { sampleCurveTrajectory } from './curve-trajectory.mjs';
 import { trajectorySplitSettings } from './trajectory-simplify.mjs';
@@ -35,7 +36,7 @@ export function parseChart(text) {
   catch { throw new Error('无效的 RPE JSON 文档'); }
   if (chart.blockAreaList != null) chart.blockAreaList = normalizeNoiseAreas(chart.blockAreaList);
   assertChart(chart);
-  return chart;
+  return integerChartAlpha(chart);
 }
 
 export function noteIsAbove(note) {
@@ -44,6 +45,7 @@ export function noteIsAbove(note) {
 
 export function serializeChart(chart) {
   assertChart(chart);
+  chart = integerChartAlpha(chart);
   const snapshot = chart.blockAreaList?.length ? { ...chart, META: { ...chart.META, RPEVersion: Math.max(chart.META.RPEVersion ?? 0, NOISE_VERSION) } } : chart;
   return stringifyPreservingNumbers(snapshot) + '\n';
 }

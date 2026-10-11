@@ -3,7 +3,7 @@ import { createChartExport, download } from '../platform/files.mjs';
 import { DEFAULT_TRAJECTORY_SPLIT } from '../core/trajectory-simplify.mjs';
 import { diagnoseNoiseAreas } from '../core/noise-areas.mjs';
 
-export function showExportDialog(chart, assets, chartName, onExport) {
+export function showExportDialog(chart, assets, chartName, onExport, identifier) {
   const host = showDialog('导出谱面', 'Next 格式保留整体曲线轨迹；原 RPE 格式将轨迹转换为普通事件。JSON 只包含谱面，PEZ 同时打包已载入的音乐、图片及其他资源。');
   const field = (title, control) => { const label = document.createElement('label'); label.className = 'field'; label.append(title, control); control.setAttribute('aria-label', title); host.append(label); return control; };
   const format = document.createElement('select');
@@ -33,7 +33,7 @@ export function showExportDialog(chart, assets, chartName, onExport) {
       const [compatibility, container] = format.value.split(':');
       if (noiseIssues.length && !acknowledgement.checked) throw new Error('请先阅读并勾选确认噪域检查提示');
       if (compatibility === 'rpe' && chart.blockAreaList?.length && !removeNoise.checked) throw new Error('原 RPE 无法表示噪域，请改用 Next 格式，或勾选移除噪域');
-      const result = createChartExport(chart, assets, chartName, { compatibility, format: container, name: name.value, removeNoiseAreas: compatibility === 'rpe' && removeNoise.checked, split: { simplify: simplify.checked, tolerance: Number(tolerance.value) } });
+      const result = createChartExport(chart, assets, chartName, { compatibility, format: container, name: name.value, identifier, removeNoiseAreas: compatibility === 'rpe' && removeNoise.checked, split: { simplify: simplify.checked, tolerance: Number(tolerance.value) } });
       download(result.blob, result.name); document.querySelector('#modal').close(); onExport(result.name);
     } catch (error) { document.querySelector('#modal-error').textContent = error.message; }
   };

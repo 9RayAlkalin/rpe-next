@@ -63,7 +63,7 @@
 :root { color-scheme: dark; font-family: RPE, 'Microsoft YaHei', sans-serif; font-size: 13px; color: #f0f0f0; background: #303030; --accent: #ffdc70; --muted: #aaa; --line: #515151; }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
-body { margin: 0; min-width: 1000px; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+body { margin: 0; min-width: 0; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
 button, input, select, textarea { font: inherit; color: inherit; border: 1px solid #666; border-radius: 1px; background: #383838; }
 button { padding: 6px 10px; cursor: pointer; white-space: nowrap; }
 button:hover { background: #505050; border-color: #ccc; }
@@ -168,7 +168,7 @@ label { display: inline-flex; align-items: center; gap: 6px; color: #ddd; }
 #line-select { width: 115px; } #seek-beat { width: 58px; } .beat-seek { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; } .beat-nudge { display: inline-flex; gap: 2px; } .beat-nudge button { width: 22px; height: 24px; padding: 0; line-height: 20px; font-size: 15px; color: var(--accent); border-color: #806d3c; } #clock { min-width: 72px; color: #eee; font-variant-numeric: tabular-nums; } #bpm-display { color: var(--accent); white-space: nowrap; font-size: 11px; } #scrubber { flex: 1; min-width: 65px; }
 .scrubber-wrap { position: relative; display: flex; align-items: flex-end; flex: 1 1 120px; min-width: 65px; height: 36px; padding-top: 16px; }
 .scrubber-wrap #scrubber { width: 100%; min-width: 0; }
-.workspace { display: grid; grid-template-columns: minmax(640px, 70.3%) minmax(285px, 1fr); flex: 1; min-height: 0; }
+.workspace { display: grid; grid-template-columns: minmax(0, 70.3%) minmax(0, 1fr); flex: 1; min-height: 0; }
 .panel { min-height: 0; }
 .editor { display: flex; flex-direction: column; min-width: 0; background: #303030; border-right: 2px solid #808080; position: relative; }
 .editor-toolbar { display: flex; flex-wrap: nowrap; align-items: center; gap: 7px; padding: 6px 10px; flex: none; width: 100%; max-width: 100%; min-width: 0; background: #282828; min-height: 45px; overflow-x: auto; }
@@ -189,7 +189,7 @@ label { display: inline-flex; align-items: center; gap: 6px; color: #ddd; }
 .editor-toolbar.mode-icons .tools button { min-width: 38px; width: 38px; padding: 4px; font-size: 0; }
 .editor-toolbar.mode-icons .tools img { width: 31px; height: 9px; margin: 0 auto; }
 .editor-toolbar.mode-icons .tools button[data-tool="0"]::before { content: '↖'; display: block; color: var(--accent); font-size: 20px; line-height: 20px; }
-.editor-toolbar.mode-wide { overflow-x: visible; }
+.editor-toolbar.mode-wide { overflow-x: auto; }
 .editor-toolbar.mode-wide .tools button { min-width: 58px; }
 #toolbar-mode { flex: none; width: 30px; height: 30px; padding: 0; display: grid; place-items: center; color: var(--accent); font-size: 18px; line-height: 1; }
 #mute-current-line { flex: none; width: 30px; height: 29px; padding: 4px; display: grid; place-items: center; }
@@ -498,3 +498,89 @@ h2 { margin: 0; font-size: 21px; font-weight: 400; }
 .collaboration-chat-toast { position: fixed; left: 24px; bottom: 42px; width: max-content; max-width: min(650px, calc(100vw - 48px)); color: #dff5e6; z-index: 100; pointer-events: none; overflow-wrap: anywhere; display: flex; flex-direction: column; gap: 3px; font-size: 14px; line-height: 1.5; }
 .collaboration-chat-message { background: #171717ed; border-left: 2px solid #6d987e; padding: 5px 10px; opacity: 1; transition: opacity 1s ease; }
 .collaboration-chat-message.leaving { opacity: 0; }
+.editor { container-type: inline-size; }
+.editor-toolbar > *, .editor-footer > button { flex-shrink: 0; }
+.editor-toolbar > label { white-space: nowrap; }
+.editor-footer #selection-info { min-width: 60px; white-space: nowrap; }
+.inspector { min-width: 0; min-height: 0; container-type: inline-size; }
+.inspector-tabs { flex-shrink: 0; }
+.inspector-tabs button { min-width: 0; }
+.action-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.panel-title { gap: 8px; flex-wrap: wrap; }
+.field > :not(input[type=checkbox]) { min-width: 0; }
+.inspector .action-grid button, .inspector .curve-pick-actions button { white-space: normal; overflow-wrap: anywhere; }
+.inspector .asset-library-actions, .inspector .asset-detail-actions, .inspector .clipboard-panel-actions, .inspector .curve-preset-actions { flex-wrap: wrap; }
+.transport-group, #seek, #clock, #bpm-display { flex-shrink: 0; }
+footer #status, footer #tips { min-width: 0; }
+footer > button, footer #performance, footer > span:last-child { flex-shrink: 0; }
+.home-heading, .home-actions, .home-filters { flex-wrap: wrap; }
+.home-filters > input { min-width: 0; max-width: 100%; }
+.noise-sample-bar { flex-wrap: wrap; }
+@container (max-width: 980px) {
+  .timeline-head { height: auto; min-height: 40px; }
+  .timeline-head > span { min-width: 0; min-height: 40px; gap: 6px; }
+  .timeline-head > span:not(.multi-line-head-controls) { overflow-x: auto; white-space: nowrap; }
+  .timeline-head > span:not(.multi-line-head-controls) > * { flex-shrink: 0; }
+  .timeline-head > .multi-line-head-controls { position: static; grid-column: 1 / -1; justify-content: flex-end; min-height: 32px; padding: 3px 8px; gap: 2px; border-top: 1px solid #484848; }
+  .editor.noise-mode .timeline-head::before { padding: 8px 12px; }
+}
+@container (max-width: 360px) {
+  .inspector-tabs { gap: 2px; padding: 6px; }
+  .inspector-tabs button { white-space: normal; }
+  .panel-title { padding: 10px; margin-bottom: 12px; }
+  .field, .line-properties-form .field { margin-inline: 12px; }
+  .action-grid, .curve-pick-actions { margin-inline: 12px; gap: 6px; }
+  .curve-fields { grid-template-columns: minmax(0, 1fr); }
+  .asset-folder-items { grid-template-columns: minmax(0, 1fr); }
+  .trajectory-preset-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .line-panel-actions, .line-reorder-actions { flex-wrap: wrap; margin-inline: 12px; }
+}
+@media (max-width: 1100px) {
+  .transport { flex-wrap: wrap; gap: 6px 8px; padding-block: 6px; }
+  .scrubber-wrap { min-width: 180px; }
+  .workspace { grid-template-columns: minmax(0, 1fr) 290px; }
+}
+@media (max-width: 1250px) {
+  .editor-toolbar > label > input { font-size: 1rem; }
+}
+@media (max-width: 900px) {
+  header { flex-wrap: wrap; }
+  header nav { flex: 1 0 100%; min-width: 0; overflow-x: auto; padding-bottom: 2px; }
+  header nav > button { flex-shrink: 0; }
+  .transport .scrubber-wrap { order: 1; flex-basis: calc(100% - 200px); min-width: 65px; }
+  .transport > label:has(#rate), .transport > .preserve-pitch { order: 2; }
+  footer { gap: 8px; }
+  footer > span:last-child { display: none; }
+  footer #tips { max-width: 28%; }
+}
+@media (max-width: 700px) {
+  .workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(300px, 3fr) minmax(150px, 2fr); overflow-y: auto; }
+  .editor { border-right: 0; border-bottom: 2px solid #808080; }
+  .transport { column-gap: 6px; }
+  .transport #line-select { width: 90px; }
+  .transport #offset { width: 55px; }
+  .transport #batch-action { width: 88px; }
+  .inspector { border-top: 1px solid #666; }
+  .home-heading > div { grid-template-columns: 40px minmax(0, 1fr); }
+  .home-heading img { width: 40px; }
+  .home-actions button { padding: 8px 10px; }
+  .line-switcher-filters { flex-wrap: wrap; gap: 4px 10px; }
+  .preview-overlay { flex-wrap: wrap; gap: 6px; }
+  dialog { width: calc(100vw - 24px); padding: 12px; }
+  .modal-actions { flex-wrap: wrap; }
+  .settings-body { padding-right: 4px; }
+  .settings-body .field { margin-inline: 0; }
+  .settings-body .field > input:not([type=checkbox]), .settings-body .field > select { flex: 0 0 45%; }
+}
+@media (max-height: 650px) {
+  dialog { max-height: calc(100vh - 24px); padding: 12px; }
+  dialog[open] { display: flex; flex-direction: column; }
+  dialog > * { flex-shrink: 0; }
+  dialog > #modal-content, dialog > .settings-body { min-height: 0; flex: 0 1 auto; overflow-y: auto; }
+  dialog > form { display: flex; flex-direction: column; min-height: 0; flex-shrink: 1; }
+  dialog > form > * { flex-shrink: 0; }
+  dialog > form > #modal-content { flex-shrink: 1; min-height: 0; }
+  .inspector:has([data-panel="noise"]:not([hidden])) { overflow-y: auto; }
+  .inspector [data-panel="noise"]:not([hidden]), .inspector #noise-panel { flex: none; }
+  .inspector .noise-list { flex: none; max-height: 200px; }
+}

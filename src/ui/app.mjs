@@ -1,4 +1,5 @@
 import { EditorSession } from '../application/session.mjs';
+import { FrameLimiter, validFpsLimit } from '../core/frame-timing.mjs';
 import { assertChart, createChart, diagnose, EVENT_TYPES, previewLimitations } from '../core/chart.mjs';
 import { beatValue, parseBeat, formatBeat, fromNumber, upperBound } from '../core/beat.mjs';
 import { TempoMap } from '../core/tempo.mjs';
@@ -943,7 +944,7 @@ element('#file-input').addEventListener('change', async event => {
   finally { event.target.value = ''; }
 });
 listen('#save', () => save());
-listen('#export', () => { noiseEditor.flush(); showExportDialog(session.chart, assets, chartName, name => status(`已发起下载：${name}`)); });
+listen('#export', () => { noiseEditor.flush(); showExportDialog(session.chart, assets, chartName, name => status(`已发起下载：${name}`), libraryProject?.identifier ?? libraryProject?.info?.Path); });
 listen('#view-toggle', () => togglePreview());
 listen('#close-preview', () => togglePreview(false, true));
 listen('#background', () => element('#background-input').click());
@@ -1453,7 +1454,7 @@ markerResizeObserver.observe(element('.stage'));
 markerResizeObserver.observe(element('.scrubber-wrap'));
 let lastPaint = 0;
 let lastInfoTick = 0;
-let lastFrameTime = 0;
+const frameLimiter = new FrameLimiter();
 let frameSampleStart = 0;
 let frameSampleCount = 0;
 let measuredFps = 0;
@@ -1464,7 +1465,6 @@ function frame(timestamp) {
   batchControls.sync();
   lineSwitcher.draw(timestamp);
   if (!atHome) { if (noiseEditor.active) noiseEditor.autoScroll(elapsed); else timeline.autoScroll(elapsed); }
-  frameSampleCount++;
   if (timestamp - frameSampleStart >= 500) { measuredFps = frameSampleCount * 1000 / (timestamp - frameSampleStart); frameSampleStart = timestamp; frameSampleCount = 0; }
   advanceEditClock(timestamp);
   if (hasDocument && !atHome && timestamp - lastInfoTick > 500) {
@@ -1477,8 +1477,8 @@ function frame(timestamp) {
   if (audio.playing && loop && currentBeat() >= loop.end) seekBeat(loop.start, false);
   if (audio.playing && audio.time >= audio.duration) { audio.pause(); invalidate(); }
   hitSounds.tick(session.chart, tempo, session.lineIndex);
-  if (!atHome && (audio.playing || dirtyFrame || trajectoryPanel.active) && timestamp - lastFrameTime >= 1000 / preferences.settings.fpsLimit) {
-    lastFrameTime = timestamp;
+  if (!atHome && (audio.playing || dirtyFrame || trajectoryPanel.active) && frameLimiter.shouldRender(timestamp, editorPreferences.fpsLimit ?? preferences.settings.fpsLimit)) {
+    frameSampleCount++;
     const start = performance.now();
     const beat = currentBeat();
     session.editSeconds = Math.max(0, chartSeconds());
@@ -1589,6 +1589,7 @@ function applyPreferences(next) {
 
 function applyMigratedPreferences(next) {
   editorPreferences = { ...editorPreferences, volume: next.settings.volume, hitVolume: next.settings.hitVolume, gridCount: next.settings.gridCount, realtimeAlpha: next.settings.realtimeAlpha,
+    fpsLimit: next.settings.fpsLimit,
     lineScale: next.settings.lineScale,
     ratioWidth: next.settings.ratioWidth, ratioHeight: next.settings.ratioHeight, barWidth: next.settings.barWidth, barAlpha: next.settings.barAlpha,
     autoSave: next.settings.autoSave, autoSaveSeconds: next.settings.autoSaveSeconds, autoSaveLimit: next.settings.autoSaveLimit, autoplayView: next.settings.autoplayView, highlight: next.settings.highlight, showGameUI: next.settings.showGameUI };
@@ -1647,6 +1648,12 @@ readPreferences().then(saved => {
 }).catch(error => status(`无法读取偏好设置：${error.message}`));
 
 function applyDisplaySettings() {
+  const fpsLimit = editorPreferences.fpsLimit ?? preferences.settings.fpsLimit;
+  element('#fps-unlimited').checked = !fpsLimit;
+  element('#fps-limit').disabled = !fpsLimit;
+  if (fpsLimit) element('#fps-limit').value = fpsLimit;
+  element('#fps-limit').setCustomValidity('');
+  element('#fps-limit-error').hidden = true;
   for (const [id, key, fallback] of displayFields) {
     const control = element(`#${id}`); const value = editorPreferences[key] ?? preferences.settings[key] ?? fallback;
     if (control.type === 'checkbox') control.checked = value; else control.value = value;
@@ -1681,6 +1688,20 @@ function applyDisplaySettings() {
   rotateTip();
   invalidate();
 }
+function applyFpsLimit() {
+  const input = element('#fps-limit');
+  const unlimited = element('#fps-unlimited').checked;
+  input.disabled = unlimited;
+  const value = unlimited ? 0 : Number(input.value);
+  const valid = unlimited || input.value.trim() && value > 10 && validFpsLimit(value);
+  input.setCustomValidity(valid ? '' : '帧率上限必须是大于 10 的有限数字');
+  element('#fps-limit-error').hidden = Boolean(valid);
+  if (!valid) return;
+  editorPreferences.fpsLimit = value;
+  persistEditor(); invalidate();
+}
+element('#fps-limit').addEventListener('input', applyFpsLimit);
+element('#fps-unlimited').addEventListener('change', applyFpsLimit);
 for (const [id, key] of displayFields) element(`#${id}`).addEventListener(element(`#${id}`).type === 'number' ? 'change' : 'input', event => {
   const control = event.target;
   if (control.type === 'checkbox') editorPreferences[key] = control.checked;

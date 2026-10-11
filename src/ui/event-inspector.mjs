@@ -50,7 +50,7 @@ export function renderEventInspector(session, tempo, currentBeat, reportError, n
     } else if (kind === 'number') {
       value = Number(input.value);
       if (!input.value.trim() || !Number.isFinite(value)) return;
-      if (eventType === 'alphaEvents' && (key === 'start' || key === 'end')) value = Math.max(0, Math.min(255, value));
+      if (eventType === 'alphaEvents' && (key === 'start' || key === 'end')) value = Math.trunc(Math.max(0, Math.min(255, value)));
       if (key === 'easingLeft' || key === 'easingRight') value = Math.max(0, Math.min(1, value));
       if (key === 'linkgroup') value = Math.max(0, Math.round(value));
     } else value = input.value;

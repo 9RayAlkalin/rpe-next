@@ -8,6 +8,7 @@ export function normalizeEditorPreferences(value) {
   const result = {};
   if (!value || typeof value !== 'object') return result;
   if (validFpsLimit(value.fpsLimit)) result.fpsLimit = value.fpsLimit;
+  if (typeof value.textSelectionDrag === 'boolean') result.textSelectionDrag = value.textSelectionDrag;
   for (const [key, [minimum, maximum]] of Object.entries(ranges)) if (Number.isFinite(value[key])) result[key] = Math.max(minimum, Math.min(maximum, value[key]));
   if (result.division) result.division = Math.round(result.division);
   for (const key of flags) if (typeof value[key] === 'boolean') result[key] = value[key];

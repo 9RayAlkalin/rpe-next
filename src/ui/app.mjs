@@ -48,7 +48,7 @@ import { AutoSaveClock } from '../application/autosave.mjs';
 import { ManualSaveQueue } from '../application/manual-save.mjs';
 import { SPECIAL_TRACKS, MAX_BASE_LAYERS } from '../core/editor-display.mjs';
 import { lineGroupName, isDefaultLineGroup, lineDisplayLabel } from '../core/line-groups.mjs';
-import { isTextEntry, isTypingText, releaseShortcutFocus } from './keyboard.mjs';
+import { isTextEntry, usesNativeTextShortcut, releaseShortcutFocus } from './keyboard.mjs';
 import { setRatioOptions, applyViewControls } from './view-controls.mjs';
 import { generateCurveNotes } from '../core/curve-notes.mjs';
 import { createEasingPicker } from './easing-picker.mjs';
@@ -64,6 +64,7 @@ import { NoiseAreaEditor } from './noise-area.mjs';
 
 const element = selector => document.querySelector(selector);
 const displayFields = [
+  ['text-selection-drag', 'textSelectionDrag', false],
   ['event-cut-density', 'cutDensity', 4],
   ['sample-auto-fit', 'sampleAutoFit', true],
   ['pick-preview-noise-areas', 'pickPreviewNoiseAreas', true],
@@ -234,6 +235,7 @@ const pasteGesture = new PasteGesture({
   valid: context => context.session === session && context.chart === session.chart && context.layer === timeline.layer && !atHome && !preview.visible && !dialogOpen() && !isTextEntry(document.activeElement),
 });
 window.addEventListener('blur', () => pasteGesture.cancel());
+document.addEventListener('focusin', event => { if (isTextEntry(event.target)) pasteGesture.cancel(); });
 let stripCache;
 function createStripCanvas(width, height) {
   const canvas = document.createElement('canvas'); const ratio = globalThis.devicePixelRatio || 1;
@@ -761,7 +763,6 @@ function renderSession() {
   session.eventLayer = timeline.layer;
   renderProperties(session, reportError);
   if (!session.liveEventEdit) renderEventInspector(session, tempo, currentBeat, reportError, notify);
-  decorateBeatInputs();
   if (session.eventSelection.size) {
     timeline.eventPlacementType = session.eventSelection.values().next().value.split(':')[0];
   }
@@ -998,29 +999,6 @@ element('#offset').addEventListener('change', event => {
   session.commit('修改谱面延迟', { ...session.chart, META: { ...session.chart.META, offset: value } });
   playback.seek(chartPosition + value / 1000);
 });
-function nudgeBeatInput(input, direction) {
-  try {
-    const current = beatValue(parseBeat(input.value || '0'));
-    const next = Math.max(0, current + direction / Math.max(1, timeline.division));
-    input.value = formatBeat(fromNumber(next));
-    input.dispatchEvent(new Event('change', { bubbles: true }));
-  } catch (error) { reportError(error); }
-}
-function decorateBeatInputs() {
-  for (const input of document.querySelectorAll('#properties input[aria-label$="拍"], #event-properties input[aria-label$="拍"]')) {
-    if (input.dataset.beatDecorated) continue;
-    input.dataset.beatDecorated = 'true';
-    const holder = input.parentElement;
-    const wrapper = document.createElement('span'); wrapper.className = 'beat-input-wrap';
-    const nudge = document.createElement('span'); nudge.className = 'beat-nudge';
-    for (const [direction, symbol] of [[1, '▴'], [-1, '▾']]) {
-      const button = document.createElement('button'); button.type = 'button'; button.textContent = symbol; button.title = direction < 0 ? '减少一格' : '增加一格';
-      button.dataset.beatNudge = String(direction); button.onclick = () => nudgeBeatInput(input, direction); nudge.append(button);
-    }
-    input.replaceWith(wrapper); wrapper.append(input, nudge);
-    input.addEventListener('wheel', event => { event.preventDefault(); nudgeBeatInput(input, event.deltaY < 0 ? 1 : -1); }, { passive: false });
-  }
-}
 element('#chart-info-toggle').addEventListener('click', event => {
   const info = element('#chart-info'); info.hidden = !info.hidden;
   event.currentTarget.setAttribute('aria-expanded', String(!info.hidden));
@@ -1346,7 +1324,7 @@ listen('#help', () => showDialog('Re:PhiEdit Next · 迁移预览版', HELP_TEXT
 
 let playbackSpaceHeld = false;
 window.addEventListener('keydown', event => {
-  if (atHome || !hasDocument || !shortcutMatches(event, preferences.hotkeys.ShowLineInfo) || dialogOpen() || isTypingText(event.target)) return;
+  if (atHome || !hasDocument || !shortcutMatches(event, preferences.hotkeys.ShowLineInfo) || dialogOpen() || usesNativeTextShortcut(event)) return;
   event.preventDefault();
   if (event.repeat) return;
   lineInfoVisible = !lineInfoVisible;
@@ -1354,7 +1332,7 @@ window.addEventListener('keydown', event => {
 }, true);
 window.addEventListener('blur', () => { lineInfoVisible = false; element('#line-info-overlay')?.setAttribute('hidden', ''); });
 window.addEventListener('keydown', event => {
-  if (atHome || !hasDocument || dialogOpen() || isTextEntry(event.target) || !shortcutMatches(event, preferences.hotkeys.Pause)) return;
+  if (atHome || !hasDocument || dialogOpen() || usesNativeTextShortcut(event) || isTextEntry(event.target) || !shortcutMatches(event, preferences.hotkeys.Pause)) return;
   event.preventDefault(); event.stopImmediatePropagation();
   playbackSpaceHeld = true;
   if (!event.repeat) togglePlayback().catch(reportError);
@@ -1366,9 +1344,7 @@ window.addEventListener('keyup', event => {
 window.addEventListener('blur', () => { playbackSpaceHeld = false; });
 window.addEventListener('keydown', async event => {
   const target = event.target;
-  if (atHome || !hasDocument || dialogOpen() || isTypingText(target)) return;
-  if (noiseEditor.active && isTextEntry(target) && (event.ctrlKey || event.metaKey) && ['a', 'c', 'x', 'v'].includes(event.key.toLowerCase())) return;
-  if (isTextEntry(target) && event.key.toLowerCase() === 'v' && (event.ctrlKey || event.metaKey)) return;
+  if (atHome || !hasDocument || dialogOpen() || usesNativeTextShortcut(event)) return;
   if (batchControls.active) { event.preventDefault(); return; }
   const area = timeline.hoverArea ?? session.focus;
   const hasMultiSelection = [...(session.multiLineSelection?.values() ?? [])].some(values => values.size) || [...(session.multiEventSelection?.values() ?? [])].some(values => values.size);
@@ -1700,6 +1676,9 @@ function applyFpsLimit() {
   editorPreferences.fpsLimit = value;
   persistEditor(); invalidate();
 }
+document.addEventListener('dragstart', event => {
+  if (!editorPreferences.textSelectionDrag && isTextEntry(event.target)) event.preventDefault();
+}, true);
 element('#fps-limit').addEventListener('input', applyFpsLimit);
 element('#fps-unlimited').addEventListener('change', applyFpsLimit);
 for (const [id, key] of displayFields) element(`#${id}`).addEventListener(element(`#${id}`).type === 'number' ? 'change' : 'input', event => {

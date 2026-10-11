@@ -125,16 +125,19 @@ export function diagnose(chart) {
     bpmBeats.add(beat);
   }
   for (const [lineIndex, line] of (chart.judgeLineList ?? []).entries()) {
-    const seen = new Set();
+    const seen = new Map();
     for (const [index, note] of (line.notes ?? []).entries()) {
       const beat = beatValue(note.startTime);
       const report = (message, severity = 'error') => addIssue({ line: lineIndex, beat, index, path: `notes[${index}]`, message }, severity);
       if (beatValue(note.endTime) < beat) report('结束拍早于开始拍');
       if (note.type === 2 && beatValue(note.endTime) === beat) report('Hold 时长为零');
       if (Math.abs(note.positionX) > 675) report('音符超出标准横向范围', 'warning');
+      if (note.isFake === true || Number(note.isFake) === 1) continue;
       const key = `${beat}:${note.positionX}:${noteIsAbove(note)}`;
-      if (seen.has(key)) report('同位置同时音符重叠', 'warning');
-      seen.add(key);
+      const previous = seen.get(key) ?? [];
+      const playable = type => Number(type) === 1 || Number(type) === 2;
+      if (previous.some(other => (playable(other.type) && playable(note.type)) || (Number(other.type) === 3 && Number(note.type) === 3))) report('同位置同时音符重叠', 'warning');
+      seen.set(key, [...previous, note]);
     }
     const inspectEvents = (layer, layerIndex, extended) => {
       for (const type of [...EVENT_TYPES, ...EXTENDED_TYPES]) {

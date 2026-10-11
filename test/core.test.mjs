@@ -2,12 +2,29 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { beatValue, fromNumber, parseBeat } from '../src/core/beat.mjs';
 import { TempoMap } from '../src/core/tempo.mjs';
-import { createChart, createNote, createEvent, parseChart, serializeChart, assertChart } from '../src/core/chart.mjs';
+import { diagnose, createChart, createNote, createEvent, parseChart, serializeChart, assertChart } from '../src/core/chart.mjs';
 import { easing, bezier } from '../src/core/easing.mjs';
 import { EventTrack, SpeedIntegral } from '../src/core/events.mjs';
 import { IntervalIndex } from '../src/core/interval-index.mjs';
 import { EditorSession } from '../src/application/session.mjs';
 import { readZip, writeZip, crc32 } from '../src/platform/archive.mjs';
+
+test('音符重叠只报告 Tap/Hold 组合或 Flick/Flick，不报告 Drag 或 Flick 混合', () => {
+  const chart = createChart();
+  const notes = [createNote(1, 1, 0), createNote(4, 1, 0), createNote(3, 1, 0), createNote(2, 1, 0), createNote(4, 1, 0), createNote(3, 1, 0)];
+  chart.judgeLineList[0].notes = notes;
+  const overlaps = diagnose(chart).filter(issue => issue.message === '同位置同时音符重叠');
+  assert.equal(overlaps.length, 2);
+  assert.deepEqual(overlaps.map(issue => issue.index), [3, 5]);
+});
+
+test('fake 音符不参与重叠判定', () => {
+  const chart = createChart();
+  const fakeTap = createNote(1, 1, 0); fakeTap.isFake = 1;
+  const fakeFlick = createNote(3, 1, 0); fakeFlick.isFake = true;
+  chart.judgeLineList[0].notes = [fakeTap, fakeFlick, createNote(1, 1, 0)];
+  assert.equal(diagnose(chart).filter(issue => issue.message === '同位置同时音符重叠').length, 0);
+});
 
 test('拍数负数、分母和三元表示', () => {
   assert.deepEqual(fromNumber(-0.25), [-1, 3, 4]);

@@ -30,7 +30,7 @@ function applyEventTransform(session, label, transform) {
   } else transformEvents(session, label, transform);
 }
 
-export function renderEventInspector(session, tempo, currentBeat, reportError, notify = () => {}) {
+export function renderEventInspector(session, tempo, currentBeat, reportError, notify = () => {}, sampler = null) {
   if (session.liveEventEdit) return;
   const container = document.querySelector('#event-properties'); container.replaceChildren();
   const entries = inspectorEntries(session); const event = entries[0]?.event; const eventType = entries[0]?.type;
@@ -60,23 +60,77 @@ export function renderEventInspector(session, tempo, currentBeat, reportError, n
     };
     try { update(); } catch (error) { if (!quiet) reportError(error); }
   };
+  const samplePanel = (key, title, kind, value) => {
+    const panel = document.createElement('div'); panel.className = 'event-sample-panel'; panel.hidden = true;
+    const hint = document.createElement('div'); hint.className = 'hint'; hint.textContent = `${title}取样 · 拖动控制条实时预览，完成后统一应用`;
+    panel.append(hint);
+    const target = { type: eventType, index: entries[0].index, lineIndex: entries[0].lineIndex ?? session.lineIndex, field: key };
+    let sampleValue = structuredClone(value);
+    const applySample = next => safely(() => {
+      sampleValue = structuredClone(next);
+      if (sampler) sampler.updateValueDraft(target, next);
+      else applyEventTransform(session, `取样${title}`, current => ({ ...current, [key]: next, ...(current.inst && (key === 'start' || key === 'end') ? { start: structuredClone(next), end: structuredClone(next) } : {}) }));
+    });
+    const addRange = (labelText, min, max, step, initial, update) => {
+      const label = document.createElement('label'); label.className = 'field'; label.append(labelText);
+      const range = document.createElement('input'); range.type = 'range'; range.min = min; range.max = max; range.step = step; range.value = initial; range.setAttribute('aria-label', `${title}${labelText}`);
+      const output = document.createElement('output'); output.textContent = String(initial);
+      range.onpointerdown = () => { sampler?.beginValueDraft(); session.liveEventEdit = true; };
+      range.oninput = () => { const next = update(Number(range.value)); output.textContent = Array.isArray(next) ? next.join(', ') : String(next); applySample(next); };
+      label.append(range, output); panel.append(label);
+    };
+    if (kind === 'array') {
+      const colors = Array.isArray(value) ? value : [255, 255, 255]; sampleValue = [...colors];
+      const picker = document.createElement('input'); picker.type = 'color'; picker.value = '#' + colors.map(channel => Math.max(0, Math.min(255, Math.round(channel))).toString(16).padStart(2, '0')).join(''); picker.setAttribute('aria-label', `${title}取色板`); picker.oninput = () => { const hex = picker.value.slice(1); const next = [0, 2, 4].map(index => Number.parseInt(hex.slice(index, index + 2), 16)); applySample(next); }; panel.append(picker);
+      for (const [index, channel] of ['R', 'G', 'B'].entries()) addRange(channel, 0, 255, 1, colors[index], next => { const result = [...sampleValue]; result[index] = next; return result; });
+    } else if (eventType === 'alphaEvents') {
+      const wrap = document.createElement('div'); wrap.className = 'alpha-sample-wrap';
+      const range = document.createElement('input'); range.type = 'range'; range.min = 0; range.max = 255; range.step = 1; range.value = Number(value) || 0; range.className = 'alpha-sample-gradient'; range.setAttribute('aria-label', `${title}透明度取样`);
+      const output = document.createElement('output'); output.textContent = String(range.value); range.onpointerdown = () => { sampler?.beginValueDraft(); session.liveEventEdit = true; }; range.oninput = () => { output.textContent = String(range.value); applySample(Number(range.value)); }; wrap.append(range, output); panel.append(wrap);
+    } else {
+      const limits = eventType === 'alphaEvents' ? [0, 255, 1] : eventType === 'speedEvents' ? [-20, 20, 0.01] : eventType === 'rotateEvents' ? [-360, 360, 0.1] : [-2000, 2000, 0.1];
+      addRange('数值', ...limits, Number(value) || 0, next => next);
+    }
+    const actions = document.createElement('div'); actions.className = 'event-sample-actions';
+    const apply = document.createElement('button'); apply.type = 'button'; apply.textContent = '应用全部取样'; apply.onclick = () => sampler ? sampler.finishValue(true) : undefined;
+    const cancel = document.createElement('button'); cancel.type = 'button'; cancel.textContent = '取消取样'; cancel.onclick = () => sampler ? sampler.finishValue(false) : undefined;
+    const close = document.createElement('button'); close.type = 'button'; close.textContent = '收起取样';
+    actions.append(apply, cancel, close); panel.append(actions);
+    return { panel, close };
+  };
   for (const [key, title, kind] of fields) {
     const label = document.createElement('label'); label.className = 'field'; label.append(title);
     const input = document.createElement('input'); input.type = kind === 'number' ? 'number' : 'text'; input.step = 'any'; input.setAttribute('aria-label', `事件${title}`);
     if (key === 'easingLeft' || key === 'easingRight') { input.min = 0; input.max = 1; }
     if (eventType === 'alphaEvents' && (key === 'start' || key === 'end')) { input.min = 0; input.max = 255; }
-    if (eventType === 'speedEvents' && (key === 'start' || key === 'end')) input.min = 0;
+    if (eventType === 'speedEvents' && (key === 'start' || key === 'end')) { input.min = -20; input.max = 20; }
     if (key === 'linkgroup') { input.min = 0; input.step = 1; }
     input.value = kind === 'beat' ? formatBeat(event[key]) : kind === 'array' ? event[key].join(', ') : event[key] ?? (key === 'easingRight' ? 1 : 0);
     input.onfocus = () => { session.liveEventEdit = true; };
-    input.onblur = () => { session.liveEventEdit = false; queueMicrotask(() => { if (!session.liveEventEdit) renderEventInspector(session, tempo, currentBeat, reportError, notify); }); };
+    input.onblur = () => { session.liveEventEdit = false; queueMicrotask(() => { if (!session.liveEventEdit) renderEventInspector(session, tempo, currentBeat, reportError, notify, sampler); }); };
     input.oninput = event => { if (!event.isComposing && (kind !== 'number' || input.value.trim())) applyField(input, key, title, kind, true); };
     input.onchange = () => applyField(input, key, title, kind);
     if (kind === 'number') {
       const step = key === 'easingLeft' || key === 'easingRight' ? 0.05 : key === 'linkgroup' ? 1 : session.eventWheelSteps?.[eventType] ?? EVENT_WHEEL_STEPS[eventType] ?? 1;
       input.step = step; numericWheel(input, step);
     }
-    label.append(kind === 'beat' ? beatInputControl(input, () => session.division, reportError) : input); container.append(label);
+    const controls = document.createElement('span'); controls.className = 'event-input-controls'; controls.append(kind === 'beat' ? beatInputControl(input, () => session.division, reportError) : input);
+    const samplingField = key === 'start' || key === 'end';
+    const samplingType = ['moveXEvents', 'moveYEvents', 'rotateEvents', 'alphaEvents', 'speedEvents', 'colorEvents'].includes(eventType);
+    if (samplingField && samplingType) {
+      if (sampler && ['moveXEvents', 'moveYEvents', 'rotateEvents'].includes(eventType) && ['start', 'end'].includes(key)) {
+        const open = document.createElement('button'); open.type = 'button'; open.className = 'sample-button'; open.textContent = '⌖'; open.title = `${title}：在预览中拖动取样`;
+        open.onclick = () => sampler.begin({ type: eventType, index: entries[0].index, field: key, lineIndex: entries[0].lineIndex ?? session.lineIndex });
+        controls.append(open);
+      } else {
+        const sampling = samplePanel(key, title, kind, event[key]);
+        const open = document.createElement('button'); open.type = 'button'; open.className = 'sample-button'; open.textContent = '⌖'; open.title = '展开取样控制';
+        sampling.close.onclick = () => { sampling.panel.hidden = true; open.hidden = false; };
+        open.onclick = () => { sampler?.beginValueDraft(); session.liveEventEdit = true; sampling.panel.hidden = false; open.hidden = true; };
+        controls.append(open); label.append(controls); container.append(label); container.insertBefore(sampling.panel, label); continue;
+      }
+    }
+    label.append(controls); container.append(label);
   }
   const lockLabel = document.createElement('label'); lockLabel.className = 'field'; lockLabel.append('钩定（首尾同步）');
   const lock = document.createElement('input'); lock.type = 'checkbox'; lock.checked = Boolean(event.inst); lock.setAttribute('aria-label', '钩定');

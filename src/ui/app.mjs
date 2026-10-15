@@ -59,6 +59,7 @@ import { assetUrl } from '../core/asset-url.mjs';
 import { AudioAnalysis } from './audio-analysis.mjs';
 import { TrajectoryPanel } from './trajectory-panel.mjs';
 import { TextLinesPanel } from './text-lines.mjs';
+import { NoiseFitPanel } from './noise-fit.mjs';
 import { CollaborationPanel } from './collaboration.mjs';
 import { NoiseAreaEditor } from './noise-area.mjs';
 import { EventSampler } from './event-sampler.mjs';
@@ -206,6 +207,7 @@ const multiEdit = new MultiEditPanel(element('#multi-editor'), () => session, ti
 });
 const trajectoryPanel = new TrajectoryPanel(element('#trajectory-editor'), () => ({ session, timeline, tempo, previewVisible: preview.visible }), { invalidate, notify, activate: activatePane });
 const textLinesPanel = new TextLinesPanel(element('#text-lines-editor'), () => ({ session, tempo, seconds: chartSeconds(), skin, noteSize: preview.noteSize }), { invalidate, notify, activate: activatePane });
+const noiseFitPanel = new NoiseFitPanel(element('#noise-fit-editor'), element('.stage'), () => ({ session, tempo, timeline, previewVisible: preview.visible, seconds: () => chartSeconds() }), { invalidate, notify, activate: activatePane, pause: () => playback.pause() });
 const multiLinePanel = new MultiLinePanel(element('#multi-line-editor'), () => session, { timeline, render: renderSession, notify, persist: persistEditor });
 const linePanel = new LinePanel(element('#line-panel'), () => session, { render: renderSession, notify, getAssets: () => assets, afterTexture: () => images.load(session.chart, assets, chartName) });
 const assetLibrary = new AssetLibraryPanel(element('#asset-library'), () => ({ assets, folders: assetFolders, chart: session.chart, chartName }), {
@@ -575,6 +577,7 @@ function activatePane(name) {
   if (name !== 'multi') multiEdit.hide();
   if (name !== 'trajectory') trajectoryPanel.hide();
   if (name !== 'text-lines') textLinesPanel.hide();
+  if (name !== 'noise-fit') noiseFitPanel.hide();
   activePaneName = name;
   noiseEditor.syncChrome();
   for (const panel of document.querySelectorAll('[data-panel]')) panel.hidden = panel.dataset.panel !== name;
@@ -796,6 +799,7 @@ function renderSession() {
     else if (multiEdit.committing) multiEdit.sync();
     else if (activePaneName === 'collaboration') collaboration.renderState();
     else if (textLinesPanel.active) textLinesPanel.sync();
+    else if (noiseFitPanel.active) noiseFitPanel.sync();
     else if (trajectoryPanel.active && selectionCount !== 1) activatePane('trajectory');
     else if (curveEditorOpen) activatePane('curve');
     else if (activePaneName === 'clipboard') renderClipboardPanel();
@@ -823,6 +827,7 @@ function replaceChart(chart, name, nextAssets = new Map(), nextFolders = []) {
   assertChart(chart);
   if (eventSampler.active) eventSampler.finish(false);
   noiseEditor.reset();
+  noiseFitPanel.reset();
   if (!collaborationJoining && collaboration.client.active) collaboration.client.leave();
   lineSwitcher.reset();
   playback.pause(); audio.clear();
@@ -1134,6 +1139,10 @@ listen('#text-lines-tool', () => {
   if (noiseEditor.active) noiseEditor.close();
   timeline.cancelPlacement(); batchControls.cancel(); pasteGesture.cancel(); curveEditorOpen = false; textLinesPanel.open();
 });
+listen('#noise-fit-tool', () => {
+  if (noiseEditor.active) noiseEditor.close();
+  timeline.cancelPlacement(); batchControls.cancel(); pasteGesture.cancel(); curveEditorOpen = false; noiseFitPanel.open();
+});
 listen('#curve-start', () => captureCurve(false));
 listen('#curve-end', () => captureCurve(true));
 function switchNoteView() {
@@ -1401,6 +1410,7 @@ window.addEventListener('keydown', async event => {
   const hasMultiSelection = [...(session.multiLineSelection?.values() ?? [])].some(values => values.size) || [...(session.multiEventSelection?.values() ?? [])].some(values => values.size);
   const hasSelection = noiseEditor.active ? noiseEditor.selection.size > 0 : Boolean(session.selection.size || session.eventSelection.size || hasMultiSelection);
   const action = shortcutAction(event, preferences, area, { hasSelection: hasSelection && !preview.visible });
+  if (noiseFitPanel.action(action)) { event.preventDefault(); event.stopImmediatePropagation(); return; }
   if (noiseEditor.active && (!preview.visible || noiseEditor.sampleMode)) {
     try { if (noiseEditor.action(action)) { event.preventDefault(); event.stopImmediatePropagation(); return; } }
     catch (error) { event.preventDefault(); reportError(error); return; }
@@ -1507,14 +1517,14 @@ function frame(timestamp) {
   if (audio.playing && loop && currentBeat() >= loop.end) seekBeat(loop.start, false);
   if (audio.playing && audio.time >= audio.duration) { audio.pause(); invalidate(); }
   hitSounds.tick(session.chart, tempo, session.lineIndex);
-  if (!atHome && (audio.playing || dirtyFrame || trajectoryPanel.active) && frameLimiter.shouldRender(timestamp, editorPreferences.fpsLimit ?? preferences.settings.fpsLimit)) {
+  if (!atHome && (audio.playing || dirtyFrame || trajectoryPanel.active || noiseFitPanel.active && noiseFitPanel.options.animate && noiseFitPanel.options.show && noiseFitPanel.previewChart && !noiseFitPanel.fullPreview) && frameLimiter.shouldRender(timestamp, editorPreferences.fpsLimit ?? preferences.settings.fpsLimit)) {
     frameSampleCount++;
     const start = performance.now();
     const beat = currentBeat();
     session.editSeconds = Math.max(0, chartSeconds());
     updateLineInfo();
     if (audio.playing) timeline.origin = beat;
-    if (!preview.visible && !noiseEditor.active) {
+    if (!preview.visible && !noiseEditor.active && !noiseFitPanel.active) {
       timeline.draw(beat);
       multiEdit.drawTimeline();
       selectionOverlay.draw();
@@ -1530,23 +1540,24 @@ function frame(timestamp) {
     const noiseView = noiseEditor.active ? noiseEditor.previewState() : null;
     const eventSampleView = eventSampler.previewState();
     const textView = textLinesPanel.view();
-    const viewChart = noiseView?.chart ?? eventSampleView?.chart ?? textView?.chart ?? trajectoryView?.chart ?? (multiEdit.active && multiEdit.previewHovered && multiEdit.previewEnabled.checked && multiEdit.result ? multiEdit.result.chart : viewSession.chart);
-    const viewSeconds = noiseView?.seconds ?? eventSampleView?.seconds ?? textView?.seconds ?? trajectoryView?.seconds ?? chartSeconds();
+    const noiseFitView = noiseFitPanel.tick(timestamp, chartSeconds(), audio.playing, realtimePreview);
+    const viewChart = noiseView?.chart ?? eventSampleView?.chart ?? noiseFitView?.chart ?? textView?.chart ?? trajectoryView?.chart ?? (multiEdit.active && multiEdit.previewHovered && multiEdit.previewEnabled.checked && multiEdit.result ? multiEdit.result.chart : viewSession.chart);
+    const viewSeconds = noiseView?.seconds ?? eventSampleView?.seconds ?? noiseFitView?.seconds ?? textView?.seconds ?? trajectoryView?.seconds ?? chartSeconds();
     const previewAllLines = preview.allLines; const previewEffects = preview.showHitEffects;
     const previewNumbers = preview.lineNumbers; const previewArrows = preview.lineArrows;
-    if (textView) { preview.allLines = true; preview.showHitEffects = false; preview.lineNumbers = false; preview.lineArrows = false; }
+    if (textView || noiseFitView) { preview.allLines = true; preview.showHitEffects = false; preview.lineNumbers = false; preview.lineArrows = false; }
     preview.draw(viewChart, tempo, viewSeconds, viewSession.lineIndex);
     preview.allLines = previewAllLines; preview.showHitEffects = previewEffects;
     preview.lineNumbers = previewNumbers; preview.lineArrows = previewArrows;
     if (!preview.visible) {
       const visible = realtimePreview.visible;
-      if (trajectoryView || textView || noiseEditor.sampleMode || eventSampler.active) realtimePreview.visible = true;
+      if (trajectoryView || textView || noiseFitView || noiseEditor.sampleMode || eventSampler.active) realtimePreview.visible = true;
       element('#realtime-preview').hidden = !realtimePreview.visible;
       const opacity = realtimePreview.opacity;
       const allLines = realtimePreview.allLines;
       const lineNumbers = realtimePreview.lineNumbers; const lineArrows = realtimePreview.lineArrows;
-      if (textView) { realtimePreview.allLines = true; realtimePreview.lineNumbers = false; realtimePreview.lineArrows = false; }
-      if (noiseEditor.sampleMode || eventSampler.active) realtimePreview.opacity = 1;
+      if (textView || noiseFitView) { realtimePreview.allLines = true; realtimePreview.lineNumbers = false; realtimePreview.lineArrows = false; }
+      if (noiseEditor.sampleMode || eventSampler.active || noiseFitView) realtimePreview.opacity = 1;
       realtimePreview.draw(viewChart, tempo, viewSeconds, viewSession.lineIndex);
       realtimePreview.opacity = opacity;
       realtimePreview.allLines = allLines;

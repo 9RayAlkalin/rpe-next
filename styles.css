@@ -617,3 +617,32 @@ footer > button, footer #performance, footer > span:last-child { flex-shrink: 0;
 .noise-layer-visibility { display: inline-flex; align-items: center; gap: 5px; margin: 0; font-size: 12px; white-space: nowrap; }
 .noise-layer-panel .noise-layer-visibility input { width: auto; }
 #noise-panel > .noise-layer-panel { flex-shrink: 1; min-height: 120px; max-height: 42vh; overflow-y: auto; }
+.inspector:has([data-panel="noise-fit"]:not([hidden])) { display: flex; flex-direction: column; overflow: hidden; }
+[data-panel="noise-fit"]:not([hidden]), #noise-fit-editor { display: flex; flex: 1; flex-direction: column; min-height: 0; }
+.noise-fit-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding-bottom: 12px; }
+.noise-fit-scroll .field { margin: 8px 12px; align-items: center; grid-template-columns: minmax(100px, 1fr) minmax(0, 1.1fr); }
+.noise-fit-scroll input, .noise-fit-scroll select { min-width: 0; max-width: 100%; }
+.noise-fit-scroll input[type="checkbox"] { width: auto; justify-self: end; }
+.noise-fit-scroll h3 { margin: 18px 12px 8px; padding-top: 12px; border-top: 1px solid #535353; font-size: 14px; }
+.noise-fit-scroll > button, .noise-fit-scroll > div > button { margin: 4px 12px; }
+.noise-fit-scroll textarea { display: block; margin: 8px 12px; width: calc(100% - 24px); resize: vertical; min-height: 64px; }
+.noise-fit-modes { display: flex; gap: 8px; margin: 8px 12px; }
+.noise-fit-modes > button { flex: 1; margin: 0 !important; }
+.noise-fit-source { display: block; margin: 12px; width: calc(100% - 24px); height: 160px; border: 1px solid #535b66; }
+.noise-fit-scroll details { margin: 12px; }
+.noise-fit-scroll details > .easing-gallery { padding: 6px 0; }
+.noise-fit-playback { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px; align-items: center; }
+.noise-fit-playback input { flex: 1; width: 80px; }
+.noise-fit-playback output { flex: 0 0 100%; margin: 0; }
+.noise-fit-footer { flex-shrink: 0; padding: 10px 12px; border-top: 1px solid #666; background: #292929; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.noise-fit-footer > strong, .noise-fit-footer > p { grid-column: 1 / -1; margin: 0; overflow-wrap: anywhere; }
+.noise-fit-footer > p { max-height: 4.5em; overflow-y: auto; }
+.noise-fit-footer .error { color: #ffad9c; }
+.noise-fit-overlay { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 7; touch-action: none; cursor: move; }
+.editor.noise-fit-mode .canvases, .editor.noise-fit-mode #audio-analysis-overlay, .editor.noise-fit-mode #multi-line-labels, .editor.noise-fit-mode #multi-line-scroll, .editor.noise-fit-mode .batch-controls, .editor.noise-fit-mode .selection-overlay { visibility: hidden; pointer-events: none; }
+@media (max-width: 700px) {
+  .noise-fit-footer { padding: 6px 10px; gap: 4px 8px; }
+  .noise-fit-footer > p { max-height: 1.5em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .noise-fit-footer > button { padding-block: 5px; }
+  .noise-fit-source { height: 120px; }
+}

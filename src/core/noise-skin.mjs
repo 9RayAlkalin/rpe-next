@@ -8,6 +8,12 @@ export function withNoiseLayers(chart, layers, areas = chart.blockAreaList ?? []
 }
 const object = value => value && typeof value === 'object' && !Array.isArray(value);
 const finite = value => typeof value === 'number' && Number.isFinite(value);
+function validateSkinSettings(settings) {
+  if (!object(settings)) throw new Error('噪域皮肤配置必须为对象');
+  if (settings.channel !== undefined && !['normal', 'low'].includes(settings.channel)) throw new Error('噪域皮肤通道无效');
+  if (settings.parameters !== undefined && (!object(settings.parameters) || Object.values(settings.parameters).some(value => !(finite(value) || Array.isArray(value) && [2, 4].includes(value.length) && value.every(finite))))) throw new Error('噪域皮肤参数无效');
+  if (settings.parameters?.touchReleaseDuration < 0) throw new Error('touchReleaseDuration 不得为负数');
+}
 export function skinPath(path) {
   if (typeof path !== 'string' || !path || /[\\:\x00-\x1f?#]/.test(path) || path.startsWith('/') || path.split('/').some(part => !part || part === '.' || part === '..')) throw new Error('皮肤路径无效：' + path);
   return path;
@@ -20,11 +26,41 @@ export function validateNoiseLayers(chart) {
     if (!object(layer) || typeof layer.id !== 'string' || !layer.id || ids.has(layer.id) || typeof layer.name !== 'string') throw new Error('噪域层名称或标识无效');
     ids.add(layer.id);
     if (layer.skin) { skinPath(layer.skin); if (!/^shader\/[^/]+$/.test(layer.skin)) throw new Error('噪域皮肤必须位于 shader/皮肤名'); }
-    if (layer.channel !== undefined && !['normal', 'low'].includes(layer.channel)) throw new Error('噪域皮肤通道无效');
-    if (layer.parameters !== undefined && (!object(layer.parameters) || Object.values(layer.parameters).some(value => !(finite(value) || Array.isArray(value) && [2, 4].includes(value.length) && value.every(finite))))) throw new Error('噪域皮肤参数无效');
-    if (layer.parameters?.touchReleaseDuration < 0) throw new Error('touchReleaseDuration 不得为负数');
+    validateSkinSettings(layer);
+    if (layer.skinPresets !== undefined) {
+      if (!object(layer.skinPresets)) throw new Error('噪域皮肤参数记录必须为对象');
+      for (const [root, settings] of Object.entries(layer.skinPresets)) {
+        skinPath(root); if (!/^shader\/[^/]+$/.test(root)) throw new Error('皮肤参数记录路径无效');
+        validateSkinSettings(settings);
+      }
+    }
   }
   for (const area of chart.blockAreaList ?? []) if (!ids.has(noiseLayerId(area))) throw new Error('噪域引用了不存在的层');
+}
+export function noiseSkinModified(settings = {}, definition) {
+  if (settings.channel === 'low' && (!definition || definition.low)) return true;
+  return Object.entries(settings.parameters ?? {}).some(([name, value]) => {
+    const parameter = definition?.parameters.find(entry => entry.name === name);
+    return !parameter || JSON.stringify(value) !== JSON.stringify(parameter.value);
+  });
+}
+export function rememberedNoiseSkinSettings(layer) {
+  const presets = structuredClone(layer.skinPresets ?? {});
+  if (layer.skin && (Object.keys(layer.parameters ?? {}).length || layer.channel === 'low')) presets[layer.skin] = { parameters: structuredClone(layer.parameters ?? {}), channel: layer.channel ?? 'normal' };
+  return presets;
+}
+export function switchNoiseSkin(layer, skin, modified = false) {
+  const skinPresets = rememberedNoiseSkinSettings(layer);
+  const settings = modified ? skinPresets[skin] : null;
+  return { ...layer, skin, parameters: structuredClone(settings?.parameters ?? {}), channel: settings?.channel ?? 'normal', skinPresets };
+}
+export function updateNoiseSkinSettings(layer, patch, definition) {
+  const skinPresets = rememberedNoiseSkinSettings(layer); const next = { ...layer, ...patch };
+  if (next.skin) {
+    if (noiseSkinModified(next, definition)) skinPresets[next.skin] = { parameters: structuredClone(next.parameters ?? {}), channel: next.channel ?? 'normal' };
+    else { delete skinPresets[next.skin]; next.parameters = {}; next.channel = 'normal'; }
+  }
+  return { ...next, skinPresets };
 }
 export function skinParameters(source) {
   const parameters = [];
@@ -65,12 +101,22 @@ export function skinSize(screenWidth, screenHeight, specification = {}, maximum 
   return sizes;
 }
 const automatic = name => ['screenTexture', 'blockMask', 'screenSize', 'targetSize', 'targetTexelSize', 'time', 'touchCount', 'touchPoints', 'screenTextureSize', 'blockMaskSize'].includes(name);
+function noiseSkinConfig(files) {
+  const bytes = files.get('config.json');
+  const config = bytes === undefined ? { version: 1, targets: {}, passes: [{ shader: 'main.glsl', output: '$screen' }] }
+    : JSON.parse(typeof bytes === 'string' ? bytes : new TextDecoder().decode(bytes));
+  if (!object(config)) throw new Error('皮肤 config.json 必须为对象');
+  if (config.author !== undefined && typeof config.author !== 'string') throw new Error('皮肤 author 必须为作者名文本');
+  return config;
+}
+export function noiseSkinLabel(name, author = '') { return author.trim() ? `${name}(${author.trim()})` : name; }
+export function noiseSkinAuthor(files) { return noiseSkinConfig(files).author?.trim() ?? ''; }
 export function parseNoiseSkin(files) {
   for (const path of files.keys()) skinPath(path);
   const decoder = new TextDecoder();
   const text = name => { skinPath(name); const bytes = files.get(name); if (!bytes) throw new Error('皮肤缺少文件：' + name); return typeof bytes === 'string' ? bytes : decoder.decode(bytes); };
   const main = text('main.glsl'); const parameters = skinParameters(main);
-  const config = files.has('config.json') ? JSON.parse(text('config.json')) : { version: 1, targets: {}, passes: [{ shader: 'main.glsl', output: '$screen' }] };
+  const config = noiseSkinConfig(files);
   if (config.version !== 1) throw new Error('仅支持噪域皮肤协议 version=1');
   const sources = new Map([['main.glsl', main]]); const textures = new Map();
   const channel = (value, low = false) => {
@@ -111,7 +157,7 @@ export function parseNoiseSkin(files) {
     });
     return { targets, passes, blockMask };
   };
-  return { parameters, sources, textures, files, normal: channel(config), low: config.lowPerformance === undefined ? null : channel(config.lowPerformance, true) };
+  return { author: config.author?.trim() ?? '', parameters, sources, textures, files, normal: channel(config), low: config.lowPerformance === undefined ? null : channel(config.lowPerformance, true) };
 }
 export function maskWord(normal, subtract) {
   return (normal[0] ? 1 : 0) | (subtract[0] === 1 ? 2 : 0) | (normal[1] ? 4 : 0) | (subtract[1] === 1 ? 8 : 0) | (normal[2] ? 16 : 0) | (subtract[2] === 1 ? 32 : 0);

@@ -3,7 +3,8 @@ import { resolve, relative, dirname } from 'node:path';
 import { parseEditorSkin } from '../src/core/editor-skin.mjs';
 import { writeZip } from '../src/platform/archive.mjs';
 
-const directory = resolve(process.argv[2] ?? 'examples/editor-skins/daybreak');
+if (!process.argv[2]) throw new Error('请指定皮肤目录：node tools/pack-editor-skin.mjs <目录> [输出文件]');
+const directory = resolve(process.argv[2]);
 const files = new Map();
 for (const entry of await readdir(directory, { recursive: true, withFileTypes: true })) if (entry.isFile()) {
   const path = resolve(entry.parentPath, entry.name); files.set(relative(directory, path).replaceAll('\\', '/'), new Uint8Array(await readFile(path)));

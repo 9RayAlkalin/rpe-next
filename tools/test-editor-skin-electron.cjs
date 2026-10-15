@@ -33,9 +33,11 @@ app.whenReady().then(async () => {
       window.defaultUi = { root: getComputedStyle(document.documentElement).backgroundColor, save: document.querySelector('#save').textContent, saveParent: document.querySelector('#save').parentElement.tagName, font: getComputedStyle(document.body).fontFamily };
       window.chartBeforeSkin = JSON.stringify(session.chart);
     });
-    const zip = [...fs.readFileSync('release/editor-skins/daybreak.rpenskin')];
-    await run(bytes => { const input = document.querySelector('[aria-label="导入编辑器皮肤包"]'); const transfer = new DataTransfer(); transfer.items.add(new File([new Uint8Array(bytes)], 'daybreak.rpenskin')); input.files = transfer.files; input.dispatchEvent(new Event('change', { bubbles: true })); }, zip);
-    await until(() => window.themeManager?.records.has('daybreak'));
+    const { editorSkinFixture } = await import('../test/fixtures/editor-skin.mjs');
+    const { exportEditorSkin } = await import('../src/platform/editor-skins.mjs');
+    const zip = [...new Uint8Array(await exportEditorSkin(editorSkinFixture()).arrayBuffer())];
+    await run(bytes => { const input = document.querySelector('[aria-label="导入编辑器皮肤包"]'); const transfer = new DataTransfer(); transfer.items.add(new File([new Uint8Array(bytes)], 'test-skin.rpenskin')); input.files = transfer.files; input.dispatchEvent(new Event('change', { bubbles: true })); }, zip);
+    await until(() => window.themeManager?.records.has('test-skin'));
     assert.equal(await run(() => document.documentElement.dataset.editorSkin), undefined);
     const builtinInkline = await run(async () => {
       const manager = window.themeManager; const record = manager.records.get('inkline');
@@ -48,24 +50,24 @@ app.whenReady().then(async () => {
       const confirm = window.confirm; window.confirm = () => { throw Error('builtin deletion must be rejected before confirmation'); };
       try { await manager.remove(); } finally { window.confirm = confirm; }
       if (!manager.records.has('inkline')) throw Error('builtin skin was deleted');
-      await manager.use('default'); manager.select.value = 'daybreak'; manager.showDetails(); return true;
+      await manager.use('default'); manager.select.value = 'test-skin'; manager.showDetails(); return true;
     });
     await run(() => [...document.querySelectorAll('.editor-skin-actions button')].find(button => button.textContent === '应用').click());
-    await until(() => document.documentElement.dataset.editorSkin === 'daybreak'); await wait(200);
+    await until(() => document.documentElement.dataset.editorSkin === 'test-skin'); await wait(200);
     assert.equal(await run(() => getComputedStyle(document.querySelector('rpen-skin-recovery')).display), 'none');
     const applied = await run(() => ({ root: getComputedStyle(document.documentElement).backgroundColor, background: getComputedStyle(document.querySelector('.editor')).backgroundColor, save: document.querySelector('#save').textContent, group: document.querySelector('#save').closest('[data-skin-group]')?.dataset.skinGroup, font: getComputedStyle(document.body).fontFamily, cssSheets: document.adoptedStyleSheets.length }));
-    assert.equal(applied.root, 'rgb(237, 242, 248)'); assert.equal(applied.background, 'rgb(245, 248, 253)'); assert.equal(applied.group, 'project'); assert.ok(applied.save.includes('保存谱面'));
+    assert.equal(applied.root, 'rgb(38, 40, 43)'); assert.equal(applied.background, 'rgb(41, 44, 48)'); assert.equal(applied.group, 'project'); assert.ok(applied.save.includes('保存谱面'));
     assert.equal(await run(() => getComputedStyle(document.querySelector('#save'), '::before').backgroundImage.startsWith('url("blob:')), true);
     assert.equal(await run(() => getComputedStyle(document.querySelector('#save'), '::before').filter), 'none');
     const idleStart = await run(() => window.skinSyncs); await wait(400);
     assert.ok((await run(() => window.skinSyncs)) - idleStart < 4, 'skin synchronization must not rebuild the editor indefinitely');
     // Flush the new stylesheet and wait for its initial color transitions to settle.
-    await until(() => getComputedStyle(document.querySelector('#editor-skin-settings button')).backgroundColor === 'rgb(255, 255, 255)');
+    await until(() => getComputedStyle(document.querySelector('#editor-skin-settings button')).backgroundColor === 'rgb(56, 56, 56)');
     const controlColors = await run(() => ['#editor-skin-settings button', '#play', '#open', '#rate'].map(selector => { const style = getComputedStyle(document.querySelector(selector)); return { selector, background: style.backgroundColor, inputToken: style.getPropertyValue('--rpen-input') }; }));
-    assert.equal(controlColors[0].background, 'rgb(255, 255, 255)');
-    assert.equal(controlColors[3].background, 'rgb(255, 255, 255)');
+    assert.equal(controlColors[0].background, 'rgb(56, 56, 56)');
+    assert.equal(controlColors[3].background, 'rgb(56, 56, 56)');
     fs.writeFileSync('.local-tools/editor-skin-settings.png', (await win.webContents.capturePage()).toPNG());
-    await run(() => document.querySelector('#settings-modal').close()); await wait(200); fs.writeFileSync('.local-tools/editor-skin-daybreak.png', (await win.webContents.capturePage()).toPNG());
+    await run(() => document.querySelector('#settings-modal').close()); await wait(200); fs.writeFileSync('.local-tools/editor-skin-test-skin.png', (await win.webContents.capturePage()).toPNG());
     // The original action nodes and listeners remain functional after grouping.
     await run(() => document.querySelector('#save').click()); await until(() => !window.themeSession.history.dirty);
     const extra = await run(async () => {
@@ -73,8 +75,8 @@ app.whenReady().then(async () => {
       const { drawClipboardThumbnail } = await import('./src/ui/clipboard-history.mjs');
       const thumbnail = document.createElement('canvas'); drawClipboardThumbnail(thumbnail, { notes: [], events: [] });
       const pixel = [...thumbnail.getContext('2d').getImageData(0, 0, 1, 1).data];
-      if (JSON.stringify(pixel) !== '[238,244,252,255]') throw Error('detached clipboard thumbnail was not recolored: ' + pixel);
-      const manager = window.themeManager; const base = manager.records.get('daybreak');
+      if (JSON.stringify(pixel) !== '[39,49,58,255]') throw Error('detached clipboard thumbnail was not recolored: ' + pixel);
+      const manager = window.themeManager; const base = manager.records.get('test-skin');
       const fontBytes = new Uint8Array(await (await fetch('./assets/rpe/fonts/cmdysj.ttf')).arrayBuffer());
       const skin = structuredClone(base.skin); skin.id = 'font-check'; skin.assets.ui = { type: 'font', path: 'ui.ttf' }; skin.tokens['font-family'] = 'font(ui), sans-serif';
       skin.hide = ['@migrate', '@recover', '#skin-hidden-fixture'];
@@ -106,13 +108,13 @@ app.whenReady().then(async () => {
         const entry = parseEditorSkin(new Map([['skin.json', new TextEncoder().encode(JSON.stringify(invalid))], ['x.svg', new TextEncoder().encode(source)]]));
         try { await manager.runtime.prepare(entry); throw Error('unsafe SVG unexpectedly accepted'); } catch (error) { if (/unexpectedly/.test(error.message)) throw error; rejected.push(error.message); }
       }
-      await manager.use('daybreak');
+      await manager.use('test-skin');
       if (JSON.stringify(window.themeSession.chart) !== window.chartBeforeSkin) throw Error('theme application changed chart data');
       return { font: family, stateTexts: true, hideRestored: true, unsafeSvgRejected: rejected.length, detachedThumbnail: true, chartUnchanged: true };
     });
     const api2 = await run(async () => {
       const { parseEditorSkin } = await import('./src/core/editor-skin.mjs'); const { editorSkinState, editorSkinSignal } = await import('./src/ui/editor-skin-state.mjs');
-      const manager = window.themeManager; const base = manager.records.get('daybreak'); const skin = structuredClone(base.skin); skin.id = 'api-two-check';
+      const manager = window.themeManager; const base = manager.records.get('test-skin'); const skin = structuredClone(base.skin); skin.id = 'api-two-check';
       skin.assets.native = { type: 'image', builtin: 'save' }; skin.assets.mark.sources = [{ path: 'images/mark2.svg', scale: 2 }];
       skin.variants = { day: { name: '日间', colorScheme: 'light', tokens: { 'surface-alt': '#e1ecfa' } }, night: { name: '夜间', colorScheme: 'dark', tokens: { 'surface-alt': '#172330' } } };
       skin.systemVariants = { light: 'day', dark: 'night' };
@@ -159,49 +161,49 @@ app.whenReady().then(async () => {
       const pixelCount = (id, matches) => { const canvas = document.querySelector(id); const pixels = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data; let count = 0; for (let offset = 0; offset < pixels.length; offset += 4) if (matches(pixels[offset], pixels[offset + 1], pixels[offset + 2], pixels[offset + 3])) count++; return count; };
       await frame(); const densityPixels = pixelCount('#note-density', (red, green, blue, alpha) => red > 180 && green < 30 && blue > 180 && alpha > 20);
       if (!densityPixels) throw Error('offscreen note density bars were not recolored');
-      fixture.remove(); await manager.use('daybreak'); document.querySelector('[data-pane=notes]').click();
+      fixture.remove(); await manager.use('test-skin'); document.querySelector('[data-pane=notes]').click();
       if (!document.querySelector('.inspector-tabs [data-pane=notes]') || !document.querySelector('.transport .line-select-group')) throw Error('moved controls not restored');
       const dev = { protocol: 'rpen-editor-skin', version: 1, id: 'dev-check', name: '开发检查', tokens: { surface: '#112233' } };
       manager.directoryHandle = { async *values() { yield { kind: 'file', name: 'skin.json', getFile: async () => new File([JSON.stringify(dev)], 'skin.json') }; } };
       await manager.reloadDirectory(); await manager.use(dev.id); dev.tokens.surface = '#223344'; await manager.reloadDirectory();
       if (manager.runtime.prepared.record.skin.tokens.surface !== '#223344' || !manager.previewTimer) throw Error('development folder reload did not preview new content');
-      await manager.use('daybreak');
+      await manager.use('test-skin');
       return { containerQueries: true, rootTokens: true, groupOverrides: true, movedTabsAndInputs: true, restrictedImportant: true, builtinIcon: true, highDpi: true, signals: true, variants: true, userParameters: true, persistedAppearance: true, developmentReload: true, densityPixels };
     });
     const parameterReset = await run(async () => {
-      const manager = window.themeManager; manager.drafts.daybreak.parameters = { 'panel-width': 480, accent: '#123456' }; await manager.use('daybreak');
-      manager.select.value = 'daybreak'; manager.showDetails();
+      const manager = window.themeManager; manager.drafts['test-skin'].parameters = { 'panel-width': 480, accent: '#123456' }; await manager.use('test-skin');
+      manager.select.value = 'test-skin'; manager.showDetails();
       const other = structuredClone(manager.options['api-two-check']); manager.resetParametersButton.click();
       for (let count = 0; count < 50 && manager.runtime.prepared.record.skin.tokens['param-panel-width'] !== '350px'; count++) await new Promise(resolve => requestAnimationFrame(resolve));
-      if (manager.current !== 'daybreak' || manager.runtime.prepared.record.skin.tokens['param-panel-width'] !== '350px' || manager.runtime.prepared.record.skin.tokens['param-accent'] !== '#2469d9') throw Error('reset button did not apply package defaults');
-      if (Object.keys(JSON.parse(localStorage.getItem('rpe-next-editor-skin-options-v1')).daybreak.parameters).length) throw Error('reset defaults not persisted');
+      if (manager.current !== 'test-skin' || manager.runtime.prepared.record.skin.tokens['param-panel-width'] !== '350px' || manager.runtime.prepared.record.skin.tokens['param-accent'] !== '#2469d9') throw Error('reset button did not apply package defaults');
+      if (Object.keys(JSON.parse(localStorage.getItem('rpe-next-editor-skin-options-v1'))['test-skin'].parameters).length) throw Error('reset defaults not persisted');
       if (JSON.stringify(manager.options['api-two-check']) !== JSON.stringify(other)) throw Error('reset changed another skin');
       const variant = manager.options['api-two-check'].variant; manager.select.value = 'api-two-check'; manager.showDetails(); await manager.resetParameters('api-two-check');
-      if (manager.current !== 'daybreak' || manager.options['api-two-check'].variant !== variant || Object.keys(manager.options['api-two-check'].parameters).length) throw Error('resetting inactive skin changed current skin or variant');
-      manager.drafts.daybreak.parameters = { accent: '#654321' }; await manager.use('daybreak', true);
+      if (manager.current !== 'test-skin' || manager.options['api-two-check'].variant !== variant || Object.keys(manager.options['api-two-check'].parameters).length) throw Error('resetting inactive skin changed current skin or variant');
+      manager.drafts['test-skin'].parameters = { accent: '#654321' }; await manager.use('test-skin', true);
       return { button: true, inactiveSkinReset: true, variantPreserved: true };
     });
     win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'BACKSPACE', modifiers: ['control', 'alt', 'shift'] });
     win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'BACKSPACE', modifiers: ['control', 'alt', 'shift'] });
     await until(() => window.themeManager.runtime.prepared.record.skin.tokens['param-accent'] === '#2469d9' && !window.themeManager.previewTimer);
-    assert.equal(await run(() => window.themeManager.current), 'daybreak');
+    assert.equal(await run(() => window.themeManager.current), 'test-skin');
     const deletion = await run(async () => {
-      const manager = window.themeManager; manager.drafts.daybreak.parameters = { 'panel-width': 480 }; await manager.use('daybreak');
+      const manager = window.themeManager; manager.drafts['test-skin'].parameters = { 'panel-width': 480 }; await manager.use('test-skin');
       const confirm = window.confirm; window.confirm = () => true;
-      try { manager.select.value = 'daybreak'; await manager.remove(); } finally { window.confirm = confirm; }
-      if (manager.records.has('daybreak') || manager.options.daybreak || manager.drafts.daybreak || JSON.parse(localStorage.getItem('rpe-next-editor-skin-options-v1')).daybreak) throw Error('deleted skin retained saved appearance or draft');
+      try { manager.select.value = 'test-skin'; await manager.remove(); } finally { window.confirm = confirm; }
+      if (manager.records.has('test-skin') || manager.options['test-skin'] || manager.drafts['test-skin'] || JSON.parse(localStorage.getItem('rpe-next-editor-skin-options-v1'))['test-skin']) throw Error('deleted skin retained saved appearance or draft');
       if (manager.current !== 'default') throw Error('removing active skin did not restore default');
       return true;
     });
-    await run(bytes => { const input = document.querySelector('[aria-label="导入编辑器皮肤包"]'); const transfer = new DataTransfer(); transfer.items.add(new File([new Uint8Array(bytes)], 'daybreak.rpenskin')); input.files = transfer.files; input.dispatchEvent(new Event('change', { bubbles: true })); }, zip);
-    await until(() => window.themeManager.records.has('daybreak'));
+    await run(bytes => { const input = document.querySelector('[aria-label="导入编辑器皮肤包"]'); const transfer = new DataTransfer(); transfer.items.add(new File([new Uint8Array(bytes)], 'test-skin.rpenskin')); input.files = transfer.files; input.dispatchEvent(new Event('change', { bubbles: true })); }, zip);
+    await until(() => window.themeManager.records.has('test-skin'));
     await run(async () => {
-      const manager = window.themeManager; await manager.use('daybreak');
-      if (manager.runtime.prepared.record.skin.tokens['param-panel-width'] !== '350px' || Object.keys(manager.options.daybreak.parameters).length) throw Error('reimport restored deleted parameter values');
+      const manager = window.themeManager; await manager.use('test-skin');
+      if (manager.runtime.prepared.record.skin.tokens['param-panel-width'] !== '350px' || Object.keys(manager.options['test-skin'].parameters).length) throw Error('reimport restored deleted parameter values');
       const options = JSON.parse(localStorage.getItem('rpe-next-editor-skin-options-v1')); options['orphaned-skin'] = { variant: 'base', parameters: { accent: '#654321' } }; localStorage.setItem('rpe-next-editor-skin-options-v1', JSON.stringify(options));
     });
     const defaultUiSnapshot = await run(() => window.defaultUi);
-    await win.reload(); await until(() => document.documentElement.dataset.editorSkin === 'daybreak');
+    await win.reload(); await until(() => document.documentElement.dataset.editorSkin === 'test-skin');
     assert.equal(await run(() => Object.hasOwn(JSON.parse(localStorage.getItem('rpe-next-editor-skin-options-v1')), 'orphaned-skin')), false);
     await run(async defaults => {
       window.defaultUi = defaults;
@@ -227,14 +229,14 @@ app.whenReady().then(async () => {
     assert.equal(await run(() => getComputedStyle(document.documentElement).backgroundColor === window.defaultUi.root), true);
     assert.equal(await run(() => getComputedStyle(document.body).fontFamily === window.defaultUi.font), true);
     assert.equal(await run(() => document.querySelector('#save').hasAttribute('data-ui')), false);
-    await run(async () => { await window.themeManager.use('daybreak', true); });
+    await run(async () => { await window.themeManager.use('test-skin', true); });
     assert.equal(await run(() => getComputedStyle(window.themeManager.recovery).display), 'block');
     await run(() => { window.themeManager.deadline = Date.now() - 1; });
     await until(() => !document.documentElement.dataset.editorSkin); assert.equal(await run(() => window.themeManager.current), 'default');
-    await run(() => window.themeManager.use('daybreak'));
-    await win.reload(); await until(() => document.documentElement.dataset.editorSkin === 'daybreak');
+    await run(() => window.themeManager.use('test-skin'));
+    await win.reload(); await until(() => document.documentElement.dataset.editorSkin === 'test-skin');
     assert.equal(await run(() => getComputedStyle(document.querySelector('rpen-skin-recovery')).display), 'none');
-    // Fresh startup retains Inkline as a builtin; the light sample stays separate.
+    // Fresh startup retains Inkline as the only builtin.
     assert.deepEqual(await run(async () => (await (await fetch('./assets/editor-skins/index.json')).json()).map(entry => entry.directory)), ['inkline']);
     await run(() => document.querySelector('#new').click()); await wait(200);
     for (const [width, height] of [[1000, 680], [600, 800]]) {

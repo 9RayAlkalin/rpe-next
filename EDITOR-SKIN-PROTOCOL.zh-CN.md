@@ -14,7 +14,7 @@
 
 界面的原始功能节点仍由应用拥有，皮肤操作的是这些节点的呈现。`organize` 可以移动列入白名单的命令按钮，其原有事件和禁用状态保留。其他组件可以通过 CSS 的 flex/grid/order 等重排，也可以通过 `hide` 从界面隐藏控件；隐藏后不占位，内部节点继续存在。v1 不允许任意添加 HTML、替换表单、销毁功能节点或将画布重新挂接到另一个父节点。
 
-没有自定义皮肤时直接使用编辑器现有样式，不加载皮肤基础覆盖层。缺省皮肤不是一个导入包，其保留标识为 `default`。本版本另外内置“墨线 Inkline(cmdysj)”，可直接在设置中选择；以下亮色样例仍只作为独立导入包提供。
+没有自定义皮肤时直接使用编辑器现有样式，不加载皮肤基础覆盖层。缺省皮肤不是一个导入包，其保留标识为 `default`。本版本另外内置“墨线 Inkline(cmdysj)”，可直接在设置中选择。
 
 ### 1.1 当前限制概览
 
@@ -466,7 +466,7 @@ Ctrl+Alt+Shift+F12 是独立捕获的恢复快捷键，也可在设置中恢复�
 
 皮肤是个人编辑器偏好，不进入谱面 JSON/PEZ，不发送给联机成员，不修改谱面未保存标记。网页端、桌面端、不同地址/端口的存储独立，清理网站数据也会清理导入的皮肤。
 
-应用维护者若要增加内置皮肤，将同样结构的目录放入 `assets/editor-skins/paper-example/`，再在 `assets/editor-skins/index.json` 中登记 `{ "directory":"paper-example", "files":["skin.json","images/icon.svg"] }`。目录名使用小写英文字母、数字或连字符，files 列出所有包内文件。内置与导入皮肤共用同一解析器和呈现协议，以平级列表显示名称与作者；内置包不接受同 id 的导入覆盖。Daybreak 没有此登记，不能在发布时将它意外加入内置目录。
+应用维护者若要增加内置皮肤，将同样结构的目录放入 `assets/editor-skins/paper-example/`，再在 `assets/editor-skins/index.json` 中登记 `{ "directory":"paper-example", "files":["skin.json","images/icon.svg"] }`。目录名使用小写英文字母、数字或连字符，files 列出所有包内文件。内置与导入皮肤共用同一解析器和呈现协议，以平级列表显示名称与作者；内置包不接受同 id 的导入覆盖。
 
 ## 11. 资源限制与安全边界
 
@@ -490,20 +490,18 @@ CSS 仍有很大的布局自由，错误主题可能遮挡按钮、制造低对�
 
 ## 12. 制作、打包和验收
 
-完整亮色参考在 `examples/editor-skins/daybreak/`，名称 **Daybreak · 晨光**。包括浅蓝灰工作台、蓝色强调、自绘 SVG 图标、命令分组、响应布局、轻量动画和时间轴色板。它没有加入内置目录 `assets/editor-skins/index.json`，也不会因编辑器构建自动打包进网页/桌面运行素材。
+可参考内置皮肤 `assets/editor-skins/inkline/` 的清单、素材引用、命令分组与响应式规则。制作新皮肤时应使用自己的 id，不要覆盖内置标识。
 
 在仓库目录运行：
 
 ```sh
-node tools/pack-editor-skin.mjs
-# 默认生成 release/editor-skins/daybreak.rpenskin
-
 node tools/pack-editor-skin.mjs path/to/my-skin release/editor-skins/my-skin.rpenskin
+# 省略输出文件时，生成 release/editor-skins/<皮肤id>.rpenskin
 ```
 
 打包器进行与导入器相同的纯数据校验；浏览器导入继续验证 CSS 选择器和媒体解码。`node tools/editor-skin-spec.mjs` 从运行时组件/变量定义重新生成 schema 与目录。`npm test` 包含协议解析、安全、打包导入和画布隔离测试。
 
-程序化界面回归可先设置环境变量 `RPE_PORT=4187` 并运行 `node tools/serve.mjs`，再用 `electron tools/test-editor-skin-electron.cjs`。测试使用独立本机数据目录，输出截图到忽略提交的 `.local-tools/`。服务地址可用 `RPE_SKIN_TEST_URL` 指定，测试前先生成 Daybreak 包。
+程序化界面回归可先设置环境变量 `RPE_PORT=4187` 并运行 `node tools/serve.mjs`，再用 `electron tools/test-editor-skin-electron.cjs`。测试使用最小合成测试数据和独立本机数据目录，不依赖额外主题包，输出截图到忽略提交的 `.local-tools/`。服务地址可用 `RPE_SKIN_TEST_URL` 指定。
 
 建议人类或 AI agent 按以下顺序制作：
 
@@ -546,7 +544,7 @@ node tools/pack-editor-skin.mjs path/to/my-skin release/editor-skins/my-skin.rpe
 }
 ```
 
-样式的作用域优先级仍高于许多旧应用规则，协议不会自动猜测作者要保留哪些响应式样式。自己覆盖了 padding、字号等布局属性后，应像 Daybreak 一样补充相应容器规则；系统明暗可用此处的 media 规则，也可用下节的成对变体，但不要同时写互相冲突的两套配色。inspector-width 是工作台父容器使用的值，要在 @root 或 @workspace 上覆盖，在 @inspector 内定义不会反向影响父容器宽度。
+样式的作用域优先级仍高于许多旧应用规则，协议不会自动猜测作者要保留哪些响应式样式。自己覆盖了 padding、字号等布局属性后，应补充相应容器规则；系统明暗可用此处的 media 规则，也可用下节的成对变体，但不要同时写互相冲突的两套配色。inspector-width 是工作台父容器使用的值，要在 @root 或 @workspace 上覆盖，在 @inspector 内定义不会反向影响父容器宽度。
 
 ### 13.2 可调参数与同包变体
 

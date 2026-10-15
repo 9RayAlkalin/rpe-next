@@ -6,24 +6,18 @@ import { EDITOR_SKIN_DEFAULT_TOKENS } from '../src/ui/editor-skin-base.mjs';
 import { importEditorSkin, exportEditorSkin, builtinEditorSkins } from '../src/platform/editor-skins.mjs';
 import { editorSkinContext, setEditorCanvasSkin } from '../src/ui/editor-skin-canvas.mjs';
 import { readZip, writeZip } from '../src/platform/archive.mjs';
+import { editorSkinFixture } from './fixtures/editor-skin.mjs';
 
 const encode = value => new TextEncoder().encode(typeof value === 'string' ? value : JSON.stringify(value));
 const manifest = () => ({ protocol: 'rpen-editor-skin', version: 1, id: 'example', name: '测试皮肤' });
 const record = (skin, extra = []) => parseEditorSkin(new Map([['skin.json', encode(skin)], ...extra]));
-async function daybreak() {
-  const base = new URL('../examples/editor-skins/daybreak/', import.meta.url);
-  const source = new Uint8Array(await readFile(new URL('skin.json', base)));
-  const skin = JSON.parse(new TextDecoder().decode(source));
-  return parseEditorSkin(new Map([['skin.json', source], ...await Promise.all(Object.values(skin.assets).map(async asset => [asset.path, new Uint8Array(await readFile(new URL(asset.path, base)))]))]));
-}
-
-test('完整亮色样例可打包、导入并往返导出，且不在内置列表中', async () => {
-  const original = await daybreak();
+test('协议测试数据可打包、导入并往返导出', async () => {
+  const original = editorSkinFixture();
   const archive = exportEditorSkin(original);
-  const imported = await importEditorSkin([new File([archive], 'daybreak.rpenskin')]);
+  const imported = await importEditorSkin([new File([archive], 'test-skin.rpenskin')]);
   assert.deepEqual(imported.skin, original.skin);
   assert.deepEqual(imported.files, original.files);
-  const directory = await importEditorSkin([...original.files].map(([path, bytes]) => ({ name: path.split('/').at(-1), webkitRelativePath: 'Daybreak/' + path, size: bytes.length, arrayBuffer: async () => bytes.buffer })), true);
+  const directory = await importEditorSkin([...original.files].map(([path, bytes]) => ({ name: path.split('/').at(-1), webkitRelativePath: 'Fixture/' + path, size: bytes.length, arrayBuffer: async () => bytes.buffer })), true);
   assert.deepEqual(directory.files, original.files);
   assert.ok(!JSON.parse(await readFile(new URL('../assets/editor-skins/index.json', import.meta.url))).some(entry => entry.directory === original.skin.id));
 });

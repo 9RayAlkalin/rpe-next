@@ -12,6 +12,7 @@ import { SPECIAL_TRACKS, eventChains, simultaneousNotes, strokeIntersects } from
 import { captureSelection, editCapturedSelection, commitSelectionEdit } from '../application/batch-edit.mjs';
 import { lineDisplayLabel } from '../core/line-groups.mjs';
 import { trajectoryEventValue } from '../core/curve-trajectory.mjs';
+import { editorSkinContext } from './editor-skin-canvas.mjs';
 
 export const NOTE_COLORS = { 1: '#8acbff', 2: '#8acbff', 3: '#f596ac', 4: '#f1ce76' };
 const isHookedEvent = event => event?.inst === true || Number(event?.inst) === 1;
@@ -27,7 +28,7 @@ export function prepareCanvas(canvas) {
   const context = canvas.getContext('2d');
   context.setTransform(ratio, 0, 0, ratio, 0, 0);
   context.clearRect(0, 0, rectangle.width, rectangle.height);
-  return { context, width: rectangle.width, height: rectangle.height };
+  return { context: editorSkinContext(context), width: rectangle.width, height: rectangle.height };
 }
 
 export class Timeline {
@@ -703,7 +704,7 @@ export class Timeline {
   }
 
   drawMultiLineEvents(playBeat) {
-    const session = this.getSession(); const context = this.eventsCanvas.getContext('2d'); const width = this.eventsCanvas.clientWidth; const height = this.eventsCanvas.clientHeight;
+    const session = this.getSession(); const context = editorSkinContext(this.eventsCanvas.getContext('2d')); const width = this.eventsCanvas.clientWidth; const height = this.eventsCanvas.clientHeight;
     this.eventRects = [];
     const baseValueFontSize = this.eventValueFontSize ?? 13;
     for (const lineIndex of session.targetLineIndices) {

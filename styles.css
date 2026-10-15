@@ -646,3 +646,12 @@ footer > button, footer #performance, footer > span:last-child { flex-shrink: 0;
   .noise-fit-footer > button { padding-block: 5px; }
   .noise-fit-source { height: 120px; }
 }
+.editor-skin-actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 20px; }
+#editor-skin-settings { padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+#editor-skin-settings .hint { margin: 8px 20px; }
+.skin-control-group { display: flex; flex-direction: row; align-items: center; flex-wrap: wrap; gap: var(--rpen-gap, 6px); }
+.skin-control-group[data-direction="column"] { flex-direction: column; }
+details.skin-control-group { display: block; }
+.skin-group-label { font-size: 11px; color: var(--muted); }
+.skin-decoration { display: block; object-fit: contain; max-width: 100%; }
+.editor-skin-preview { display: block; width: calc(100% - 40px); max-height: 180px; object-fit: contain; margin: 12px 20px; }

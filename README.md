@@ -4,7 +4,7 @@
 
 [在线使用](https://kclg-ysj.github.io/rpe-next/) · [源码](https://github.com/kclg-YSJ/rpe-next)
 
-当前版本：**0.10.3**。
+当前版本：**0.11.0**。
 
 基于 Canvas、Web Audio、WebGL 和 IndexedDB，支持音符与事件编辑、实时预览、着色器、多谱面管理、原 RPE 谱面导入、热键及设置迁移。当前仍在持续完善，尚不保证与原 RPE 完全一致；建议保留原始谱面与资源备份。
 
@@ -90,6 +90,10 @@ npm run build:desktop
 服务器维护工具与编辑器桌面包分开构建：`npm ci --prefix collaboration-server`、`npm run build:collaboration-server`。仅输出到本地 `release/`，网页构建不会封装桌面程序。
 
 ## 开发与验证
+
+编辑器支持在“设置 → 编辑器皮肤”中导入、预览和切换独立皮肤包，涵盖界面样式、字体、图片、动画、命令分组和编辑画布色板。当前 API 3 保留响应式变量、容器规则、状态信号、分区画布、可调参数和同包明暗变体，并允许画布色板引用颜色参数，与界面配色一同调整。参见 [编辑器皮肤协议 v1](EDITOR-SKIN-PROTOCOL.zh-CN.md) 和 [机器可读组件目录](schemas/editor-skin-components.v1.json)。亮色样例源码位于 `examples/editor-skins/daybreak/`，运行 `node tools/pack-editor-skin.mjs` 可生成独立导入包；该样例不作为内置皮肤。
+
+内置“墨线 Inkline(cmdysj)”可在设置中直接选用，支持修改及恢复原始参数。默认皮肤仍保留；Inkline 的名称、作者、字体声明与素材均来自其皮肤包。
 
 ```sh
 npm test

@@ -63,6 +63,9 @@ import { NoiseFitPanel } from './noise-fit.mjs';
 import { CollaborationPanel } from './collaboration.mjs';
 import { NoiseAreaEditor } from './noise-area.mjs';
 import { EventSampler } from './event-sampler.mjs';
+import { EditorSkins } from './editor-skins.mjs';
+import { editorSkinContext, editorCanvasRevision } from './editor-skin-canvas.mjs';
+import { editorSkinState, editorSkinSignal } from './editor-skin-state.mjs';
 import { pcmWave } from '../platform/pcm-wave.mjs';
 
 const element = selector => document.querySelector(selector);
@@ -210,6 +213,11 @@ const textLinesPanel = new TextLinesPanel(element('#text-lines-editor'), () => (
 const noiseFitPanel = new NoiseFitPanel(element('#noise-fit-editor'), element('.stage'), () => ({ session, tempo, timeline, previewVisible: preview.visible, seconds: () => chartSeconds() }), { invalidate, notify, activate: activatePane, pause: () => playback.pause() });
 const multiLinePanel = new MultiLinePanel(element('#multi-line-editor'), () => session, { timeline, render: renderSession, notify, persist: persistEditor });
 const linePanel = new LinePanel(element('#line-panel'), () => session, { render: renderSession, notify, getAssets: () => assets, afterTexture: () => images.load(session.chart, assets, chartName) });
+const editorSkins = new EditorSkins(element('#editor-skin-settings'), { invalidate, notify });
+document.addEventListener('rpen-editor-skin-changed', () => {
+  lineSwitcher.lastFrame = -Infinity; lineSwitcher.cache.clear(); renderSession();
+  if (activePaneName === 'clipboard') renderClipboardPanel();
+});
 const assetLibrary = new AssetLibraryPanel(element('#asset-library'), () => ({ assets, folders: assetFolders, chart: session.chart, chartName }), {
   notify,
   onChange: (nextAssets, nextFolders) => {
@@ -250,10 +258,10 @@ const pasteGesture = new PasteGesture({
 window.addEventListener('blur', () => pasteGesture.cancel());
 document.addEventListener('focusin', event => { if (isTextEntry(event.target)) pasteGesture.cancel(); });
 let stripCache;
-function createStripCanvas(width, height) {
+function createStripCanvas(width, height, role) {
   const canvas = document.createElement('canvas'); const ratio = globalThis.devicePixelRatio || 1;
   canvas.width = Math.max(1, Math.round(width * ratio)); canvas.height = Math.max(1, Math.round(height * ratio));
-  const context = canvas.getContext('2d'); context.setTransform(ratio, 0, 0, ratio, 0, 0); context.clearRect(0, 0, width, height);
+  const context = editorSkinContext(canvas.getContext('2d'), role); context.setTransform(ratio, 0, 0, ratio, 0, 0); context.clearRect(0, 0, width, height);
   return { canvas, context, width, height };
 }
 function drawTimelineStrips() {
@@ -263,9 +271,9 @@ function drawTimelineStrips() {
   const duration = Math.max(0.001, audio.duration > 0 ? audio.duration : timelineActivity.duration);
   const historyEntries = session.recentEdits ?? [];
   const historySignature = `${historyEntries.length}:${historyEntries.at(-1)?.start ?? ''}:${historyEntries.at(-1)?.end ?? ''}:${historyEntries.at(-1)?.label ?? ''}`;
-  const key = { chart: session.chart, line: session.lineIndex, layer: timeline.layer, extended: timeline.extended, duration, width, historyWidth: historyCanvas.clientWidth, height, historySignature };
+  const key = { chart: session.chart, line: session.lineIndex, layer: timeline.layer, extended: timeline.extended, duration, width, historyWidth: historyCanvas.clientWidth, height, historySignature, skinRevision: editorCanvasRevision() };
   if (!stripCache || Object.keys(key).some(name => stripCache[name] !== key[name])) {
-    const noteFrame = createStripCanvas(width, height); const historyFrame = createStripCanvas(historyCanvas.clientWidth, height);
+    const noteFrame = createStripCanvas(width, height, 'density'); const historyFrame = createStripCanvas(historyCanvas.clientWidth, height, 'history');
     const { bins, noteBins, eventBins, maximum } = timelineActivity.density(session.lineIndex, timeline.layer, timeline.extended, duration, height);
     const logarithm = Math.log1p(maximum); const half = Math.max(1, width / 2 - 2);
     for (let index = 0; index < bins; index++) {
@@ -285,8 +293,8 @@ function drawTimelineStrips() {
     stripCache = { ...key, note: noteFrame.canvas, history: historyFrame.canvas };
   }
   const noteFrame = prepareCanvas(densityCanvas); const historyFrame = prepareCanvas(historyCanvas);
-  noteFrame.context.drawImage(stripCache.note, 0, 0, width, height);
-  historyFrame.context.drawImage(stripCache.history, 0, 0, historyCanvas.clientWidth, height);
+  densityCanvas.getContext('2d').drawImage(stripCache.note, 0, 0, width, height);
+  historyCanvas.getContext('2d').drawImage(stripCache.history, 0, 0, historyCanvas.clientWidth, height);
   const markerY = height - Math.max(0, Math.min(duration, chartSeconds())) / duration * height;
   for (const frame of [noteFrame, historyFrame]) { frame.context.strokeStyle = '#f5e59a'; frame.context.lineWidth = 1; frame.context.beginPath(); frame.context.moveTo(0, markerY + .5); frame.context.lineTo(frame.width, markerY + .5); frame.context.stroke(); }
 }
@@ -334,6 +342,7 @@ document.fonts.load('35px RPEGame').then(invalidate);
 const status = message => { element('#status').textContent = message; };
 const notificationTimers = new Set();
 function notify(message, level = 'success', duration = 2800) {
+  if (['error', 'warning'].includes(level)) editorSkinSignal(level);
   if (level === 'success' && editorPreferences.successNotifications === false) return;
   const host = element('#notifications'); if (!host) return;
   const item = document.createElement('div'); item.className = `editor-notification ${level}`; item.textContent = message; host.append(item);
@@ -579,6 +588,7 @@ function activatePane(name) {
   if (name !== 'text-lines') textLinesPanel.hide();
   if (name !== 'noise-fit') noiseFitPanel.hide();
   activePaneName = name;
+  editorSkinState({ pane: name });
   noiseEditor.syncChrome();
   for (const panel of document.querySelectorAll('[data-panel]')) panel.hidden = panel.dataset.panel !== name;
   for (const button of document.querySelectorAll('[data-pane]')) button.classList.toggle('active', button.dataset.pane === name);
@@ -701,6 +711,7 @@ function updateLineInfo() {
 }
 
 function renderSession() {
+  editorSkinState({ dirty: session.history.dirty || assetDirty, location: atHome ? 'home' : 'editor', mode: noiseEditor.active ? 'noise' : session.multiLineActive ? 'multi-' + session.multiLineMode : timeline.notesOnly ? 'notes' : 'notes-events' });
   const editor = element('.editor');
   noiseEditor.syncChrome();
   editor.classList.toggle('multi-notes', session.multiLineActive && session.multiLineMode === 'notes');
@@ -948,6 +959,7 @@ async function togglePlayback() {
 
 function save() {
   noiseEditor.flush();
+  editorSkinSignal('save-started');
   const savingSession = session;
   return manualSaves.save(savingSession, () => {
     const document = session.chart; const snapshot = { ...document }; delete snapshot.chartTime;
@@ -963,8 +975,8 @@ function save() {
       || assetFolders.size !== project.assetFolders.length || project.assetFolders.some(folder => !assetFolders.has(folder));
     renderSession();
     const message = session.history.dirty || assetDirty ? '已保存开始保存时的版本；后续修改尚未保存' : '已保存到谱面库';
-    status(message); notify(message, 'success');
-  });
+    status(message); notify(message, 'success'); editorSkinSignal('save-succeeded');
+  }).catch(error => { editorSkinSignal('save-failed'); throw error; });
 }
 
 function validateCommit(label, next) { assertChart(next); session.commit(label, next); }
@@ -1568,6 +1580,9 @@ function frame(timestamp) {
     eventSampler.draw();
     element('#play').textContent = audio.playing ? 'Ⅱ 暂停' : '▶ 播放';
     element('#play').dataset.playing = String(audio.playing);
+    const skinBeat = Math.floor(beat);
+    if (audio.playing && document.documentElement.dataset.rpenBeat !== String(skinBeat)) editorSkinSignal('beat');
+    editorSkinState({ playing: audio.playing, beat: skinBeat, dirty: session.history.dirty || assetDirty, location: atHome ? 'home' : preview.visible ? 'preview' : 'editor' });
     element('#play').title = audio.playing ? '暂停' : '播放';
     element('#clock').textContent = `${chartSeconds().toFixed(3)} s`;
     element('#scrubber').value = audio.time;

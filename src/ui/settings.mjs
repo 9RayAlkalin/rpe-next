@@ -2,11 +2,13 @@ export function createSettingsPanel() {
   const dialog = document.createElement('dialog'); dialog.id = 'settings-modal';
   const title = document.createElement('h2'); title.textContent = '设置'; dialog.append(title);
   const body = document.createElement('div'); body.className = 'settings-body'; dialog.append(body);
+  const skins = document.createElement('section'); skins.id = 'editor-skin-settings'; body.append(skins);
   const group = (heading, fields) => {
     const section = document.createElement('section'); const title = document.createElement('h3'); title.textContent = heading; section.append(title);
     for (const [id, text, type, value, minimum, maximum, step] of fields) {
       const label = document.createElement('label'); label.className = 'field'; label.append(text);
       const input = document.createElement('input'); input.id = id; input.type = type; input.setAttribute('aria-label', text);
+      input.dataset.rpenField = id; label.dataset.rpenField = id;
       if (type === 'checkbox') input.checked = value; else input.value = value;
       if (minimum !== undefined) input.min = minimum; if (maximum !== undefined) input.max = maximum; if (step !== undefined) input.step = step;
       label.append(input); section.append(label);

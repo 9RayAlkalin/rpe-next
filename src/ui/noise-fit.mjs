@@ -6,6 +6,7 @@ import { fittedNoiseAreas, noiseFitChart } from '../application/noise-fit.mjs';
 import { beatInputControl } from './beat-input.mjs';
 import { createEasingPicker, EASING_NAMES } from './easing-picker.mjs';
 import { prepareCanvas } from './timeline.mjs';
+import { editorSkinContext } from './editor-skin-canvas.mjs';
 
 const button = (text, run) => { const element = document.createElement('button'); element.type = 'button'; element.textContent = text; element.onclick = run; return element; };
 const limited = (value, low, high) => Math.max(low, Math.min(high, value));
@@ -268,7 +269,7 @@ export class NoiseFitPanel {
   }
 
   drawSource() {
-    const context = this.sourceCanvas.getContext('2d'); context.fillStyle = '#191e27'; context.fillRect(0, 0, 480, 180);
+    const context = editorSkinContext(this.sourceCanvas.getContext('2d')); context.fillStyle = '#191e27'; context.fillRect(0, 0, 480, 180);
     if (!this.fit) return; const scale = Math.min(456 / this.fit.width, 156 / this.fit.height);
     const left = (480 - this.fit.width * scale) / 2; const top = (180 - this.fit.height * scale) / 2;
     for (const rectangle of this.fit.rectangles) {

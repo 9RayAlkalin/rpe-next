@@ -10,6 +10,7 @@ import { EVENT_WHEEL_STEPS } from '../core/note-editing.mjs';
 import { renderShaderInspector } from './shader-inspector.mjs';
 import { canCutEvent } from '../application/event-tools.mjs';
 import { runEventTool } from './event-tools.mjs';
+import { editorSkinContext } from './editor-skin-canvas.mjs';
 export { EASING_NAMES } from './easing-picker.mjs';
 const galleryState = { open: false };
 
@@ -101,6 +102,7 @@ export function renderEventInspector(session, tempo, currentBeat, reportError, n
   for (const [key, title, kind] of fields) {
     const label = document.createElement('label'); label.className = 'field'; label.append(title);
     const input = document.createElement('input'); input.type = kind === 'number' ? 'number' : 'text'; input.step = 'any'; input.setAttribute('aria-label', `事件${title}`);
+    input.dataset.rpenField = key; label.dataset.rpenField = key;
     if (key === 'easingLeft' || key === 'easingRight') { input.min = 0; input.max = 1; }
     if (eventType === 'alphaEvents' && (key === 'start' || key === 'end')) { input.min = 0; input.max = 255; }
     if (eventType === 'speedEvents' && (key === 'start' || key === 'end')) { input.min = -20; input.max = 20; }
@@ -154,7 +156,7 @@ export function renderEventInspector(session, tempo, currentBeat, reportError, n
   label.append(select); container.append(label);
   container.append(createEasingPicker(event.easingType ?? 1, value => safely(() => applyEventTransform(session, '修改缓动', current => ({ ...current, easingType: value, bezier: 0 }))), galleryState).element);
   const curve = document.createElement('canvas'); curve.width = 260; curve.height = 100; curve.className = 'easing-preview'; curve.setAttribute('aria-label', '缓动曲线预览');
-  const context = curve.getContext('2d'); context.strokeStyle = '#ffd76a'; context.lineWidth = 2; context.beginPath();
+  const context = editorSkinContext(curve.getContext('2d'), 'easing'); context.strokeStyle = '#ffd76a'; context.lineWidth = 2; context.beginPath();
   for (let index = 0; index <= 100; index++) {
     const progress = index / 100;
     const value = event.bezier ? bezier(progress, event.bezierPoints) : easing(progress, event.easingType, event.easingLeft ?? 0, event.easingRight ?? 1);
@@ -175,7 +177,7 @@ export function renderEventInspector(session, tempo, currentBeat, reportError, n
     container.append(points);
     const dragCanvas = document.createElement('canvas'); dragCanvas.width = 260; dragCanvas.height = 100; dragCanvas.className = 'easing-preview bezier-editor';
     let draftPoints = [...bezierPoints]; let dragPoint = null; let dragChanged = false;
-    const drawBezier = () => { const draw = dragCanvas.getContext('2d'); draw.clearRect(0, 0, 260, 100); draw.strokeStyle = '#65748a'; draw.setLineDash([3, 3]); draw.beginPath(); draw.moveTo(10, 80); draw.lineTo(10 + draftPoints[0] * 240, 80 - draftPoints[1] * 60); draw.moveTo(250, 20); draw.lineTo(10 + draftPoints[2] * 240, 80 - draftPoints[3] * 60); draw.stroke(); draw.setLineDash([]); draw.strokeStyle = '#ffd76a'; draw.lineWidth = 2; draw.beginPath(); for (let index = 0; index <= 100; index++) { const progress = index / 100; const value = bezier(progress, draftPoints); const x = 10 + progress * 240; const y = 80 - value * 60; index ? draw.lineTo(x, y) : draw.moveTo(x, y); } draw.stroke(); draw.fillStyle = '#fff2a8'; for (const point of [[draftPoints[0], draftPoints[1]], [draftPoints[2], draftPoints[3]]]) { draw.beginPath(); draw.arc(10 + point[0] * 240, 80 - point[1] * 60, 5, 0, Math.PI * 2); draw.fill(); } };
+    const drawBezier = () => { const draw = editorSkinContext(dragCanvas.getContext('2d'), 'bezier'); draw.clearRect(0, 0, 260, 100); draw.strokeStyle = '#65748a'; draw.setLineDash([3, 3]); draw.beginPath(); draw.moveTo(10, 80); draw.lineTo(10 + draftPoints[0] * 240, 80 - draftPoints[1] * 60); draw.moveTo(250, 20); draw.lineTo(10 + draftPoints[2] * 240, 80 - draftPoints[3] * 60); draw.stroke(); draw.setLineDash([]); draw.strokeStyle = '#ffd76a'; draw.lineWidth = 2; draw.beginPath(); for (let index = 0; index <= 100; index++) { const progress = index / 100; const value = bezier(progress, draftPoints); const x = 10 + progress * 240; const y = 80 - value * 60; index ? draw.lineTo(x, y) : draw.moveTo(x, y); } draw.stroke(); draw.fillStyle = '#fff2a8'; for (const point of [[draftPoints[0], draftPoints[1]], [draftPoints[2], draftPoints[3]]]) { draw.beginPath(); draw.arc(10 + point[0] * 240, 80 - point[1] * 60, 5, 0, Math.PI * 2); draw.fill(); } };
     drawBezier();
     const commitBezier = () => { if (!dragChanged) return; const committed = [...draftPoints]; safely(() => applyEventTransform(session, '拖动 Bezier 控制点', current => ({ ...current, bezierPoints: committed }))); dragChanged = false; };
     const canvasPoint = pointer => {

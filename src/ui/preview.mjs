@@ -10,6 +10,7 @@ import { ShaderRuntime } from '../core/shader.mjs';
 import { ShaderPipeline } from './shader-pipeline.mjs';
 import { PreviewBackground, textureInViewport } from './preview-background.mjs';
 import { NoisePreview } from './noise-preview.mjs';
+import { noiseLayers } from '../core/noise-skin.mjs';
 
 const clamp = value => Math.max(0, Math.min(1, value));
 
@@ -42,7 +43,9 @@ export class Preview {
     const divisor = this.viewDivisor ?? 1;
     const scale = viewport.scale / divisor;
     context.save(); context.beginPath(); context.rect(viewport.left, viewport.top, viewport.width, viewport.height); context.clip();
-    if (this.applyShaders) { context.fillStyle = '#111'; context.fillRect(viewport.left, viewport.top, viewport.width, viewport.height); }
+    const skinScene = noiseLayers(chart).some(layer => this.noisePreview.usesSkin(layer));
+    // Screen-sampling skins preserve scene alpha, so supply the same opaque base as shaders.
+    if (this.applyShaders || skinScene) { context.fillStyle = '#111'; context.fillRect(viewport.left, viewport.top, viewport.width, viewport.height); }
     let background = this.images?.background;
     if (background && this.images.texture) background = this.images.texture(this.images.backgroundName, Math.max(1350 / background.naturalWidth, 900 / background.naturalHeight) * scale * (devicePixelRatio || 1)) ?? background;
     if (background) {
@@ -51,7 +54,6 @@ export class Preview {
       context.globalAlpha = 1;
     } else this.backgroundFrame.clear();
     const states = this.scene.sample(seconds);
-    this.noisePreview.draw(context, chart, tempo, seconds, width, height, scale, this.selectedNoiseArea);
     const order = this.allLines ? this.scene.order : [selectedLine];
     this.viewport = viewport; this.selectedLine = selectedLine;
     this.guides = lineGuides(states, chart.judgeLineList, order, width, height, scale);
@@ -136,32 +138,24 @@ export class Preview {
       }
     }
     const shaderEffects = this.applyShaders ? this.shaderRuntime.active(seconds) : [];
-    const globalShader = shaderEffects.some(effect => effect.global);
-    if (!shaderEffects.length && this.showGameUI) drawGameUi(context, chart, states, this.completionTimes, seconds, selectedLine, viewport, scale, this.skin, this.duration ?? 600);
-    if (!shaderEffects.length) this.drawGuides(context, scale, selectedLine);
-    if (globalShader) {
-      if (this.showGameUI) drawGameUi(context, chart, states, this.completionTimes, seconds, selectedLine, viewport, scale, this.skin, this.duration ?? 600);
-      this.drawGuides(context, scale, selectedLine);
+    const localEffects = shaderEffects.filter(effect => !effect.global);
+    const globalEffects = shaderEffects.filter(effect => effect.global);
+    const renderShaders = effects => effects.length > 0 && this.shaderPipeline.render(this.canvas, this.shaderCanvas, effects, seconds, effect => this.shaderRuntime.source(effect.shader, effect.sourceName), viewport);
+    // Scene → local effects → game UI → noise layers → global effects.
+    if (renderShaders(localEffects)) {
+      context.clearRect(viewport.left, viewport.top, viewport.width, viewport.height);
+      context.drawImage(this.shaderCanvas, 0, 0, width, height);
     }
+    if (this.showGameUI) drawGameUi(context, chart, states, this.completionTimes, seconds, selectedLine, viewport, scale, this.skin, this.duration ?? 600);
+    this.drawGuides(context, scale, selectedLine);
+    this.noisePreview.draw(context, chart, tempo, seconds, width, height, scale, this.selectedNoiseArea, viewport);
+    this.noisePreview.drawGuides(context, scale, this.selectedNoiseArea, this.lineNumbers);
     context.restore();
-    let shaderRendered = false;
-    if (shaderEffects.length) {
-      shaderRendered = this.shaderPipeline.render(this.canvas, this.shaderCanvas, shaderEffects, seconds, effect => this.shaderRuntime.source(effect.shader, effect.sourceName), viewport);
-      if (this.shaderCanvas) this.shaderCanvas.style.visibility = shaderRendered ? 'visible' : 'hidden';
-    } else if (this.shaderCanvas) this.shaderCanvas.style.visibility = 'hidden';
+    const shaderRendered = renderShaders(globalEffects);
+    if (this.shaderCanvas) this.shaderCanvas.style.visibility = shaderRendered ? 'visible' : 'hidden';
+    if (this.overlayCanvas) this.overlayCanvas.style.visibility = 'hidden';
     if (this.canvas.style) this.canvas.style.opacity = shaderRendered ? '0' : String(clamp(this.opacity));
     for (const layer of [this.shaderCanvas, this.overlayCanvas]) if (layer) layer.style.opacity = String(clamp(this.opacity));
-    if (!shaderRendered && shaderEffects.length && !globalShader) {
-      context.save(); context.beginPath(); context.rect(viewport.left, viewport.top, viewport.width, viewport.height); context.clip();
-      if (this.showGameUI) drawGameUi(context, chart, states, this.completionTimes, seconds, selectedLine, viewport, scale, this.skin, this.duration ?? 600);
-      this.drawGuides(context, scale, selectedLine); context.restore();
-    }
-    if (shaderRendered && !globalShader && this.overlayCanvas) {
-      const overlay = prepareCanvas(this.overlayCanvas); const overlayContext = overlay.context; overlayContext.clearRect(0, 0, overlay.width, overlay.height);
-      if (this.showGameUI) drawGameUi(overlayContext, chart, states, this.completionTimes, seconds, selectedLine, viewport, scale, this.skin, this.duration ?? 600);
-      this.drawGuides(overlayContext, scale, selectedLine);
-      this.overlayCanvas.style.visibility = 'visible';
-    } else if (this.overlayCanvas) this.overlayCanvas.style.visibility = 'hidden';
     this.images?.trim?.();
   }
 
@@ -197,7 +191,6 @@ export class Preview {
   }
 
   drawGuides(context, scale, selectedLine) {
-    this.noisePreview.drawGuides(context, scale, this.selectedNoiseArea, this.lineNumbers);
     if (!this.lineNumbers && !this.lineArrows) return;
     for (const group of mergeGuides(this.guides, scale, this.mergeLineNumbers)) {
       context.save(); context.translate(group.x, group.y); context.rotate(group.rotation * Math.PI / 180);

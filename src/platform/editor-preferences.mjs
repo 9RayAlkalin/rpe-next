@@ -12,7 +12,7 @@ export function normalizeEditorPreferences(value) {
   if (typeof value.judgementColor === 'string' && /^#[0-9a-f]{6}$/i.test(value.judgementColor)) result.judgementColor = value.judgementColor.toLowerCase();
   for (const [key, [minimum, maximum]] of Object.entries(ranges)) if (Number.isFinite(value[key])) result[key] = Math.max(minimum, Math.min(maximum, value[key]));
   if (result.division) result.division = Math.round(result.division);
-  for (const key of flags) if (typeof value[key] === 'boolean') result[key] = value[key];
+  for (const key of [...flags, 'forceSimpleNoise']) if (typeof value[key] === 'boolean') result[key] = value[key];
   if (['compact', 'icons', 'wide'].includes(value.toolbarMode)) result.toolbarMode = value.toolbarMode;
   if (value.analysisMode === 'waveform' || value.analysisMode === 'spectrum') result.analysisMode = value.analysisMode;
   return result;

@@ -5,6 +5,8 @@ import { previewViewport, strokeIntersects } from '../core/editor-display.mjs';
 import { prepareCanvas } from './timeline.mjs';
 import { createEasingPicker, EASING_NAMES } from './easing-picker.mjs';
 import { NoiseAreaList } from './noise-list.mjs';
+import { NoiseLayerPanel } from './noise-layer-panel.mjs';
+import { noiseLayers, noiseLayerId } from '../core/noise-skin.mjs';
 
 function button(text, title, run) {
   const control = document.createElement('button'); control.type = 'button'; control.textContent = text; control.title = title; control.onclick = run; return control;
@@ -22,8 +24,9 @@ export class NoiseAreaEditor {
     Object.assign(this, options); this.host = host; this.canvas = canvas; this.getContext = getContext;
     this.properties = document.querySelector('#noise-properties'); this.active = false; this.selected = -1; this.selection = new Set();
     this.event = null; this.cursor = null; this.rects = []; this.clipboard = null; this.pending = null; this.draftChart = null; this.easingState = { open: false };
-    this.distributions = new WeakMap();
+    this.distributions = new WeakMap(); this.hiddenLayers = new Set(); this.simpleLayers = new Set();
     this.areaList = new NoiseAreaList(index => this.select(index));
+    this.layerPanel = new NoiseLayerPanel(this);
     this.overlay = document.createElement('canvas'); this.overlay.className = 'noise-sampler'; this.overlay.hidden = true; canvas.closest('.stage').append(this.overlay);
     this.sampleBar = document.createElement('div'); this.sampleBar.className = 'noise-sample-bar'; this.sampleBar.hidden = true;
     this.sampleBar.append(hint('拖动绿色控制点 · 可连续取样，完成统一应用 · Esc 全部取消'), button('完成取样', '保留全部取样结果并返回时间轴', () => this.endSample(true)), button('取消', '放弃全部取样修改', () => this.endSample(false))); canvas.closest('.stage').append(this.sampleBar);
@@ -43,7 +46,7 @@ export class NoiseAreaEditor {
   area() { return this.areas()[this.selected]; }
   open() { this.active = true; this.context.timeline.origin = this.context.tempo.beat(this.context.seconds()); this.syncChrome(); this.activate('noise'); this.render(); this.invalidate(); }
   close() { this.flush(); this.cancelGesture(); this.endSample(false); this.active = false; this.context.timeline.origin = this.context.tempo.beat(this.context.seconds(), this.context.session.line?.bpmfactor ?? 1); this.syncChrome(); this.activate('chart'); this.invalidate(); }
-  reset() { this.cancelGesture(); this.endSample(false); this.active = false; this.selected = -1; this.selection.clear(); this.event = null; this.pending = null; this.areaList.reset(); this.syncChrome(); }
+  reset() { this.cancelGesture(); this.endSample(false); this.active = false; this.selected = -1; this.selection.clear(); this.event = null; this.pending = null; this.hiddenLayers.clear(); this.simpleLayers.clear(); this.areaList.reset(); this.syncChrome(); }
   syncChrome() {
     document.querySelector('.editor').classList.toggle('noise-mode', this.active);
     this.canvas.hidden = !this.active || this.context.previewVisible || Boolean(this.sampleMode);
@@ -103,7 +106,7 @@ export class NoiseAreaEditor {
     this.activate('noise-properties'); this.render(); this.invalidate();
   }
   add(start, end, horizontal) {
-    const areas = [...this.areas(), { ...createNoiseArea(start, end), editorPositionX: this.editorX(horizontal) }]; const index = areas.length - 1;
+    const areas = [...this.areas(), { ...createNoiseArea(start, end), layerId: noiseLayers(this.chart)[0].id, editorPositionX: this.editorX(horizontal) }]; const index = areas.length - 1;
     if (this.commitAreas('添加噪域', areas)) this.select(index);
   }
   addEvent(type, start, end, hooked = false) {
@@ -139,7 +142,10 @@ export class NoiseAreaEditor {
     const firstArea = this.clipboard.entries.find(entry => entry.type === 'area');
     const deltaX = firstArea && this.cursor?.side === 'areas' ? this.editorX(this.cursor.x) - firstArea.value.editorPositionX : 0;
     for (const entry of this.clipboard.entries) {
-      if (entry.type === 'area') areas.push({ ...shiftNoiseArea(entry.value, delta), editorPositionX: Math.max(-675, Math.min(675, entry.value.editorPositionX + deltaX)) });
+      if (entry.type === 'area') {
+        const sourceLayer = noiseLayerId(entry.value); const layers = noiseLayers(this.chart);
+        areas.push({ ...shiftNoiseArea(entry.value, delta), layerId: layers.some(layer=>layer.id===sourceLayer) ? sourceLayer : layers[0].id, editorPositionX: Math.max(-675, Math.min(675, entry.value.editorPositionX + deltaX)) });
+      }
       else {
         if (!areas[this.selected]) throw new Error('请先选择接收事件的噪域');
         const area = areas[this.selected]; const value = { ...structuredClone(entry.value), startTime: fromNumber(beatValue(entry.value.startTime) + delta), endTime: fromNumber(beatValue(entry.value.endTime) + delta) };
@@ -161,7 +167,7 @@ export class NoiseAreaEditor {
         try { this.commitAreas('粘贴噪域对象', this.pastedAreas(this.cursor?.beat ?? this.context.timeline.origin, action.startsWith('KeepTime'))); } catch (error) { this.report(error); }
       }
     } else if (action === 'SelectAll') {
-      this.selection = new Set(this.cursor?.side === 'events' && this.area() ? NOISE_TRACKS.flatMap(([type]) => (this.area()[type] ?? []).map((entry, index) => type + ':' + index)) : this.areas().map((area, index) => 'area:' + index)); this.render();
+      this.selection = new Set(this.cursor?.side === 'events' && this.area() ? NOISE_TRACKS.flatMap(([type]) => (this.area()[type] ?? []).map((entry, index) => type + ':' + index)) : this.areas().map((area,index) => 'area:' + index)); this.render();
     } else if (['AddTap', 'AddHold', 'AddEvent'].includes(action)) this.place(action === 'AddTap');
     else if (['SwitchUI', 'ToggleMultiLine', 'SwitchMultiLineMode', 'NumberMirror', 'NumberFill', 'AddDrag', 'AddFlick', 'CurveBegin', 'CurveEnd'].includes(action) || action?.startsWith('Page')) return true;
     else return false;
@@ -293,11 +299,13 @@ export class NoiseAreaEditor {
     if (!this.listTitle) {
       this.host.replaceChildren();
       this.listTitle = document.createElement('div'); this.listTitle.className = 'panel-title'; this.host.append(this.listTitle);
+      this.host.append(this.layerPanel.element);
       const actions = document.createElement('div'); actions.className = 'noise-actions';
       actions.append(button('关闭编辑', '返回音符与事件编辑区', () => this.close())); this.host.append(actions);
       this.host.append(hint('Q / R 两次定位放置。拖动首尾调整时间，拖动身体整体移动；左侧窄条可自由横向排布。Shift / 中键框选，空白处按住左键划线多选；Ctrl+C/X/V 复制、剪切、粘贴。'));
       this.host.append(this.areaList.element);
     }
+    this.layerPanel.render();
     const listTitle = '噪域 · ' + this.areas().length;
     if (this.listTitle.textContent !== listTitle) this.listTitle.textContent = listTitle;
     this.areaList.update(this.areas(), this.selected);
@@ -337,6 +345,7 @@ export class NoiseAreaEditor {
     host.append(button('← 噪域列表', '返回噪域管理', () => this.activate('noise')));
     const area = this.area(); if (!area) { host.append(hint('请在左侧选择噪域。')); return; }
     const title = document.createElement('h3'); title.textContent = this.event ? NOISE_TRACKS.find(track => track[0] === this.event.type)[1] + ' · 噪域 ' + this.selected : '噪域 ' + this.selected; host.append(title);
+    this.field(host, '所属噪域层', noiseLayerId(area), (item,value) => ({ ...item, layerId:value }), { kind:'text', choices:noiseLayers(this.chart).map(layer=>[layer.id,layer.name]) });
     const modifyEvent = change => item => { const event = item[this.event.type][this.event.index]; change(event); return item; };
     if (this.event) {
       const { type, index } = this.event; const event = area[type][index];
@@ -464,7 +473,8 @@ export class NoiseAreaEditor {
       if (!ghost) this.allRects.push(rect);
       if (bottom < HEADER_HEIGHT || top > height || x + entryWidth < (type ? layout.eventLeft : 0) || x > (type ? width : layout.split)) return;
       if (!ghost) this.rects.push(rect);
-      const selected = this.selection.has(type ? type + ':' + index : 'area:' + index); const color = selected ? '#6de9a4' : type ? colors[NOISE_TRACKS.findIndex(track => track[0] === type)] : '#c97c7c';
+      const selected = this.selection.has(type ? type + ':' + index : 'area:' + index);
+      const color = type ? selected ? '#6de9a4' : colors[NOISE_TRACKS.findIndex(track => track[0] === type)] : entry.isInvert ? selected ? '#d7b2ff' : '#aa8cdb' : selected ? '#6de9a4' : '#c97c7c';
       const hovered = !ghost && this.hover?.index === index && this.hover?.type === type;
       context.save(); context.beginPath(); context.rect(type ? layout.eventLeft : 0, HEADER_HEIGHT, type ? width - layout.eventLeft : layout.split, height - HEADER_HEIGHT); context.clip();
       context.globalAlpha = ghost ? 0.4 : 1; context.fillStyle = color + (hovered && this.hover.kind === 'move' ? '75' : '40'); context.fillRect(x, top, entryWidth, entryHeight); context.strokeStyle = hovered ? '#fff1d2' : color; context.lineWidth = selected || hovered ? 2 : 1; if (ghost) context.setLineDash([4, 3]); context.strokeRect(x, top, entryWidth, entryHeight);
@@ -484,7 +494,7 @@ export class NoiseAreaEditor {
       }
       context.restore();
     };
-    this.areas().forEach((area, index) => drawEntry(area, index, null, this.areaX(area, index) - AREA_BAR_WIDTH / 2, AREA_BAR_WIDTH));
+    this.areas().forEach((area,index) => drawEntry(area, index, null, this.areaX(area,index) - AREA_BAR_WIDTH / 2, AREA_BAR_WIDTH));
     for (const [type] of NOISE_TRACKS) { const bounds = this.eventBounds(type); (this.area()?.[type] ?? []).forEach((entry, index) => drawEntry(entry, index, type, bounds.x, bounds.width)); }
     if (this.pending && this.cursor) {
       const start = this.pending; const current = this.cursor; const bounds = this.eventBounds(start.type); context.fillStyle = '#78d99b44'; const top = this.y(Math.max(start.beat, current.beat)); const bottom = this.y(Math.min(start.beat, current.beat)); context.fillRect(start.side === 'areas' ? this.areaX({ editorPositionX: this.editorX(start.x) }, 0) - AREA_BAR_WIDTH / 2 : bounds.x, top, start.side === 'areas' ? AREA_BAR_WIDTH : bounds.width, Math.max(4, bottom - top));
@@ -498,7 +508,7 @@ export class NoiseAreaEditor {
     if (this.drag?.kind === 'rectangle') { const start = this.drag.start; const current = this.cursor; context.save(); context.lineWidth = 1; context.fillStyle = '#ffcc4430'; context.strokeStyle = '#ffdd77'; const top = this.y(start.rawBeat); const deltaY = this.y(current.rawBeat) - top; context.fillRect(start.x, top, current.x - start.x, deltaY); context.strokeRect(start.x, top, current.x - start.x, deltaY); context.restore(); }
     if (this.drag?.kind === 'stroke' && this.drag.moved) { context.save(); context.lineWidth = 1; context.strokeStyle = '#80ffff'; context.beginPath(); this.drag.points.forEach((point, index) => index ? context.lineTo(point.x, this.y(point.rawBeat)) : context.moveTo(point.x, this.y(point.rawBeat))); context.stroke(); context.restore(); }
     this.drawOwner(context, layout);
-    context.fillStyle = '#303030'; context.fillRect(0, 0, width, HEADER_HEIGHT); context.fillStyle = '#f5f5f5'; context.font = '12px RPE, sans-serif'; context.textAlign = 'left'; context.fillText('噪域数量: ' + this.areas().length, 12, 19);
+    context.fillStyle = '#303030'; context.fillRect(0, 0, width, HEADER_HEIGHT); context.fillStyle = '#f5f5f5'; context.font = '12px RPE, sans-serif'; context.textAlign = 'left'; context.fillText('噪域数量: ' + this.areas().length, 12, 19, layout.split - 16);
     const owner = this.area() ? `#${this.selected} ${this.area().Name || '未命名噪域'}` : '未指定噪域';
     this.canvas.setAttribute('aria-description', `噪域数量: ${this.areas().length}；当前右侧内部事件：${owner}`);
     context.fillText(owner, layout.eventLeft + 4, 19, width - layout.eventLeft - 8);
@@ -517,19 +527,33 @@ export class NoiseAreaEditor {
     context.fillStyle = '#242628ed'; context.fillRect(left - 3, vertical - 14, textWidth, 19); context.fillStyle = '#f5f5f5'; context.fillText(label, left, vertical, textWidth - 6); context.restore();
   }
   drawDistribution(context, area, left, width, top, bottom) {
+    const { tempo } = this.context;
     let distribution = this.distributions.get(area);
-    if (!distribution) {
-      distribution = NOISE_TRACKS.map(([type]) => {
+    if (!distribution || distribution.tempo !== tempo) {
+      const tracks = NOISE_TRACKS.map(([type]) => {
         const intervals = (area[type] ?? []).map(event => [beatValue(event.startTime), beatValue(event.endTime)]).sort((first, second) => first[0] - second[0]);
         const merged = [];
         for (const interval of intervals) { const previous = merged.at(-1); if (previous && interval[0] <= previous[1]) previous[1] = Math.max(previous[1], interval[1]); else merged.push(interval); }
         return merged;
       });
-      this.distributions.set(area, distribution);
+      const appear = tempo.seconds(area.appearTime); const disappear = tempo.seconds(area.disappearTime);
+      const intervals = (area.activeIntervals ?? []).map(interval => ({ start: Math.max(appear, tempo.seconds(interval.startTime)), end: Math.min(disappear, tempo.seconds(interval.endTime)), readyFlash: readyFlashValue(interval.readyFlash) })).filter(interval => interval.end > interval.start).sort((first, second) => first.start - second.start);
+      const flashes = intervals.flatMap((interval, index) => {
+        const start = Math.max(appear, intervals[index - 1]?.end ?? -Infinity, interval.start - interval.readyFlash);
+        return interval.readyFlash > 0 && start < interval.start ? [[tempo.beat(start), tempo.beat(interval.start)]] : [];
+      });
+      distribution = { tracks, flashes, tempo }; this.distributions.set(area, distribution);
     }
     context.save(); context.beginPath(); context.rect(left + 2, top + 2, width - 4, Math.max(0, bottom - top - 4)); context.clip(); context.globalAlpha *= 0.55;
     const spacing = (width - 12) / NOISE_TRACKS.length;
-    for (const [column, intervals] of distribution.entries()) {
+    const flashX = left + 6 + (spacing - 2) / 2;
+    context.strokeStyle = colors[0]; context.lineWidth = Math.max(1, Math.min(2, spacing / 3)); context.setLineDash([3, 3]); context.beginPath();
+    for (const [start, end] of distribution.flashes) {
+      const upper = Math.max(HEADER_HEIGHT, top, this.y(end)); const lower = Math.min(this.layout().height, bottom, this.y(start));
+      if (lower > upper) { context.moveTo(flashX, upper); context.lineTo(flashX, lower); }
+    }
+    context.stroke(); context.setLineDash([]);
+    for (const [column, intervals] of distribution.tracks.entries()) {
       context.fillStyle = colors[column];
       for (const [start, end] of intervals) {
         const upper = Math.max(HEADER_HEIGHT, top, this.y(end)); const lower = Math.min(this.layout().height, bottom, this.y(start));

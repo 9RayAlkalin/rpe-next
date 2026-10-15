@@ -602,3 +602,18 @@ footer > button, footer #performance, footer > span:last-child { flex-shrink: 0;
   .inspector [data-panel="noise"]:not([hidden]), .inspector #noise-panel { flex: none; }
   .inspector .noise-list { flex: none; max-height: 200px; }
 }
+.noise-layer-panel { margin: 8px 12px; padding: 10px; border: 1px solid #555; border-radius: 6px; min-width: 0; }
+.noise-layer-panel .noise-field { margin: 6px 0; }
+.noise-layer-actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.noise-layer-actions > select { flex: 1; min-width: 80px; }
+.noise-layer-panel input, .noise-layer-panel select { min-width: 0; width: 100%; box-sizing: border-box; }
+.noise-skin-parameter { display: grid; gap: 4px; margin: 10px 0; overflow-wrap: anywhere; font-size: 12px; }
+.noise-skin-parameter > span { display: flex; gap: 4px; min-width: 0; }
+.noise-skin-parameter input { flex: 1; }
+.noise-layer-panel details { max-height: 260px; overflow-y: auto; padding: 6px 0; }
+.noise-layer-panel > .noise-layer-card { max-height: none; overflow: visible; border-top: 1px solid #555; margin-top: 8px; }
+.noise-layer-card > summary { padding: 5px 0; }
+.noise-layer-toggles { display: inline-flex; gap: 12px; float: right; margin: 0 4px 0 12px; }
+.noise-layer-visibility { display: inline-flex; align-items: center; gap: 5px; margin: 0; font-size: 12px; white-space: nowrap; }
+.noise-layer-panel .noise-layer-visibility input { width: auto; }
+#noise-panel > .noise-layer-panel { flex-shrink: 1; min-height: 120px; max-height: 42vh; overflow-y: auto; }

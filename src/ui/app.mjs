@@ -23,8 +23,8 @@ import { RpeSkin } from './skin.mjs';
 import { ProjectImages } from '../platform/images.mjs';
 import { HitSounds } from '../platform/hitsounds.mjs';
 import { renderEventInspector } from './event-inspector.mjs';
-import { eventKey, eventList, deleteEvents, transformEvents } from '../application/event-commands.mjs';
-import { BATCH_ACTIONS, applyBatchAction, nudgeSelection } from '../application/batch-edit.mjs';
+import { eventKey, eventList, selectEvent, selectAllEvents, deleteEvents, transformEvents } from '../application/event-commands.mjs';
+import { BATCH_ACTIONS, applyBatchAction, nudgeSelection, captureSelection } from '../application/batch-edit.mjs';
 import { copyObjects, cutObjects, pasteObjects, deleteObjects } from '../application/clipboard.mjs';
 import { ClipboardHistory } from '../application/clipboard-history.mjs';
 import { renderClipboardHistory } from './clipboard-history.mjs';
@@ -71,6 +71,7 @@ const displayFields = [
   ['sample-auto-fit', 'sampleAutoFit', true],
   ['pick-preview-noise-areas', 'pickPreviewNoiseAreas', true],
   ['seamless-noise-areas', 'seamlessNoiseAreas', true],
+  ['force-simple-noise', 'forceSimpleNoise', false],
   ['judgement-offset', 'judgementOffset', 92],
   ['judgement-color', 'judgementColor', '#ffffff'],
   ['default-line-thickness', 'lineScale', 1.5],
@@ -131,7 +132,13 @@ const timeline = new Timeline(element('#notes'), element('#events'), () => sessi
 const noiseEditor = new NoiseAreaEditor(element('#noise-panel'), element('#noise-editor-canvas'), () => ({ session, tempo, timeline, preview, realtimePreview, previewVisible: preview.visible, seconds: chartSeconds, sampleAutoFit: element('#sample-auto-fit').checked }), {
   commit: (label, chart) => session.commit(label, chart), invalidate, notify, activate: activatePane,
   pause: () => playback.pause(), seek: beat => seekBeat(beat), wheel: event => previewWheel(event),
+  getAssets: () => assets,
+  onAssets: entries => { for (const [name, bytes] of entries) assets.set(name, bytes); assetDirty = true; images.load(session.chart, assets, chartName); invalidate(); },
 });
+for (const renderer of [preview, realtimePreview]) {
+  renderer.noisePreview.hiddenLayers = noiseEditor.hiddenLayers;
+  renderer.noisePreview.simpleLayers = noiseEditor.simpleLayers;
+}
 const eventSampler = new EventSampler(element('.stage'), () => ({ session, tempo, preview, realtimePreview, previewVisible: preview.visible, timeline, seconds: chartSeconds, sampleAutoFit: element('#sample-auto-fit').checked }), { invalidate, pause: () => playback.pause(), notify });
 const audioAnalysis = new AudioAnalysis(element('#audio-analysis-overlay'), () => timeline, () => audio, () => persistEditor());
 let noteHoverTimer = null;
@@ -380,7 +387,8 @@ const collaboration = new CollaborationPanel(element('#collaboration-panel'), ()
   sharedAssets: () => {
     const references = resourceReferences(session.chart, assets, chartName);
     const names = new Set([references.song, references.background, session.chart.META.background, ...session.chart.judgeLineList.map(line => line.Texture)].filter(Boolean));
-    return [...names].flatMap(name => { const bytes = assetBytes(assets, name, chartName); return bytes ? [[name, bytes]] : []; });
+    const skins = (session.chart.noiseAreaLayers ?? []).map(layer => layer.skin).filter(Boolean);
+    return [...names].flatMap(name => { const bytes = assetBytes(assets, name, chartName); return bytes ? [[name, bytes]] : []; }).concat([...assets].filter(([name]) => skins.some(root => name.startsWith(root + '/'))));
   }
 }), {
   notify, activate: activatePane,
@@ -401,14 +409,15 @@ const collaboration = new CollaborationPanel(element('#collaboration-panel'), ()
 element('#collaboration-tool').onclick = () => activatePane('collaboration');
 const playback = new EditorPlayback(audio, hitSounds, () => {
   timeline.origin = currentBeat();
+  for (const renderer of [preview, realtimePreview]) renderer.noisePreview.gpu?.reset();
   preview.effectsSince = realtimePreview.effectsSince = chartSeconds();
   invalidate();
 });
 timeline.onDragScroll = seconds => playback.seek(audio.time + seconds);
 const autoSave = new AutoSaveClock(async () => {
-  const current = session; const snapshot = { ...current.chart }; delete snapshot.chartTime;
+  const current = session; const document = current.chart; const snapshot = { ...document }; delete snapshot.chartTime;
   await saveSnapshot(libraryProject?.id ?? recoveryId, chartName, snapshot, [...assets], editorPreferences.autoSaveLimit ?? preferences.settings.autoSaveLimit, { lineIndex: current.lineIndex });
-  if (current === session) { lastDraftDocument = current.chart; status('自动备份已保存（包含音乐、曲绘与编辑位置）'); notify('自动备份已保存', 'success'); }
+  if (current === session) { lastDraftDocument = document; status('自动备份已保存（包含音乐、曲绘与编辑位置）'); notify('自动备份已保存', 'success'); }
 }, error => status(`自动保存失败：${error.message}，请手动保存或导出 PEZ`));
 timeline.onWheel = event => {
   if (event.ctrlKey) {
@@ -831,6 +840,7 @@ function replaceChart(chart, name, nextAssets = new Map(), nextFolders = []) {
   autoSave.reset(performance.now());
   heldPreview = null; curveStart = null; curveEnd = null; curveAnchorMode = null; curveEditorOpen = false; loop = null; element('#loop-enabled').checked = false;
   assets = nextAssets;
+  for (const renderer of [preview, realtimePreview]) renderer.noisePreview.gpu?.clearSkins();
   assetFolders = new Set(nextFolders ?? []);
   assetDirty = false;
   chartName = name;
@@ -1409,7 +1419,7 @@ window.addEventListener('keydown', async event => {
     else if (action === 'Undo') travel('undo');
     else if (action === 'Redo') travel('redo');
     else if (action === 'SelectAll') {
-      if (session.focus === 'events') session.eventSelection = new Set(timeline.eventTypes.flatMap(type => eventList(session, type).map((event, index) => eventKey(type, index))));
+      if (session.focus === 'events') selectAllEvents(session, timeline.eventTypes);
       else if (session.multiLineActive && session.multiLineMode === 'notes') {
         session.multiLineSelection = new Map(session.targetLineIndices.map(lineIndex => [lineIndex, new Set((session.chart.judgeLineList?.[lineIndex]?.notes ?? []).map((note, index) => index))]));
         session.selection = new Set(session.multiLineSelection.get(session.lineIndex) ?? []);
@@ -1441,13 +1451,16 @@ window.addEventListener('keydown', async event => {
     else if (area === 'events' && ['AddTap', 'AddEvent'].includes(action)) handled = timeline.eventInteraction.place(undefined, undefined, undefined, action === 'AddTap');
     else if (['AddTap', 'AddDrag', 'AddFlick', 'AddHold'].includes(action)) handled = timeline.addAtCursor({ AddTap: 1, AddDrag: 4, AddFlick: 3, AddHold: 2 }[action]);
     else if (action === 'Delete') deleteSelection();
-    else if (action === 'QuickDelete' && session.selection.size + session.eventSelection.size + [...(session.multiLineSelection?.values() ?? [])].reduce((sum, values) => sum + values.size, 0) + [...(session.multiEventSelection?.values() ?? [])].reduce((sum, values) => sum + values.size, 0) > 1) deleteSelection();
-    else if (action === 'QuickDelete' && session.focus === 'events' && timeline.eventCursor) {
-      const hit = timeline.eventInteraction.hit(timeline.eventCursor);
-      if (hit) { session.eventSelection = new Set([eventKey(hit.type, hit.index)]); deleteEvents(session); }
-    } else if (action === 'QuickDelete' && timeline.cursor) {
-      const hit = timeline.hit(timeline.cursor);
-      if (hit) { if (session.multiLineActive && session.multiLineMode === 'notes') session.multiLineSelection.set(hit.lineIndex, new Set([hit.index])); session.selection = new Set([hit.index]); deleteSelection(); }
+    else if (action === 'QuickDelete') {
+      const selected = captureSelection(session);
+      if (selected.notes.length + selected.events.length > 1) deleteSelection();
+      else if (area === 'events' && timeline.eventCursor) {
+        const hit = timeline.eventInteraction.hit(timeline.eventCursor);
+        if (hit) { selectEvent(session, hit.lineIndex ?? session.lineIndex, hit.type, hit.index, { replace: true }); deleteEvents(session); }
+      } else if (area === 'notes' && timeline.cursor) {
+        const hit = timeline.hit(timeline.cursor);
+        if (hit) { if (session.multiLineActive && session.multiLineMode === 'notes') session.multiLineSelection = new Map([[hit.lineIndex, new Set([hit.index])]]); session.selection = new Set([hit.index]); deleteSelection(); }
+      }
     } else if (['LastBeat', 'NextBeat'].includes(action)) seekBeat(Math.max(0, currentBeat() + (action === 'LastBeat' ? -1 : 1) / timeline.division));
     else if (action === 'Esc') { session.clipboardVisible = false; session.selection.clear(); session.eventSelection.clear(); session.multiLineSelection?.clear(); session.multiEventSelection?.clear(); timeline.cancelPlacement(); curveAnchorMode = null; curveStart = null; curveEnd = null; curveEditorOpen = false; togglePreview(false); activatePane('chart'); session.notify(); }
     else handled = false;
@@ -1685,6 +1698,11 @@ function applyDisplaySettings() {
   for (const renderer of [preview, realtimePreview]) for (const key of ['lineNumbers', 'lineArrows', 'lineTint', 'mergeLineNumbers', 'pickPreviewLines', 'pickPreviewNoiseAreas']) renderer[key] = editorPreferences[key] ?? true;
   for (const renderer of [preview, realtimePreview]) {
     renderer.noisePreview.seamless = editorPreferences.seamlessNoiseAreas ?? true;
+    if (renderer.noisePreview.forceSimple !== (editorPreferences.forceSimpleNoise ?? false)) renderer.noisePreview.gpu?.reset();
+    renderer.noisePreview.forceSimple = editorPreferences.forceSimpleNoise ?? false;
+    renderer.noisePreview.getAssets = () => assets;
+    renderer.noisePreview.invalidate = invalidate;
+    renderer.noisePreview.report = message => notify(message + '；暂用简易渲染', 'error');
   }
   const toolbarMode = editorPreferences.toolbarMode ?? 'icons';
   element('.editor-toolbar').classList.remove('mode-compact', 'mode-icons', 'mode-wide');

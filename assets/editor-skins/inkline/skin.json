@@ -396,6 +396,8 @@
     { "selector": "#batch-run", "set": { "width": "30px", "height": "32px", "min-height": "32px", "padding": "0", "border-radius": "0 6px 6px 0", "background": "var(--rpen-ink-field)", "border": "1px solid var(--rpen-ink-field-border)", "border-left": "1px solid var(--rpen-ink-line-soft)", "color": "var(--rpen-ink-accent)", "font-size": "11px" } },
     { "selector": "#batch-run:hover:not(:disabled)", "set": { "background": "var(--rpen-ink-hover)", "color": "var(--rpen-ink-accent-text)" } },
     { "selector": "#clock", "set": { "font-size": "14.5px", "font-weight": "500", "font-variant-numeric": "tabular-nums", "color": "var(--rpen-ink-text)", "min-width": "76px", "text-align": "right", "padding-left": "6px" } },
+    { "selector": "@time-readouts", "set": { "gap": "8px", "align-items": "baseline" } },
+    { "selector": "@beat-display", "set": { "font-size": "13px", "font-weight": "400", "color": "var(--rpen-ink-text-23)", "min-width": "68px", "font-variant-numeric": "tabular-nums" } },
     { "selector": "#bpm-display", "set": { "font-size": "13px", "font-variant-numeric": "tabular-nums", "color": "var(--rpen-ink-accent-muted)", "padding": "0 4px 0 2px" } },
     { "selector": "@time-progress", "set": { "height": "36px", "padding-top": "15px", "margin": "0 8px" } },
     { "selector": "#scrubber", "set": { "--skin-range-ring": "var(--rpen-ink-base)" } },
@@ -442,7 +444,7 @@
     { "selector": "@stage", "set": { "background": "var(--rpen-ink-gutter)" } },
     { "selector": "#notes", "set": { "border-right": "1px solid var(--rpen-ink-line)", "background": "#ffffff05" } },
     { "selector": "#events", "set": { "border-left": "1px solid var(--rpen-ink-line)", "background": "#ffffff05" } },
-    { "selector": "#noise-editor-canvas", "set": { "background": "#ffffff05" } },
+    { "selector": "#noise-editor-canvas", "set": { "background": "transparent" } },
     { "selector": ".timeline-strip", "set": { "background": "var(--rpen-ink-bg)", "border": "1px solid var(--rpen-ink-line-soft)", "opacity": "1" } },
     { "selector": "#multi-line-labels", "set": { "background": "var(--rpen-ink-bar)" } },
     { "selector": "#multi-line-labels > span", "set": { "color": "var(--rpen-ink-accent-text)", "background": "var(--rpen-ink-gold-5)", "border": "1px solid var(--rpen-ink-gold-20)", "border-radius": "4px", "font-size": "12.5px" } },
@@ -563,7 +565,7 @@
     { "selector": ".easing-preview", "set": { "margin": "8px 18px", "width": "calc(100% - 36px)" } },
     { "selector": ".easing-gallery button", "set": { "background": "var(--rpen-ink-raised)", "padding": "4px" } },
     { "selector": ".easing-gallery img", "set": { "filter": "invert(0.88) sepia(0.12)", "opacity": "0.9" } },
-    { "selector": ".trajectory-footer,.text-lines-footer,.noise-fit-footer", "set": { "background": "var(--rpen-ink-base)", "border-top": "1px solid var(--rpen-ink-line)", "padding": "12px 14px" } },
+    { "selector": ".trajectory-footer,.text-lines-footer,.noise-fit-footer,.noise-tracking-footer", "set": { "background": "var(--rpen-ink-base)", "border-top": "1px solid var(--rpen-ink-line)", "padding": "12px 14px" } },
     { "selector": ".trajectory-preset-grid > button", "set": { "background": "var(--rpen-ink-raised)" } },
     { "selector": ".trajectory-preset-grid > button[aria-expanded=true]", "set": { "box-shadow": "inset 0 0 0 1px #6fae95", "color": "#a8dcc5" } },
     { "selector": ".noise-layer-panel", "set": { "margin": "8px 14px" } },
@@ -842,7 +844,8 @@
         "curve-notes",
         "curve-trajectory",
         "text-lines-tool",
-        "noise-fit-tool"
+        "noise-fit-tool",
+        "noise-tracking-tool"
       ]
     },
     {

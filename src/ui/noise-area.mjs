@@ -7,6 +7,8 @@ import { createEasingPicker, EASING_NAMES } from './easing-picker.mjs';
 import { NoiseAreaList } from './noise-list.mjs';
 import { NoiseLayerPanel } from './noise-layer-panel.mjs';
 import { noiseLayers, noiseLayerId } from '../core/noise-skin.mjs';
+import { drawEventCurve, drawEventCurveBatch } from './event-curve.mjs';
+import { eventDisplayIndex, selectedEventGroups } from './event-display-index.mjs';
 
 function button(text, title, run) {
   const control = document.createElement('button'); control.type = 'button'; control.textContent = text; control.title = title; control.onclick = run; return control;
@@ -277,7 +279,7 @@ export class NoiseAreaEditor {
       const left = Math.min(drag.start.x, drag.current.x); const right = Math.max(drag.start.x, drag.current.x);
       const start = Math.min(drag.start.rawBeat, drag.current.rawBeat); const end = Math.max(drag.start.rawBeat, drag.current.rawBeat);
       this.selection = new Set([...drag.baseSelection].filter(key => key.startsWith('area:') === (drag.start.side === 'areas')));
-      for (const rect of this.allRects ?? []) if ((Boolean(rect.type) === (drag.start.side === 'events')) && rect.x <= right && rect.x + rect.width >= left && rect.start <= end && rect.end >= start) this.selection.add(rect.type ? rect.type + ':' + rect.index : 'area:' + rect.index);
+      for (const rect of this.selectionRects(drag.start.side)) if (rect.x <= right && rect.x + rect.width >= left && rect.start <= end && rect.end >= start) this.selection.add(rect.type ? rect.type + ':' + rect.index : 'area:' + rect.index);
       }
       const first = [...this.selection][0]?.split(':');
       if (first) { if (first[0] === 'area') { this.selected = Number(first[1]); this.event = null; } else this.event = { type: first[0], index: Number(first[1]) }; this.activate('noise-properties'); }
@@ -465,37 +467,63 @@ export class NoiseAreaEditor {
     context.lineWidth = 1;
     for (let index = 0; index <= timeline.gridCount; index++) { const horizontal = 12 + index * (layout.split - 24) / timeline.gridCount; context.strokeStyle = '#71767c35'; context.beginPath(); context.moveTo(horizontal, HEADER_HEIGHT); context.lineTo(horizontal, height); context.stroke(); }
     for (let index = 0; index <= 6; index++) { const horizontal = layout.eventLeft + index * layout.eventWidth; context.strokeStyle = '#7f838755'; context.beginPath(); context.moveTo(horizontal, HEADER_HEIGHT); context.lineTo(horizontal, height); context.stroke(); }
-    this.rects = []; this.allRects = [];
-    const drawEntry = (entry, index, type, x, entryWidth, ghost = false) => {
+    this.rects = [];
+    const drawEntry = (entry, index, type, x, entryWidth, ghost = false, seamless = false, range = null, clipped = false, curveBatches = null) => {
       const start = beatValue(entry[type ? 'startTime' : 'appearTime']); const end = beatValue(entry[type ? 'endTime' : 'disappearTime']);
       const head = this.y(start); const tail = this.y(end); const top = Math.min(head, tail); const bottom = Math.max(head, tail); const entryHeight = Math.max(5, bottom - top);
       const rect = { x, y: top, width: entryWidth, height: entryHeight, index, type, head, tail, start, end };
-      if (!ghost) this.allRects.push(rect);
       if (bottom < HEADER_HEIGHT || top > height || x + entryWidth < (type ? layout.eventLeft : 0) || x > (type ? width : layout.split)) return;
       if (!ghost) this.rects.push(rect);
       const selected = this.selection.has(type ? type + ':' + index : 'area:' + index);
       const color = type ? selected ? '#6de9a4' : colors[NOISE_TRACKS.findIndex(track => track[0] === type)] : entry.isInvert ? selected ? '#d7b2ff' : '#aa8cdb' : selected ? '#6de9a4' : '#c97c7c';
       const hovered = !ghost && this.hover?.index === index && this.hover?.type === type;
-      context.save(); context.beginPath(); context.rect(type ? layout.eventLeft : 0, HEADER_HEIGHT, type ? width - layout.eventLeft : layout.split, height - HEADER_HEIGHT); context.clip();
-      context.globalAlpha = ghost ? 0.4 : 1; context.fillStyle = color + (hovered && this.hover.kind === 'move' ? '75' : '40'); context.fillRect(x, top, entryWidth, entryHeight); context.strokeStyle = hovered ? '#fff1d2' : color; context.lineWidth = selected || hovered ? 2 : 1; if (ghost) context.setLineDash([4, 3]); context.strokeRect(x, top, entryWidth, entryHeight);
+      if (seamless && !hovered && type !== 'activeIntervals') {
+        if (timeline.drawEventCurves !== false && layout.eventWidth >= (timeline.eventCurveThreshold ?? 24)) {
+          if (!curveBatches.has(range)) curveBatches.set(range, []);
+          curveBatches.get(range).push({ event: entry, range, startY: head, endY: tail });
+        }
+        return;
+      }
+      if (!clipped) { context.save(); context.beginPath(); context.rect(type ? layout.eventLeft : 0, HEADER_HEIGHT, type ? width - layout.eventLeft : layout.split, height - HEADER_HEIGHT); context.clip(); }
+      context.globalAlpha = ghost ? 0.4 : 1; context.fillStyle = color + (hovered && this.hover.kind === 'move' ? '75' : '40'); context.strokeStyle = hovered ? '#fff1d2' : color; context.lineWidth = selected || hovered ? 2 : 1; if (ghost) context.setLineDash([4, 3]);
+      if (!seamless || hovered) { context.fillRect(x, top, entryWidth, entryHeight); context.strokeRect(x, top, entryWidth, entryHeight); }
       if (!type && !ghost) this.drawDistribution(context, entry, x, entryWidth, top, bottom);
-      context.fillStyle = color; context.fillRect(x, head - 2, entryWidth, 4); context.fillRect(x, tail - 2, entryWidth, 4);
+      context.fillStyle = color; if (!seamless || hovered) { context.fillRect(x, head - 2, entryWidth, 4); context.fillRect(x, tail - 2, entryWidth, 4); }
       if (hovered && this.hover.kind !== 'move') { context.fillStyle = '#fff1d2'; context.fillRect(x - 2, (this.hover.kind === 'start' ? head : tail) - 4, entryWidth + 4, 8); }
       context.font = '12px sans-serif'; context.textAlign = 'center';
       if (!type) context.fillText((entry.Name || '噪域 ' + index) + (entry.isInvert ? ' ⊕' : ''), x + entryWidth / 2, Math.max(HEADER_HEIGHT + 16, Math.min(height - 12, top + 18)), Math.max(1, entryWidth - 4));
       else if (type === 'activeIntervals') context.fillText(readyFlashValue(entry.readyFlash) > 0 ? `预闪 ${durationText(readyFlashValue(entry.readyFlash))}s` : '无预闪', x + entryWidth / 2, Math.max(HEADER_HEIGHT + 16, top + 18), Math.max(1, entryWidth - 4));
-      else {
-        context.fillText(String(round(entry.end)), x + entryWidth / 2, tail + 14, entryWidth); context.fillText(String(round(entry.start)), x + entryWidth / 2, head - 5, entryWidth);
-        if (entryHeight > 30) {
-          const track = noiseRuntime(this.area(), this.context.tempo).tracks[type]; const startSeconds = this.context.tempo.seconds(entry.startTime); const endSeconds = this.context.tempo.seconds(entry.endTime);
-          context.beginPath();
-          for (let step = 0; step <= 24; step++) { const progress = step / 24; const value = track.sample({ event: entry, start: startSeconds, end: endSeconds }, startSeconds + (endSeconds - startSeconds) * progress); const fraction = entry.start === entry.end ? 0.5 : (value - entry.start) / (entry.end - entry.start); const horizontal = x + entryWidth * (0.12 + Math.max(0, Math.min(1, fraction)) * 0.76); const vertical = head + (tail - head) * progress; if (step) context.lineTo(horizontal, vertical); else context.moveTo(horizontal, vertical); } context.stroke();
-        }
+      else if (timeline.drawEventCurves !== false && layout.eventWidth >= (timeline.eventCurveThreshold ?? 24)) {
+        drawEventCurve(context, entry, range, { x, y: Math.max(HEADER_HEIGHT, top), width: entryWidth, height: Math.max(2, Math.min(height, bottom) - Math.max(HEADER_HEIGHT, top)) }, head, tail);
+      }
+      if (!clipped) context.restore();
+    };
+    const drawTrack = (events, type, ghost = false) => {
+      const bounds = this.eventBounds(type); const seamlessGroups = new Set();
+      const curveBatches = new Map();
+      const display = eventDisplayIndex(this, events, this.chart); const { ranges } = display;
+      const entries = display.index.query(this.beatAt(height, false), this.beatAt(HEADER_HEIGHT, false)).sort((a, b) => a.index - b.index);
+      const groups = new Set(entries.map(entry => ranges.get(entry.index)));
+      const selectedGroups = ghost ? new Set() : selectedEventGroups(this.selection, type, ranges);
+      for (const group of groups) {
+        if (timeline.seamlessEvents === false) continue;
+        if (group.entries.length < 2 || selectedGroups.has(group) || display.unmergeable.has(group)) continue;
+        this.drawEventChain(context, group, type, bounds, height, ghost);
+        seamlessGroups.add(group);
+      }
+      context.save(); context.beginPath(); context.rect(layout.eventLeft, HEADER_HEIGHT, width - layout.eventLeft, height - HEADER_HEIGHT); context.clip();
+      for (const { item, index } of entries) drawEntry(item, ghost ? -1 : index, type, bounds.x, bounds.width, ghost, seamlessGroups.has(ranges.get(index)), ranges.get(index), true, curveBatches);
+      context.globalAlpha = ghost ? 0.4 : 1; context.strokeStyle = colors[NOISE_TRACKS.findIndex(track => track[0] === type)]; if (ghost) context.setLineDash([4, 3]);
+      for (const [group, curves] of curveBatches) {
+        const top = Math.max(HEADER_HEIGHT, this.y(beatValue(group.entries.at(-1).event.endTime)));
+        const bottom = Math.min(height, this.y(beatValue(group.entries[0].event.startTime)));
+        drawEventCurveBatch(context, curves, { x: bounds.x, y: top, width: bounds.width, height: Math.max(2, bottom - top) });
       }
       context.restore();
+      if (type !== 'activeIntervals') this.drawEventValues(context, events, type, bounds, height, ghost, groups);
     };
     this.areas().forEach((area,index) => drawEntry(area, index, null, this.areaX(area,index) - AREA_BAR_WIDTH / 2, AREA_BAR_WIDTH));
-    for (const [type] of NOISE_TRACKS) { const bounds = this.eventBounds(type); (this.area()?.[type] ?? []).forEach((entry, index) => drawEntry(entry, index, type, bounds.x, bounds.width)); }
+    for (const [type] of NOISE_TRACKS) drawTrack(this.area()?.[type] ?? [], type);
     if (this.pending && this.cursor) {
       const start = this.pending; const current = this.cursor; const bounds = this.eventBounds(start.type); context.fillStyle = '#78d99b44'; const top = this.y(Math.max(start.beat, current.beat)); const bottom = this.y(Math.min(start.beat, current.beat)); context.fillRect(start.side === 'areas' ? this.areaX({ editorPositionX: this.editorX(start.x) }, 0) - AREA_BAR_WIDTH / 2 : bounds.x, top, start.side === 'areas' ? AREA_BAR_WIDTH : bounds.width, Math.max(4, bottom - top));
     }
@@ -503,7 +531,12 @@ export class NoiseAreaEditor {
       const delta = this.cursor.beat - this.clipboard.start;
       const ghosts = this.clipboard.entries.some(entry => entry.type === 'area') ? this.pastedAreas(this.cursor.beat).slice(this.areas().length) : [];
       for (const area of ghosts) drawEntry(area, -1, null, this.areaX(area, 0) - AREA_BAR_WIDTH / 2, AREA_BAR_WIDTH, true);
-      for (const entry of this.clipboard.entries) if (entry.type !== 'area' && this.area()) { const value = { ...entry.value, startTime: fromNumber(beatValue(entry.value.startTime) + delta), endTime: fromNumber(beatValue(entry.value.endTime) + delta) }; const bounds = this.eventBounds(entry.type); drawEntry(value, -1, entry.type, bounds.x, bounds.width, true); }
+      const eventGhosts = new Map();
+      for (const entry of this.clipboard.entries) if (entry.type !== 'area' && this.area()) {
+        const value = { ...entry.value, startTime: fromNumber(beatValue(entry.value.startTime) + delta), endTime: fromNumber(beatValue(entry.value.endTime) + delta) };
+        if (!eventGhosts.has(entry.type)) eventGhosts.set(entry.type, []); eventGhosts.get(entry.type).push(value);
+      }
+      for (const [type, events] of eventGhosts) drawTrack(events, type, true);
     }
     if (this.drag?.kind === 'rectangle') { const start = this.drag.start; const current = this.cursor; context.save(); context.lineWidth = 1; context.fillStyle = '#ffcc4430'; context.strokeStyle = '#ffdd77'; const top = this.y(start.rawBeat); const deltaY = this.y(current.rawBeat) - top; context.fillRect(start.x, top, current.x - start.x, deltaY); context.strokeRect(start.x, top, current.x - start.x, deltaY); context.restore(); }
     if (this.drag?.kind === 'stroke' && this.drag.moved) { context.save(); context.lineWidth = 1; context.strokeStyle = '#80ffff'; context.beginPath(); this.drag.points.forEach((point, index) => index ? context.lineTo(point.x, this.y(point.rawBeat)) : context.moveTo(point.x, this.y(point.rawBeat))); context.stroke(); context.restore(); }
@@ -514,6 +547,44 @@ export class NoiseAreaEditor {
     context.fillText(owner, layout.eventLeft + 4, 19, width - layout.eventLeft - 8);
     context.textAlign = 'center'; for (const [column, [, label]] of NOISE_TRACKS.entries()) context.fillText(label, layout.eventLeft + (column + 0.5) * layout.eventWidth, 43, Math.max(1, layout.eventWidth - 3));
     context.strokeStyle = timeline.judgementColor ?? '#ffffff'; context.lineWidth = 2; context.beginPath(); context.moveTo(0, this.y(timeline.origin)); context.lineTo(width, this.y(timeline.origin)); context.stroke();
+  }
+  eventGroups(events) {
+    return eventDisplayIndex(this, events, this.draftChart ?? this.context.session?.chart).groups;
+  }
+  *selectionRects(side) {
+    // Build offscreen selection bounds only on mouseup, not on every animation frame.
+    if (side === 'areas') {
+      for (const [index, area] of this.areas().entries()) yield { x: this.areaX(area, index) - AREA_BAR_WIDTH / 2, width: AREA_BAR_WIDTH, index, type: null, start: beatValue(area.appearTime), end: beatValue(area.disappearTime) };
+    } else for (const [type] of NOISE_TRACKS) {
+      const bounds = this.eventBounds(type);
+      for (const [index, event] of (this.area()?.[type] ?? []).entries()) yield { ...bounds, index, type, start: beatValue(event.startTime), end: beatValue(event.endTime) };
+    }
+  }
+  drawEventChain(context, group, type, bounds, height, ghost = false) {
+    const head = this.y(beatValue(group.entries[0].event.startTime)); const tail = this.y(beatValue(group.entries.at(-1).event.endTime));
+    const top = Math.max(HEADER_HEIGHT, tail); const bottom = Math.min(height, head);
+    if (bottom <= top) return;
+    const layout = this.layout(); const color = colors[NOISE_TRACKS.findIndex(track => track[0] === type)];
+    context.save(); context.beginPath(); context.rect(layout.eventLeft, HEADER_HEIGHT, layout.width - layout.eventLeft, height - HEADER_HEIGHT); context.clip();
+    context.globalAlpha = ghost ? 0.4 : 1; context.fillStyle = color + '40'; context.fillRect(bounds.x, top, bounds.width, bottom - top);
+    context.strokeStyle = color; context.lineWidth = 1; if (ghost) context.setLineDash([4, 3]); context.strokeRect(bounds.x, tail, bounds.width, head - tail);
+    context.fillStyle = color; context.fillRect(bounds.x, head - 2, bounds.width, 4); context.fillRect(bounds.x, tail - 2, bounds.width, 4); context.restore();
+  }
+  drawEventValues(context, events, type, bounds, height, ghost = false, visibleGroups = null) {
+    if (!events.length || bounds.width < (this.context.timeline.eventValueThreshold ?? 30)) return;
+    const groups = visibleGroups ?? this.eventGroups(events);
+    const layout = this.layout();
+    context.save(); context.beginPath(); context.rect(layout.eventLeft, HEADER_HEIGHT, layout.width - layout.eventLeft, height - HEADER_HEIGHT); context.clip();
+    context.globalAlpha = ghost ? 0.4 : 1; context.font = `${this.context.timeline.eventValueFontSize ?? 13}px RPE, sans-serif`; context.textAlign = 'center';
+    for (const group of groups) {
+      const first = group.entries[0].event; const last = group.entries.at(-1).event;
+      const top = this.y(beatValue(last.endTime)); const bottom = this.y(beatValue(first.startTime));
+      if (bottom < HEADER_HEIGHT || top > height) continue;
+      context.fillStyle = colors[NOISE_TRACKS.findIndex(track => track[0] === type)];
+      context.fillText(String(round(group.max)), bounds.x + bounds.width / 2, Math.max(HEADER_HEIGHT + 14, top + 14), bounds.width);
+      if (bottom - top > 26) context.fillText(String(round(group.min)), bounds.x + bounds.width / 2, Math.min(height - 5, bottom - 5), bounds.width);
+    }
+    context.restore();
   }
   drawOwner(context, layout) {
     const area = this.area(); if (!area) return;

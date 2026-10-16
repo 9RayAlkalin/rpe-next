@@ -22,13 +22,14 @@ ${scope} button:hover{background:var(--rpen-hover);border-color:var(--rpen-borde
 ${scope} :where(button.active,button.primary,.asset-row.selected,.clipboard-card.active,.line-switcher-card.selected,.multi-line-row.selected){color:var(--rpen-accent-text);background:var(--rpen-selected);border-color:var(--rpen-selected-border)}
 ${scope} :where(input[type=range],input[type=checkbox],input[type=radio]){accent-color:var(--rpen-accent)}
 ${scope} :where(header,.transport,body > footer,.inspector-tabs){background:var(--rpen-elevated);border-color:var(--rpen-border)}
-${scope} :where(.editor,.inspector,#home,.home-heading,.settings-body,.noise-fit-scroll,.text-lines-scroll){background:var(--rpen-surface);color:var(--rpen-text)}
-${scope} :where(.editor-toolbar,.editor-footer,.timeline-head,.panel-title,.line-switcher,.asset-details,.batch-panel-actions,.noise-fit-footer,.text-lines-footer,.trajectory-footer,.asset-folder > summary,#multi-line-labels,.noise-layer-panel,.clipboard-card,.timeline-strip){background:var(--rpen-surface-alt);border-color:var(--rpen-border);color:var(--rpen-text)}
+${scope} :where(.editor,.inspector,#home,.home-heading,.settings-body,.noise-fit-scroll,.noise-tracking-scroll,.text-lines-scroll){background:var(--rpen-surface);color:var(--rpen-text)}
+${scope} :where(.editor-toolbar,.editor-footer,.timeline-head,.panel-title,.line-switcher,.asset-details,.batch-panel-actions,.noise-fit-footer,.noise-tracking-footer,.text-lines-footer,.trajectory-footer,.asset-folder > summary,#multi-line-labels,.noise-layer-panel,.clipboard-card,.timeline-strip){background:var(--rpen-surface-alt);border-color:var(--rpen-border);color:var(--rpen-text)}
 ${scope} :where(dialog,.timeline-context-menu,.collaboration-chat){background:var(--rpen-surface);color:var(--rpen-text);border-color:var(--rpen-border);border-radius:var(--rpen-radius-panel);box-shadow:var(--rpen-panel-shadow)}
 ${scope} dialog::backdrop{background:#0007}
 ${scope} :where(.hint,#document-name,#selection-info,#hotkey-help,.project-detail,.project-credits,.chart-info,.asset-details p,footer,#compatibility,.clipboard-select span){color:var(--rpen-muted)}
 ${scope} :where(h1,h2,h3,.panel-title,strong,.chart-info dd,.project-title){color:var(--rpen-text)}
 ${scope} label,${scope} #clock{color:var(--rpen-text)}
+${scope} #beat-display{color:var(--rpen-muted)}
 ${scope} #document-name,${scope} #selection-info,${scope} #hotkey-help,${scope} small,${scope} .view-controls-inline label span{color:var(--rpen-muted)}
 ${scope} summary,${scope} .home-heading p,${scope} .project-card time{color:var(--rpen-muted)}
 ${scope} .multi-line-width-controls output,${scope} #noise-properties h3{color:var(--rpen-text)}

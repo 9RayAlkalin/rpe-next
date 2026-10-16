@@ -60,6 +60,7 @@ import { AudioAnalysis } from './audio-analysis.mjs';
 import { TrajectoryPanel } from './trajectory-panel.mjs';
 import { TextLinesPanel } from './text-lines.mjs';
 import { NoiseFitPanel } from './noise-fit.mjs';
+import { NoiseTrackingPanel } from './noise-tracking.mjs';
 import { CollaborationPanel } from './collaboration.mjs';
 import { NoiseAreaEditor } from './noise-area.mjs';
 import { EventSampler } from './event-sampler.mjs';
@@ -73,6 +74,8 @@ const displayFields = [
   ['text-selection-drag', 'textSelectionDrag', false],
   ['event-cut-density', 'cutDensity', 4],
   ['sample-auto-fit', 'sampleAutoFit', true],
+  ['wheel-limit-audio-start', 'wheelStopAtAudioStart', true],
+  ['draw-event-curves', 'drawEventCurves', true],
   ['pick-preview-noise-areas', 'pickPreviewNoiseAreas', true],
   ['seamless-noise-areas', 'seamlessNoiseAreas', true],
   ['force-simple-noise', 'forceSimpleNoise', false],
@@ -211,6 +214,7 @@ const multiEdit = new MultiEditPanel(element('#multi-editor'), () => session, ti
 const trajectoryPanel = new TrajectoryPanel(element('#trajectory-editor'), () => ({ session, timeline, tempo, previewVisible: preview.visible }), { invalidate, notify, activate: activatePane });
 const textLinesPanel = new TextLinesPanel(element('#text-lines-editor'), () => ({ session, tempo, seconds: chartSeconds(), skin, noteSize: preview.noteSize }), { invalidate, notify, activate: activatePane });
 const noiseFitPanel = new NoiseFitPanel(element('#noise-fit-editor'), element('.stage'), () => ({ session, tempo, timeline, previewVisible: preview.visible, seconds: () => chartSeconds() }), { invalidate, notify, activate: activatePane, pause: () => playback.pause() });
+const noiseTrackingPanel = new NoiseTrackingPanel(element('#noise-tracking-editor'), element('.stage'), () => ({ session, tempo, timeline, preview, realtimePreview, previewVisible: preview.visible, seconds: () => chartSeconds(), wheel: event => previewWheel(event) }), { invalidate, notify, activate: activatePane, pause: () => playback.pause() });
 const multiLinePanel = new MultiLinePanel(element('#multi-line-editor'), () => session, { timeline, render: renderSession, notify, persist: persistEditor });
 const linePanel = new LinePanel(element('#line-panel'), () => session, { render: renderSession, notify, getAssets: () => assets, afterTexture: () => images.load(session.chart, assets, chartName) });
 const editorSkins = new EditorSkins(element('#editor-skin-settings'), { invalidate, notify });
@@ -436,7 +440,7 @@ timeline.onWheel = event => {
       if (lineSwitcher.enabled) { lineSwitcher.step(event.deltaY); lineSwitcher.show(); }
       else switchLine(event.deltaY);
     }
-  } else playback.wheel(event, { ...preferences.settings, scrollSpeed: editorPreferences.scrollSpeed ?? preferences.settings.scrollSpeed }, performance.now() / 1000);
+  } else previewWheel(event);
 };
 function switchLine(direction) {
   const index = stepLine(session.lineIndex, direction, session.chart.judgeLineList?.length ?? 0);
@@ -448,7 +452,7 @@ function selectOverviewLine(index) {
 }
 const previewWheel = event => {
   event.preventDefault();
-  playback.wheel(event, { ...preferences.settings, scrollSpeed: editorPreferences.scrollSpeed ?? preferences.settings.scrollSpeed }, performance.now() / 1000);
+  playback.wheel(event, { ...preferences.settings, scrollSpeed: editorPreferences.scrollSpeed ?? preferences.settings.scrollSpeed, wheelStopAtAudioStart: editorPreferences.wheelStopAtAudioStart ?? preferences.settings.wheelStopAtAudioStart ?? true }, performance.now() / 1000);
 };
 element('.preview-wrap').addEventListener('wheel', previewWheel, { passive: false });
 const pickPreviewLine = (renderer, event) => {
@@ -458,6 +462,7 @@ const pickPreviewLine = (renderer, event) => {
 };
 element('#preview').addEventListener('click', event => {
   if (!preview.visible) return;
+  if (noiseTrackingPanel.sampling) { noiseTrackingPanel.pick(event); return; }
   const noiseIndex = preview.pickNoiseArea(event.clientX, event.clientY);
   if (Number.isInteger(noiseIndex)) {
     clearNoteSourceToast(); togglePreview(false, true); openNoisePanel(); noiseEditor.select(noiseIndex); noiseEditor.areaList.reveal(noiseIndex); return;
@@ -467,6 +472,7 @@ element('#preview').addEventListener('click', event => {
   pickPreviewLine(preview, event);
 });
 element('#preview').addEventListener('pointermove', event => {
+  if (noiseTrackingPanel.sampling) { clearNoteSourceToast(); return; }
   if (!preview.visible || (editorPreferences.noteSourceHover ?? preferences.settings.noteSourceHover ?? true) === false) { clearNoteSourceToast(); return; }
   const lineIndex = preview.pickNote(event.clientX, event.clientY);
   if (!Number.isInteger(lineIndex)) { clearNoteSourceToast(); return; }
@@ -500,6 +506,7 @@ const home = new ProjectHome(async id => {
 });
 
 function setHome(visible) {
+  if (visible && noiseTrackingPanel.sampling) noiseTrackingPanel.endSample();
   if (visible && collaboration.client.active) collaboration.client.leave();
   atHome = visible;
   if (visible) clearNoteSourceToast();
@@ -587,6 +594,7 @@ function activatePane(name) {
   if (name !== 'trajectory') trajectoryPanel.hide();
   if (name !== 'text-lines') textLinesPanel.hide();
   if (name !== 'noise-fit') noiseFitPanel.hide();
+  if (name !== 'noise-tracking') noiseTrackingPanel.hide();
   activePaneName = name;
   editorSkinState({ pane: name });
   noiseEditor.syncChrome();
@@ -784,6 +792,7 @@ function renderSession() {
   if (activePaneName === 'diagnose') renderDiagnostics();
   if (activePaneName === 'history') renderHistoryPanel();
   if (activePaneName === 'multi') multiEdit.sync();
+  if (noiseTrackingPanel.active) noiseTrackingPanel.sync();
   if (activePaneName === 'multi-line') multiLinePanel.render();
   if (noiseEditor.active) noiseEditor.render();
   if (activePaneName === 'metadata') renderMetadataPanel(session, element('#metadata-editor'), () => { activatePane('chart'); renderSession(); });
@@ -811,6 +820,7 @@ function renderSession() {
     else if (activePaneName === 'collaboration') collaboration.renderState();
     else if (textLinesPanel.active) textLinesPanel.sync();
     else if (noiseFitPanel.active) noiseFitPanel.sync();
+    else if (noiseTrackingPanel.active) noiseTrackingPanel.sync();
     else if (trajectoryPanel.active && selectionCount !== 1) activatePane('trajectory');
     else if (curveEditorOpen) activatePane('curve');
     else if (activePaneName === 'clipboard') renderClipboardPanel();
@@ -839,6 +849,7 @@ function replaceChart(chart, name, nextAssets = new Map(), nextFolders = []) {
   if (eventSampler.active) eventSampler.finish(false);
   noiseEditor.reset();
   noiseFitPanel.reset();
+  noiseTrackingPanel.reset();
   if (!collaborationJoining && collaboration.client.active) collaboration.client.leave();
   lineSwitcher.reset();
   playback.pause(); audio.clear();
@@ -1155,6 +1166,10 @@ listen('#noise-fit-tool', () => {
   if (noiseEditor.active) noiseEditor.close();
   timeline.cancelPlacement(); batchControls.cancel(); pasteGesture.cancel(); curveEditorOpen = false; noiseFitPanel.open();
 });
+listen('#noise-tracking-tool', () => {
+  if (noiseEditor.active) noiseEditor.close();
+  timeline.cancelPlacement(); batchControls.cancel(); pasteGesture.cancel(); clearNoteSourceToast(); curveEditorOpen = false; noiseTrackingPanel.open();
+});
 listen('#curve-start', () => captureCurve(false));
 listen('#curve-end', () => captureCurve(true));
 function switchNoteView() {
@@ -1423,6 +1438,7 @@ window.addEventListener('keydown', async event => {
   const hasSelection = noiseEditor.active ? noiseEditor.selection.size > 0 : Boolean(session.selection.size || session.eventSelection.size || hasMultiSelection);
   const action = shortcutAction(event, preferences, area, { hasSelection: hasSelection && !preview.visible });
   if (noiseFitPanel.action(action)) { event.preventDefault(); event.stopImmediatePropagation(); return; }
+  if (noiseTrackingPanel.action(action)) { event.preventDefault(); event.stopImmediatePropagation(); return; }
   if (noiseEditor.active && (!preview.visible || noiseEditor.sampleMode)) {
     try { if (noiseEditor.action(action)) { event.preventDefault(); event.stopImmediatePropagation(); return; } }
     catch (error) { event.preventDefault(); reportError(error); return; }
@@ -1529,14 +1545,14 @@ function frame(timestamp) {
   if (audio.playing && loop && currentBeat() >= loop.end) seekBeat(loop.start, false);
   if (audio.playing && audio.time >= audio.duration) { audio.pause(); invalidate(); }
   hitSounds.tick(session.chart, tempo, session.lineIndex);
-  if (!atHome && (audio.playing || dirtyFrame || trajectoryPanel.active || noiseFitPanel.active && noiseFitPanel.options.animate && noiseFitPanel.options.show && noiseFitPanel.previewChart && !noiseFitPanel.fullPreview) && frameLimiter.shouldRender(timestamp, editorPreferences.fpsLimit ?? preferences.settings.fpsLimit)) {
+  if (!atHome && (audio.playing || dirtyFrame || trajectoryPanel.active || noiseTrackingPanel.active && noiseTrackingPanel.animating || noiseFitPanel.active && noiseFitPanel.options.animate && noiseFitPanel.options.show && noiseFitPanel.previewChart && !noiseFitPanel.fullPreview) && frameLimiter.shouldRender(timestamp, editorPreferences.fpsLimit ?? preferences.settings.fpsLimit)) {
     frameSampleCount++;
     const start = performance.now();
     const beat = currentBeat();
     session.editSeconds = Math.max(0, chartSeconds());
     updateLineInfo();
     if (audio.playing) timeline.origin = beat;
-    if (!preview.visible && !noiseEditor.active && !noiseFitPanel.active) {
+    if (!preview.visible && !noiseEditor.active && !noiseFitPanel.active && !noiseTrackingPanel.previewing) {
       timeline.draw(beat);
       multiEdit.drawTimeline();
       selectionOverlay.draw();
@@ -1553,27 +1569,36 @@ function frame(timestamp) {
     const eventSampleView = eventSampler.previewState();
     const textView = textLinesPanel.view();
     const noiseFitView = noiseFitPanel.tick(timestamp, chartSeconds(), audio.playing, realtimePreview);
-    const viewChart = noiseView?.chart ?? eventSampleView?.chart ?? noiseFitView?.chart ?? textView?.chart ?? trajectoryView?.chart ?? (multiEdit.active && multiEdit.previewHovered && multiEdit.previewEnabled.checked && multiEdit.result ? multiEdit.result.chart : viewSession.chart);
-    const viewSeconds = noiseView?.seconds ?? eventSampleView?.seconds ?? noiseFitView?.seconds ?? textView?.seconds ?? trajectoryView?.seconds ?? chartSeconds();
+    const trackingView = noiseTrackingPanel.tick(timestamp, chartSeconds(), audio.playing);
+    const viewChart = trackingView?.chart ?? noiseView?.chart ?? eventSampleView?.chart ?? noiseFitView?.chart ?? textView?.chart ?? trajectoryView?.chart ?? (multiEdit.active && multiEdit.previewHovered && multiEdit.previewEnabled.checked && multiEdit.result ? multiEdit.result.chart : viewSession.chart);
+    const viewSeconds = trackingView?.seconds ?? noiseView?.seconds ?? eventSampleView?.seconds ?? noiseFitView?.seconds ?? textView?.seconds ?? trajectoryView?.seconds ?? chartSeconds();
     const previewAllLines = preview.allLines; const previewEffects = preview.showHitEffects;
     const previewNumbers = preview.lineNumbers; const previewArrows = preview.lineArrows;
+    const forcedLineOpacity = preview.forceLineOpacity;
+    preview.forceLineOpacity = Boolean(trackingView?.forceLineOpacity);
+    if (trackingView) { preview.allLines = true; preview.showHitEffects = false; }
     if (textView || noiseFitView) { preview.allLines = true; preview.showHitEffects = false; preview.lineNumbers = false; preview.lineArrows = false; }
     preview.draw(viewChart, tempo, viewSeconds, viewSession.lineIndex);
     preview.allLines = previewAllLines; preview.showHitEffects = previewEffects;
     preview.lineNumbers = previewNumbers; preview.lineArrows = previewArrows;
+    preview.forceLineOpacity = forcedLineOpacity;
     if (!preview.visible) {
       const visible = realtimePreview.visible;
-      if (trajectoryView || textView || noiseFitView || noiseEditor.sampleMode || eventSampler.active) realtimePreview.visible = true;
+      if (trackingView || trajectoryView || textView || noiseFitView || noiseEditor.sampleMode || eventSampler.active) realtimePreview.visible = true;
       element('#realtime-preview').hidden = !realtimePreview.visible;
       const opacity = realtimePreview.opacity;
       const allLines = realtimePreview.allLines;
       const lineNumbers = realtimePreview.lineNumbers; const lineArrows = realtimePreview.lineArrows;
+      const forcedLineOpacity = realtimePreview.forceLineOpacity;
+      realtimePreview.forceLineOpacity = Boolean(trackingView?.forceLineOpacity);
+      if (trackingView) realtimePreview.allLines = true;
       if (textView || noiseFitView) { realtimePreview.allLines = true; realtimePreview.lineNumbers = false; realtimePreview.lineArrows = false; }
-      if (noiseEditor.sampleMode || eventSampler.active || noiseFitView) realtimePreview.opacity = 1;
+      if (trackingView || noiseEditor.sampleMode || eventSampler.active || noiseFitView) realtimePreview.opacity = 1;
       realtimePreview.draw(viewChart, tempo, viewSeconds, viewSession.lineIndex);
       realtimePreview.opacity = opacity;
       realtimePreview.allLines = allLines;
       realtimePreview.lineNumbers = lineNumbers; realtimePreview.lineArrows = lineArrows;
+      realtimePreview.forceLineOpacity = forcedLineOpacity;
       realtimePreview.visible = visible;
     }
     noiseEditor.drawSample();
@@ -1585,6 +1610,7 @@ function frame(timestamp) {
     editorSkinState({ playing: audio.playing, beat: skinBeat, dirty: session.history.dirty || assetDirty, location: atHome ? 'home' : preview.visible ? 'preview' : 'editor' });
     element('#play').title = audio.playing ? '暂停' : '播放';
     element('#clock').textContent = `${chartSeconds().toFixed(3)} s`;
+    element('#beat-display').textContent = `${(Math.abs(beat) < 0.0005 ? 0 : beat).toFixed(3)} 拍`;
     element('#scrubber').value = audio.time;
     const tempoPoint = tempo.points[Math.max(0, upperBound(tempo.points, beat, point => point.beat) - 1)];
     element('#bpm-display').textContent = `${(60 / tempoPoint.secondsPerBeat).toFixed(2)} BPM`;
@@ -1738,6 +1764,7 @@ function applyDisplaySettings() {
   timeline.judgementColor = element('#judgement-color').value;
   timeline.eventValueFontSize = Number(element('#event-value-size').value); timeline.eventValueThreshold = Number(element('#event-value-threshold').value); timeline.eventCurveThreshold = Number(element('#event-curve-threshold').value); timeline.eventOpacity = Number(element('#event-opacity').value); timeline.eventBarWidth = Number(element('#event-bar-width').value);
   timeline.seamlessEvents = element('#seamless-events').checked;
+  timeline.drawEventCurves = element('#draw-event-curves').checked;
   session.cutDensity = Number(element('#event-cut-density').value);
   clipboardHistory.enabled = element('#clipboard-history-enabled').checked;
   lineSwitcher.enabled = element('#line-switcher-enabled').checked;

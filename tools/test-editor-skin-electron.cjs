@@ -43,10 +43,22 @@ app.whenReady().then(async () => {
       const manager = window.themeManager; const record = manager.records.get('inkline');
       if (!record?.builtin || ![...manager.select.options].some(option => option.value === 'inkline' && option.textContent === '墨线 Inkline(cmdysj)')) throw Error('Inkline is unavailable without import');
       await manager.use('inkline'); if (!manager.deleteButton.disabled || getComputedStyle(manager.recovery).display !== 'none') throw Error('builtin skin deletion or persistent recovery state incorrect');
+      const beatDisplay = document.querySelector('#beat-display');
+      if (!beatDisplay.textContent.endsWith(' 拍') || beatDisplay.dataset.ui !== 'beat-display' || getComputedStyle(beatDisplay).display === 'none') throw Error('Inkline is missing the current beat readout');
       const parameter = manager.appearance.querySelector('[data-skin-parameter=event-fill]'); parameter.value = '#12db86'; parameter.dispatchEvent(new Event('change', { bubbles: true }));
       for (let count = 0; count < 50 && manager.runtime.prepared.record.skin.canvas.palette['#e58d24'] !== '#12db86'; count++) await new Promise(resolve => requestAnimationFrame(resolve));
       if (manager.runtime.prepared.record.skin.canvas.palette['#e58d24'] !== '#12db86') throw Error('builtin Inkline parameter failed');
       await manager.resetParameters('inkline'); if (manager.runtime.prepared.record.skin.canvas.palette['#e58d24'] !== '#4d6476') throw Error('builtin Inkline defaults failed');
+      document.querySelector('#settings-modal').close(); document.querySelector('#noise-areas-tool').click();
+      await new Promise(resolve => requestAnimationFrame(resolve));
+      const noiseCanvas = document.querySelector('#noise-editor-canvas');
+      if (noiseCanvas.hidden || getComputedStyle(noiseCanvas).backgroundColor !== 'rgba(0, 0, 0, 0)') throw Error('Inkline noise editor must keep a transparent background');
+      const stage = getComputedStyle(document.querySelector('.stage')).backgroundColor;
+      const pixelCanvas = document.createElement('canvas'); pixelCanvas.width = pixelCanvas.height = 1;
+      const pixelContext = pixelCanvas.getContext('2d'); pixelContext.fillStyle = stage; pixelContext.fillRect(0, 0, 1, 1);
+      const stagePixel = pixelContext.getImageData(0, 0, 1, 1).data;
+      if (stagePixel[3] !== 255 || stagePixel.slice(0, 3).some(channel => channel > 80)) throw Error('Inkline noise editor lost its dark workspace background');
+      document.querySelector('#close-noise-editor').click(); document.querySelector('#preferences').click();
       const confirm = window.confirm; window.confirm = () => { throw Error('builtin deletion must be rejected before confirmation'); };
       try { await manager.remove(); } finally { window.confirm = confirm; }
       if (!manager.records.has('inkline')) throw Error('builtin skin was deleted');
@@ -241,7 +253,8 @@ app.whenReady().then(async () => {
     await run(() => document.querySelector('#new').click()); await wait(200);
     for (const [width, height] of [[1000, 680], [600, 800]]) {
       win.setContentSize(width, height); await wait(160);
-      const size = await run(() => ({ scroll: document.documentElement.scrollWidth, width: innerWidth, editor: document.querySelector('.editor').getBoundingClientRect().width, inspector: document.querySelector('.inspector').getBoundingClientRect().width }));
+      const size = await run(() => ({ scroll: document.documentElement.scrollWidth, width: innerWidth, editor: document.querySelector('.editor').getBoundingClientRect().width, inspector: document.querySelector('.inspector').getBoundingClientRect().width, timeRight: document.querySelector('.time-readouts').getBoundingClientRect().right, beatVisible: document.querySelector('#beat-display').getBoundingClientRect().width > 0 }));
+      assert.equal(size.beatVisible, true); assert.ok(size.timeRight <= size.width + 1);
       assert.ok(size.scroll <= size.width + 2); assert.ok(size.editor > 200 && size.inspector > 200); fs.writeFileSync('.local-tools/editor-skin-' + width + 'x' + height + '.png', (await win.webContents.capturePage()).toPNG());
     }
     win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'F12', modifiers: ['control', 'alt', 'shift'] });

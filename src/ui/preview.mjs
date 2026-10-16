@@ -56,11 +56,11 @@ export class Preview {
     const states = this.scene.sample(seconds);
     const order = this.allLines ? this.scene.order : [selectedLine];
     this.viewport = viewport; this.selectedLine = selectedLine;
-    this.guides = lineGuides(states, chart.judgeLineList, order, width, height, scale);
+    this.guides = lineGuides(this.forceLineOpacity ? states.map(state => ({ ...state, alpha: 255 })) : states, chart.judgeLineList, order, width, height, scale);
     const visibleNotes = new Map(order.map(index => [index, this.scene.lines[index]?.visibleNotes(seconds, states[index], 1600 * divisor + Math.hypot(states[index]?.x ?? 0, states[index]?.y ?? 0)) ?? []]));
     this.noteHitAreas = [];
     for (const pass of this.passes) for (const index of pass.kind === 'line' ? [pass.index] : order) {
-      if (pass.kind === 'line' && ((!this.allLines && index !== selectedLine) || chart.judgeLineList[index].attachUI || states[index].alpha <= 0 || states[index].scaleX === 0 || states[index].scaleY === 0)) continue;
+      if (pass.kind === 'line' && ((!this.allLines && index !== selectedLine) || !this.forceLineOpacity && (chart.judgeLineList[index].attachUI || states[index].alpha <= 0) || states[index].scaleX === 0 || states[index].scaleY === 0)) continue;
       const runtime = this.scene.lines[index];
       const state = states[index];
       if (!runtime) continue;
@@ -73,7 +73,7 @@ export class Preview {
       context.save();
       context.translate(width / 2 + state.x * scale, height / 2 - state.y * scale);
       context.rotate(state.rotation * Math.PI / 180);
-      if (pass.kind === 'line') this.drawLine(context, runtime.line, this.lineTint && index === selectedLine ? { ...state, color: [0, 200, 0] } : state, scale);
+      if (pass.kind === 'line') this.drawLine(context, runtime.line, { ...state, ...(this.forceLineOpacity ? { alpha: 255 } : {}), ...(this.lineTint && index === selectedLine ? { color: [0, 200, 0] } : {}) }, scale);
       else for (const entry of visibleNotes.get(index)) {
         const note = entry.note;
         if ((note.type === 2) !== (pass.kind === 'hold')) continue;
@@ -86,10 +86,10 @@ export class Preview {
         const worldY = -state.y + position.x * Math.sin(rotation) - position.y * Math.cos(rotation);
         const screenX = width / 2 + worldX * scale;
         const screenY = height / 2 + worldY * scale;
-        const tail = Number.isFinite(position.tail) ? position.tail : position.y;
+        const tail = note.type === 2 && Number.isFinite(position.tail) ? position.tail : position.y;
         const tailWorldX = state.x + position.x * Math.cos(rotation) + tail * Math.sin(rotation);
         const tailWorldY = -state.y + position.x * Math.sin(rotation) - tail * Math.cos(rotation);
-        this.noteHitAreas.push({ lineIndex: index, x1: screenX, y1: screenY, x2: width / 2 + tailWorldX * scale, y2: height / 2 + tailWorldY * scale, radius: Math.max(12, noteWidth * 0.65) });
+        this.noteHitAreas.push({ lineIndex: index, noteIndex: entry.index, x1: screenX, y1: screenY, x2: width / 2 + tailWorldX * scale, y2: height / 2 + tailWorldY * scale, radius: Math.max(12, noteWidth * 0.65) });
         context.save();
         context.globalAlpha = clamp(position.alpha);
         const tint = note.tint ?? note.color;
@@ -178,6 +178,10 @@ export class Preview {
   }
 
   pickNote(clientX, clientY) {
+    return this.pickNoteTarget(clientX, clientY)?.lineIndex ?? null;
+  }
+
+  pickNoteTarget(clientX, clientY) {
     if (!this.visible || !this.noteHitAreas?.length) return null;
     const rectangle = this.canvas.getBoundingClientRect();
     const point = { x: clientX - rectangle.left, y: clientY - rectangle.top };
@@ -187,7 +191,10 @@ export class Preview {
       const amount = length ? Math.max(0, Math.min(1, ((point.x - area.x1) * dx + (point.y - area.y1) * dy) / length)) : 0;
       return Math.hypot(point.x - (area.x1 + amount * dx), point.y - (area.y1 + amount * dy));
     };
-    return this.noteHitAreas.slice().reverse().find(area => distanceToSegment(area) <= area.radius)?.lineIndex ?? null;
+    const view = this.viewport;
+    if (view && (point.x < view.left || point.x > view.left + view.width || point.y < view.top || point.y > view.top + view.height)) return null;
+    const area = this.noteHitAreas.slice().reverse().find(area => distanceToSegment(area) <= area.radius);
+    return area ? { lineIndex: area.lineIndex, noteIndex: area.noteIndex } : null;
   }
 
   drawGuides(context, scale, selectedLine) {

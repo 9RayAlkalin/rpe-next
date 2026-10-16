@@ -12,14 +12,15 @@ export const EDITOR_SKIN_COMPONENTS = Object.freeze({
   ...Object.fromEntries(['new', 'open', 'save', 'export', 'library', 'migrate', 'recover', 'preferences', 'help', 'play', 'rewind', 'view-toggle',
     'seek', 'undo', 'redo', 'copy', 'cut', 'paste', 'mirror', 'delete', 'notes-only', 'game-ui', 'reset-camera', 'mute-current-line',
     'metadata', 'bpm', 'assets', 'audio-analysis-tool', 'noise-areas-tool', 'curve-notes', 'curve-trajectory', 'text-lines-tool',
-    'noise-fit-tool', 'multi-line-tool', 'diagnose', 'history-panel', 'collaboration-tool'].map(id => [id, '#' + id])),
+    'noise-fit-tool', 'noise-tracking-tool', 'multi-line-tool', 'diagnose', 'history-panel', 'collaboration-tool'].map(id => [id, '#' + id])),
   'line-controls': '.line-select-group', 'beat-controls': '.beat-seek', 'view-buttons': '.view-buttons', 'multi-line-controls': '.multi-line-head-controls',
   'offset-control': 'label:has(#offset)', 'rate-control': 'label:has(#rate)', 'pitch-control': '.preserve-pitch',
-  'time-progress': '.scrubber-wrap', 'note-properties': '#properties', 'event-properties': '#event-properties', 'line-properties': '.line-properties-form',
+  'time-progress': '.scrubber-wrap', 'time-readouts': '.time-readouts', clock: '#clock', 'beat-display': '#beat-display', 'bpm-display': '#bpm-display',
+  'note-properties': '#properties', 'event-properties': '#event-properties', 'line-properties': '.line-properties-form',
   'noise-properties': '#noise-properties', 'noise-layers': '.noise-layer-panel', 'noise-list': '.noise-list',
   'line-list': '#line-list', 'multi-line-list': '.multi-line-list', 'asset-tree': '.asset-tree', 'asset-details': '.asset-details',
   'sample-bar': '.noise-sample-bar', 'sample-panel': '.event-sample-panel', field: ':is(.field,.noise-field)', hint: '.hint',
-  'panel-title': '.panel-title', 'panel-actions': ':is(.batch-panel-actions,.trajectory-footer,.text-lines-footer,.noise-fit-footer)',
+  'panel-title': '.panel-title', 'panel-actions': ':is(.batch-panel-actions,.trajectory-footer,.text-lines-footer,.noise-fit-footer,.noise-tracking-footer)',
   'batch-controls': '.batch-controls', 'batch-ball': '.batch-ball', chat: '.collaboration-chat', 'peer-markers': '.collaboration-markers',
   ...Object.fromEntries(['notes', 'events', 'lines', 'chart', 'noise'].map(pane => [`tab-${pane}`, `[data-pane="${pane}"]`])),
   ...Object.fromEntries([['select', 0], ['tap', 1], ['hold', 2], ['flick', 3], ['drag', 4]].map(([name, type]) => [`tool-${name}`, `[data-tool="${type}"]`])),
@@ -27,9 +28,9 @@ export const EDITOR_SKIN_COMPONENTS = Object.freeze({
 export const EDITOR_SKIN_SLOTS = ['file-actions', 'transport-actions', 'editor-actions', 'chart-tools', 'toolbar', 'inspector-tabs', 'timeline-header', 'footer'];
 export const EDITOR_SKIN_MOVABLE = ['new', 'open', 'save', 'export', 'library', 'migrate', 'recover', 'preferences', 'help', 'play', 'rewind', 'view-toggle',
   'undo', 'redo', 'copy', 'cut', 'paste', 'mirror', 'delete', 'metadata', 'bpm', 'assets', 'audio-analysis-tool', 'noise-areas-tool',
-  'curve-notes', 'curve-trajectory', 'text-lines-tool', 'noise-fit-tool', 'multi-line-tool', 'diagnose', 'history-panel', 'collaboration-tool',
+  'curve-notes', 'curve-trajectory', 'text-lines-tool', 'noise-fit-tool', 'noise-tracking-tool', 'multi-line-tool', 'diagnose', 'history-panel', 'collaboration-tool',
   'seek', 'notes-only', 'game-ui', 'reset-camera', 'mute-current-line', 'tools', 'view-controls', 'view-buttons', 'line-controls', 'beat-controls',
-  'offset-control', 'rate-control', 'pitch-control', 'multi-line-controls', 'tab-notes', 'tab-events', 'tab-lines', 'tab-chart', 'tab-noise',
+  'offset-control', 'rate-control', 'pitch-control', 'time-readouts', 'multi-line-controls', 'tab-notes', 'tab-events', 'tab-lines', 'tab-chart', 'tab-noise',
   'tool-select', 'tool-tap', 'tool-hold', 'tool-flick', 'tool-drag'];
 export const EDITOR_SKIN_CANVASES = Object.freeze({ notes: '#notes', events: '#events', noise: '#noise-editor-canvas', density: '#note-density', history: '#history-strip', audio: '#audio-analysis-overlay', selection: '.selection-overlay', 'batch-preview': '', easing: '.easing-preview', bezier: '.bezier-editor', curve: '.curve-preview', 'text-lines': '.text-lines-preview', trajectory: '.trajectory-preview,.trajectory-preset-thumbnail', 'noise-fit': '.noise-fit-source', 'line-thumbnail': '.line-switcher-card canvas', 'clipboard-thumbnail': '.clipboard-thumbnail' });
 export const EDITOR_SKIN_BUILTINS = Object.freeze(Object.fromEntries(['folder', 'save', 'setting', 'help', 'play', 'replay', 'showback', 'jump', 'copy', 'shear', 'paste', 'delete0', 'switch', 'layout', 'return', 'info', 'waves', 'bezier', 'addline', 'mute'].map(name => [name, `rpe/Texture/icon/${name}.png`])));

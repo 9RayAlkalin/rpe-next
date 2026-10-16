@@ -108,15 +108,18 @@ function orderedExportChart(chart) {
       ...Object.fromEntries(NOISE_TRACKS.filter(([type]) => Array.isArray(area[type])).map(([type]) => [type, ordered(area[type])])) })) } : {}),
     ...(Array.isArray(chart.effects) ? { effects: effects(chart.effects) } : {}),
     ...(Array.isArray(chart.shaderEvents) ? { shaderEvents: effects(chart.shaderEvents) } : {}),
+    ...(chart.globalEvents ? { globalEvents: { ...chart.globalEvents, types: Object.fromEntries(Object.entries(chart.globalEvents.types).map(([id, type]) => [id, { ...type, columns: Object.fromEntries(Object.entries(type.columns).map(([key, column]) => [key, { ...column, events: ordered(column.events) }])) }])) } } : {}),
     ...(Array.isArray(chart.META?.effects) ? { META: { ...chart.META, effects: effects(chart.META.effects) } } : {}) };
 }
 
 export function legacyChart(chart, splitSettings = {}) {
   if (chart.blockAreaList?.length) throw new Error('原 RPE 不支持噪域，请在导出窗口明确选择移除噪域后导出');
+  if (Object.values(chart.globalEvents?.types ?? {}).some(type => Object.values(type.columns).some(column => column.events.length))) throw new Error('原 RPE 不支持全局事件，请在导出窗口明确选择移除全局事件后导出');
   const next = structuredClone(chart);
   delete next.blockAreaList;
   delete next.noiseAreaOptions;
   delete next.noiseAreaLayers;
+  delete next.globalEvents;
   if (next.META.RPEVersion >= 200) next.META = { ...next.META, RPEVersion: 170 };
   const tempo = new TempoMap(next.BPMList);
   for (const line of next.judgeLineList ?? []) {
@@ -247,7 +250,8 @@ export function exportPackage(chart, assets, chartName) {
 export function createChartExport(chart, assets, chartName, options = {}) {
   const { format = 'pez', compatibility = 'next', name = chartName, split = {} } = options;
   if (!['json', 'pez'].includes(format) || !['next', 'rpe'].includes(compatibility)) throw new Error('导出格式无效');
-  const source = compatibility === 'rpe' && options.removeNoiseAreas ? { ...chart, blockAreaList: [] } : chart;
+  let source = compatibility === 'rpe' && options.removeNoiseAreas ? { ...chart, blockAreaList: [] } : chart;
+  if (compatibility === 'rpe' && options.removeGlobalEvents) { source = { ...source }; delete source.globalEvents; }
   const snapshot = compatibility === 'rpe' ? legacyChart(source, split) : orderedExportChart(chart);
   delete snapshot.chartTime;
   const stem = String(name).trim().replace(/\.(json|pez|pec|zip)$/i, '');

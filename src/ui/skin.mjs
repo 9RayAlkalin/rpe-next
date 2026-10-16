@@ -14,6 +14,14 @@ export class RpeSkin {
     this.invalidate();
   }
 
+  setResourcePack(pack) {
+    if (this.resourcePack !== pack) this.resourcePack?.dispose();
+    this.resourcePack = pack; this.tints.clear(); this.invalidate();
+  }
+  get hitLifetime() { return this.resourcePack?.hitLifetime; }
+  drawHit(context, options) { return this.resourcePack?.drawHit(context, options) ?? false; }
+  noteImage(type, highlight = false) { return this.resourcePack?.noteImage(type, highlight) ?? this.images.get((highlight ? highlights : names)[type]); }
+
   tinted(name, color) {
     const picture = this.images.get(name);
     if (!picture) return null;
@@ -49,17 +57,19 @@ export class RpeSkin {
     return this.tints.get(key);
   }
 
-  head(context, type, horizontal, vertical, width, highlight = false, color) {
+  head(context, type, horizontal, vertical, width, highlight = false, color, minimumHeight = 5) {
+    if (this.resourcePack) return this.resourcePack.head(context, type, horizontal, vertical, width, highlight, color);
     const name = (highlight ? highlights : names)[type];
     const picture = this.images.get(name);
     if (!picture) return false;
-    const height = Math.max(5, width * picture.naturalHeight / picture.naturalWidth);
+    const height = Math.max(minimumHeight, width * picture.naturalHeight / picture.naturalWidth);
     const customTint = Array.isArray(color) && color.length === 3 && color.every(Number.isFinite) && color.some(value => value !== 255);
     context.drawImage(customTint ? this.tinted(name, color) : picture, horizontal - width / 2, vertical - height / 2, width, height);
     return true;
   }
 
   hold(context, horizontal, head, tail, width, highlight = false, showHead = true, color) {
+    if (this.resourcePack) return this.resourcePack.hold(context, horizontal, head, tail, width, highlight, showHead, color);
     const bodyName = highlight ? 'HoldHL' : this.images.has('Hold3') ? 'Hold3' : 'Hold';
     const body = this.images.get(bodyName);
     const end = this.images.get('HoldEnd');

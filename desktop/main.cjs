@@ -7,9 +7,10 @@ const { pathToFileURL } = require('node:url');
 const origin = 'rpe://app';
 const smokeSettings = process.argv.includes('--smoke-settings');
 const smokeMedia = process.argv.includes('--smoke-media');
-const smoke = process.argv.includes('--smoke-test') || smokeSettings || smokeMedia;
+const smokeMods = process.argv.includes('--smoke-mods');
+const smoke = process.argv.includes('--smoke-test') || smokeSettings || smokeMedia || smokeMods;
 app.setName('RePhiEdit Next');
-app.setPath('userData', resolve(app.getPath('appData'), smoke ? 'rpe-next-desktop-smoke' : 'rpe-next-desktop'));
+app.setPath('userData', smokeMods ? resolve(app.getPath('temp'), 'rpe-next-mod-smoke-'+Date.now()) : resolve(app.getPath('appData'), smoke ? 'rpe-next-desktop-smoke' : 'rpe-next-desktop'));
 mkdirSync(app.getPath('userData'), { recursive: true });
 protocol.registerSchemesAsPrivileged([{ scheme: 'rpe', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } }]);
 
@@ -31,12 +32,12 @@ else {
         const url = new URL(request.url);
         if (url.host !== 'app' || !['GET', 'HEAD'].includes(request.method)) return new Response('Forbidden', { status: 403 });
         const relative = url.pathname === '/' ? 'index.html' : decodeURIComponent(url.pathname.slice(1));
-        if (!['index.html', 'styles.css'].includes(relative) && !relative.startsWith('src/') && !relative.startsWith('assets/')) return new Response('Not found', { status: 404 });
+        if (!['index.html', 'styles.css', 'protocols/MOD-PROTOCOL.zh-CN.md', 'protocols/GLOBAL-EVENTS-PROTOCOL.zh-CN.md', 'protocols/EDITOR-SKIN-PROTOCOL.zh-CN.md', 'schemas/editor-skin-v1.schema.json', 'schemas/editor-skin-components.v1.json', 'schemas/mod-v1.schema.json', 'schemas/mod-api-v1.d.ts'].includes(relative) && !relative.startsWith('src/') && !relative.startsWith('assets/')) return new Response('Not found', { status: 404 });
         const path = await realpath(resolve(root, relative));
         if (!path.startsWith(root + sep)) return new Response('Not found', { status: 404 });
         const response = await net.fetch(pathToFileURL(path).href);
         const headers = new Headers(response.headers);
-        headers.set('Content-Security-Policy', `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob:; font-src 'self' blob:; media-src 'self' blob:; connect-src ${connectSources}; object-src 'none'; base-uri 'none'; frame-ancestors 'none'`);
+        headers.set('Content-Security-Policy', `default-src 'self'; script-src 'self' blob:; script-src-elem 'self' blob: 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; font-src 'self' blob:; media-src 'self' blob: data:; connect-src ${connectSources}; object-src 'none'; base-uri 'none'; frame-ancestors 'none'`);
         headers.set('X-Content-Type-Options', 'nosniff');
         if (path.endsWith('.mjs')) headers.set('Content-Type', 'text/javascript; charset=utf-8');
         return new Response(request.method === 'HEAD' ? null : response.body, { status: response.status, headers });
@@ -64,7 +65,7 @@ else {
     });
     const errors = [];
     mainWindow.webContents.on('console-message', details => { if (details.level === 'error') errors.push(details.message); });
-    await mainWindow.loadURL(`${origin}/`);
+    await mainWindow.loadURL(`${origin}/${process.argv.includes('--mods-off')?'?mods=off':''}`);
     if (smoke) {
       const result = await mainWindow.webContents.executeJavaScript(`(async () => {
         await document.fonts.ready;
@@ -82,6 +83,7 @@ else {
       })()`);
       if (smokeSettings) result.settings = await mainWindow.webContents.executeJavaScript(await require('node:fs/promises').readFile(resolve(root, 'tools/smoke-settings-renderer.js'), 'utf8'));
       if (smokeMedia) result.media = await (await import(pathToFileURL(resolve(root, 'tools/smoke-media.mjs')).href)).smokeMediaTransfer(mainWindow.webContents);
+      if (smokeMods) result.mods = await (await import(pathToFileURL(resolve(root, 'tools/smoke-mods.mjs')).href)).smokeMods(mainWindow.webContents);
       console.log(JSON.stringify({ ...result, errors }));
       const passed = result.secure && result.libraryVisible && result.webgl && result.database && result.resources.every(resource => resource.status === 200 && resource.bytes > 0) && result.forbidden === 404 && !errors.length;
       app.exit(passed ? 0 : 1);

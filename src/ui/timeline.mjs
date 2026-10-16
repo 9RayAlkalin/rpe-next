@@ -129,7 +129,7 @@ export class Timeline {
   eventColumnBounds(channel, width) {
     const channelWidth = width / this.eventTypes.length;
     const barWidth = channelWidth * Math.max(0.35, Math.min(1, this.eventBarWidth ?? 0.82));
-    return { channelWidth, x: channel * channelWidth + (channelWidth - barWidth) / 2, width: barWidth };
+    return { channelWidth, left: channel * channelWidth, x: channel * channelWidth + (channelWidth - barWidth) / 2, width: barWidth };
   }
 
   get factor() { return this.getSession().line?.bpmfactor ?? 1; }
@@ -488,7 +488,7 @@ export class Timeline {
     const localBeatHeight = Math.abs(this.vertical(this.origin + 1) - this.vertical(this.origin));
     const stride = Math.max(1, Math.ceil(6 * this.division / localBeatHeight));
     context.font = '12px RPE, sans-serif';
-    context.lineWidth = Math.max(0.5, (this.barWidth ?? 3) * 2 * width / 1920);
+    context.lineWidth = Math.max(0.5, (this.barWidth ?? 3) * 2 * (this.gridReferenceWidth ?? width) / 1920);
     for (let tick = first; tick <= last; tick += stride) {
       const beat = tick / this.division;
       const vertical = this.vertical(beat, height);
@@ -861,8 +861,7 @@ export class Timeline {
     }
     this.eventRects = [];
     this.eventTypes.forEach((type, channel) => {
-      const { channelWidth, x: barX, width: barWidth } = this.eventColumnBounds(channel, width);
-      const horizontal = channel * channelWidth;
+      const { channelWidth, left: horizontal = channel * channelWidth, x: barX, width: barWidth } = this.eventColumnBounds(channel, width);
       context.strokeStyle = '#334154'; context.beginPath(); context.moveTo(horizontal, 0); context.lineTo(horizontal, height); context.stroke();
       const entries = this.eventIndexes[channel].query(this.eventBeatAt(height, type), this.eventBeatAt(0, type));
       if (type === 'paintEvents') {
@@ -907,6 +906,7 @@ export class Timeline {
           context.globalAlpha = 1;
         }
         if (entry.item.trajectory) this.drawTrajectoryEvent(context, rectangle, entry.item);
+        if (this.decorateEvent) { context.save(); context.beginPath(); context.rect(rectangle.x, rectangle.y, rectangle.width, rectangle.height); context.clip(); try { this.decorateEvent(context, rectangle, entry.item, selected); } finally { context.restore(); } }
         if (this.drawEventCurves !== false && !entry.item.trajectory && channelWidth >= (this.eventCurveThreshold ?? 24)) {
           if (seamless) {
             if (!curveBatches.has(chain)) curveBatches.set(chain, []);
@@ -922,7 +922,7 @@ export class Timeline {
       }
       context.lineWidth = 1;
       const visibleGroups = new Set(entries.map(entry => ranges.get(entry.index)));
-      const formatValue = value => typeof value === 'number' ? value.toFixed(2) : Array.isArray(value) ? value.join(',') : value;
+      const formatValue = value => this.formatEventValue ? this.formatEventValue(value, type) : typeof value === 'number' ? value.toFixed(2) : Array.isArray(value) ? value.join(',') : value;
        const valueThreshold = this.eventValueThreshold ?? 30;
        if (channelWidth >= valueThreshold) {
          context.font = `${this.eventValueFontSize ?? 13}px RPE, sans-serif`;
@@ -938,7 +938,7 @@ export class Timeline {
          }
        }
       context.fillStyle = '#303030'; context.fillRect(horizontal, 0, channelWidth, 23);
-      context.fillStyle = '#f5f5f5'; context.fillText((this.extended ? extendedLabels : labels)[channel], horizontal + 6, 16);
+      context.fillStyle = '#f5f5f5'; context.fillText(this.eventLabels?.[channel] ?? (this.extended ? extendedLabels : labels)[channel], horizontal + 6, 16, Math.max(1, channelWidth - 12));
     });
     const drag = this.eventInteraction.drag;
     if (drag?.kind === 'rectangle') {

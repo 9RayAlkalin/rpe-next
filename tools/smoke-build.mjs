@@ -25,6 +25,8 @@ try {
     if (path.endsWith('.svg') && !response.headers.get('content-type')?.includes('image/svg+xml')) throw new Error('缓动 SVG 类型错误');
   }
   if (denied.status !== 404) throw new Error('服务暴露了允许列表之外的文件');
+  for(const path of ['/protocols/MOD-PROTOCOL.zh-CN.md','/protocols/GLOBAL-EVENTS-PROTOCOL.zh-CN.md','/protocols/EDITOR-SKIN-PROTOCOL.zh-CN.md','/schemas/mod-v1.schema.json','/schemas/mod-api-v1.d.ts','/src/ui/mod-runtime.mjs','/assets/mods/index.json','/assets/mods/sky-dodge/main.mjs']){const response=await fetch(`http://127.0.0.1:${port}${path}`);if(response.status!==200||!(await response.arrayBuffer()).byteLength)throw Error(path+' 缺少模组文件');}
+  for(const path of ['/OFFICIAL-IMPORT.zh-CN.md','/package-lock.json','/tools/test-mods-electron.cjs'])if((await fetch(`http://127.0.0.1:${port}${path}`)).status!==404)throw Error(path+' 不应公开');
   console.log('dist 启动、入口及模块读取通过；服务允许列表生效。');
 } finally {
   child.kill();

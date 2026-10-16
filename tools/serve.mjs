@@ -15,12 +15,12 @@ const server = createServer(async (request, response) => {
     if (![`127.0.0.1:${port}`, `localhost:${port}`].includes(request.headers.host)) { response.writeHead(403); response.end(); return; }
     const pathname = decodeURIComponent(new URL(request.url, `http://127.0.0.1:${port}`).pathname);
     const relative = pathname === '/' ? 'index.html' : pathname.slice(1);
-    if (!(relative === 'index.html' || relative === 'styles.css' || relative.startsWith('src/') || relative.startsWith('assets/'))) throw new Error('Unavailable');
+    if (!(['index.html','styles.css','protocols/MOD-PROTOCOL.zh-CN.md','protocols/GLOBAL-EVENTS-PROTOCOL.zh-CN.md','protocols/EDITOR-SKIN-PROTOCOL.zh-CN.md','schemas/editor-skin-v1.schema.json','schemas/editor-skin-components.v1.json','schemas/mod-v1.schema.json','schemas/mod-api-v1.d.ts'].includes(relative) || relative.startsWith('src/') || relative.startsWith('assets/'))) throw new Error('Unavailable');
     const path = await realpath(resolve(root, relative));
     if (!path.startsWith(root + sep)) throw new Error('Unavailable');
     const content = await readFile(path);
     response.writeHead(200, { 'Content-Type': mimeTypes[extname(path)] ?? 'application/octet-stream', 'Cache-Control': 'no-store',
-      'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob:; font-src 'self' blob:; media-src blob:; connect-src ${connectSources}; object-src 'none'; base-uri 'none'; frame-ancestors 'none'` });
+      'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': `default-src 'self'; script-src 'self' blob:; script-src-elem 'self' blob: 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; font-src 'self' blob:; media-src blob: data:; connect-src ${connectSources}; object-src 'none'; base-uri 'none'; frame-ancestors 'none'` });
     response.end(request.method === 'HEAD' ? undefined : content);
   } catch { response.writeHead(404); response.end('Not found'); }
 });

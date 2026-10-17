@@ -40,6 +40,12 @@ jobs:
           path: release-assets
           pattern: release-*
           merge-multiple: true
+      - name: Normalize artifact layout
+        run: |
+          if [ -d release-assets/v0.12.1 ]; then
+            mv release-assets/v0.12.1/* release-assets/
+            rmdir release-assets/v0.12.1
+          fi
       - name: Verify all packages and generate checksums
         run: node tools/verify-release-assets.mjs release-assets "$SOURCE_COMMIT"
       - name: Create draft, upload and publish

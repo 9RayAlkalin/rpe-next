@@ -14,6 +14,7 @@ const kind = process.argv.includes('--server') ? 'server' : 'editor';
 const platform = process.platform, arch = process.arch;
 if (!['win32', 'darwin', 'linux'].includes(platform) || !['x64', 'arm64'].includes(arch)) throw Error('Release builds require Windows, macOS or Linux on x64/ARM64');
 const metadata = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
+const electronVersion = process.env.RPE_ELECTRON_VERSION ?? metadata.devDependencies.electron;
 const sourceCommit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
 const tracked = ['desktop', 'src/core', 'src/application', 'src/platform', 'src/ui', 'assets', 'index.html', 'styles.css', 'LICENSE', 'NOTICE',
   'protocols/EDITOR-SKIN-PROTOCOL.zh-CN.md', 'protocols/MOD-PROTOCOL.zh-CN.md', 'protocols/GLOBAL-EVENTS-PROTOCOL.zh-CN.md', 'schemas',
@@ -46,7 +47,7 @@ await writeFile(join(stage, 'package.json'), JSON.stringify({
   version: metadata.version, description: metadata.description, author: metadata.author, license: metadata.license,
   main: kind === 'server' ? 'collaboration-server/manager.cjs' : 'desktop/main.cjs', type: 'module'
 }, null, 2) + '\n');
-const buildInfo = { version: metadata.version, kind, platform, arch, sourceCommit, electron: metadata.devDependencies.electron };
+const buildInfo = { version: metadata.version, kind, platform, arch, sourceCommit, electron: electronVersion };
 await writeFile(join(stage, 'build-info.json'), JSON.stringify(buildInfo, null, 2) + '\n');
 
 let removedLocaleBytes = 0;
@@ -88,11 +89,11 @@ function run(program, args, options = {}) {
 }
 const packaged = await packager({
   dir: stage, out: packageFolder, name: product, executableName, platform, arch,
-  electronVersion: metadata.devDependencies.electron, appVersion: metadata.version,
+  electronVersion, appVersion: metadata.version,
   appBundleId: kind === 'server' ? 'io.github.kclg-ysj.rpe-next.server' : 'io.github.kclg-ysj.rpe-next',
   appCopyright: 'Copyright 2026 cmdysj', prune: false, asar: false, overwrite: false,
   darwinDarkModeSupport: true,
-  ...(platform === 'darwin' ? { osxSign: { identity: '-', identityValidation: false, continueOnError: false } } : {}),
+  ...(platform === 'darwin' ? { osxSign: { identity: '-', identityValidation: false, continueOnError: false, optionsForFile: () => ({ entitlements: ['com.apple.security.cs.allow-jit', 'com.apple.security.cs.allow-unsigned-executable-memory', 'com.apple.security.cs.disable-library-validation', 'com.apple.security.device.audio-input', 'com.apple.security.device.bluetooth', 'com.apple.security.device.camera', 'com.apple.security.device.print', 'com.apple.security.device.usb', 'com.apple.security.personal-information.location', 'com.apple.security.personal-information.photos-library'] }) } } : {}),
   afterExtract: [async ({ buildPath }) => trimLocales(buildPath)]
 });
 if (packaged.length !== 1) throw Error('Unexpected package count');
@@ -102,8 +103,8 @@ const executable = platform === 'darwin' ? join(bundle, 'Contents/MacOS', execut
 if (platform === 'win32') execFileSync('icacls.exe', [directory, '/grant', '*S-1-15-2-1:(OI)(CI)(RX)', '/T', '/Q'], { windowsHide: true, stdio: 'pipe' });
 const args = kind === 'server' ? ['--smoke-test'] : ['--smoke-native', '--mods-off'];
 if (platform === 'linux') args.push('--no-sandbox');
-if (platform === 'darwin') args.push('--use-angle=metal', '--ignore-gpu-blocklist');
-else args.push('--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader');
+  if (platform === 'darwin') args.push(...(process.env.RPE_DARWIN_GL_ARGS ?? '--use-angle=metal --ignore-gpu-blocklist').trim().split(/\s+/).filter(Boolean));
+  else args.push('--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader');
 console.log('Testing packaged application: ' + platform + '/' + arch + ' ' + kind);
 const smoke = await run(executable, args, { env: { ...process.env, RPE_NATIVE_TEST_HOME: join(work, 'test-profile') }, timeout: platform === 'darwin' && arch === 'x64' ? 480000 : 240000 });
 if (kind === 'editor' ? !smoke.includes('"errors":[]') || !smoke.includes('real native IPC opens image parent') : !smoke.includes('"protocol":1') || !smoke.includes('"errors":[]')) throw Error('Packaged smoke result is incomplete');

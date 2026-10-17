@@ -43,6 +43,7 @@ export const DEFAULT_EDITOR_PREFERENCES = Object.freeze({
   "notesOnly": false,
   "eventOpacity": 0.45,
   "eventBarWidth": 0.73,
+  "dragSensitivity": 1,
   "tipsEnabled": false
 });
 

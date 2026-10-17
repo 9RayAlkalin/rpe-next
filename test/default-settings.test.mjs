@@ -28,4 +28,8 @@ test('stored migrated settings and explicit editor settings continue to override
   const editor = { ...DEFAULT_EDITOR_PREFERENCES, ...normalizeEditorPreferences(saved) };
   assert.equal(editor.scale, 333); assert.equal(editor.volume, 0.2); assert.equal(editor.eventOpacity, 0.7); assert.equal(editor.tipsEnabled, true);
   assert.equal(DEFAULT_EDITOR_PREFERENCES.scale, 600);
+  assert.equal(DEFAULT_EDITOR_PREFERENCES.dragSensitivity, 1);
+  assert.equal(normalizeEditorPreferences({ dragSensitivity: 99 }).dragSensitivity, 8);
+  assert.equal(normalizeEditorPreferences({ dragSensitivity: 0 }).dragSensitivity, 0.1);
+  assert.equal(normalizeEditorPreferences({ dragSensitivity: 2.5 }).dragSensitivity, 2.5);
 });

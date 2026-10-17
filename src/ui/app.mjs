@@ -99,6 +99,7 @@ for(const type of ['keydown','keyup','wheel','pointerdown','pointerup','mousedow
 const displayFields = [
   ['text-selection-drag', 'textSelectionDrag', false],
   ['event-cut-density', 'cutDensity', 4],
+  ['event-drag-sensitivity', 'dragSensitivity', 1],
   ['sample-auto-fit', 'sampleAutoFit', true],
   ['wheel-limit-audio-start', 'wheelStopAtAudioStart', true],
   ['draw-event-curves', 'drawEventCurves', true],
@@ -179,7 +180,7 @@ for (const renderer of [preview, realtimePreview]) {
   renderer.noisePreview.hiddenLayers = noiseEditor.hiddenLayers;
   renderer.noisePreview.simpleLayers = noiseEditor.simpleLayers;
 }
-const eventSampler = new EventSampler(element('.stage'), () => ({ session, tempo, preview, realtimePreview, previewVisible: preview.visible, timeline, seconds: chartSeconds, sampleAutoFit: element('#sample-auto-fit').checked }), { invalidate, pause: () => playback.pause(), notify });
+const eventSampler = new EventSampler(element('.stage'), () => ({ session, tempo, preview, realtimePreview, previewVisible: preview.visible, timeline, seconds: chartSeconds, playing: () => audio.playing, sampleAutoFit: element('#sample-auto-fit').checked }), { invalidate, pause: () => playback.pause(), notify });
 const audioAnalysis = new AudioAnalysis(element('#audio-analysis-overlay'), () => timeline, () => audio, () => persistEditor());
 let noteHoverTimer = null;
 let noteHoverKey = null;
@@ -807,6 +808,7 @@ function renderSession() {
   timeline.tempo = tempo;
   session.tempo = tempo; session.division = timeline.division;
   session.cutDensity = Number(element('#event-cut-density').value);
+  session.dragSensitivity = Number(element('#event-drag-sensitivity').value);
   updateLineInfo();
   session.eventWheelSteps = Object.fromEntries(['moveXEvents', 'moveYEvents', 'rotateEvents', 'alphaEvents', 'speedEvents', 'scaleXEvents', 'scaleYEvents'].flatMap((key, index) => Number.isFinite(preferences.originalSettings.scrollValueIncrement?.[index]) ? [[key, preferences.originalSettings.scrollValueIncrement[index]]] : []));
   timeline.origin = currentBeat();
@@ -1669,7 +1671,7 @@ function frame(timestamp) {
   if (audio.playing && !mods?.runtime.locks.size && loop && currentBeat() >= loop.end) seekBeat(loop.start, false);
   if (audio.playing && audio.time >= audio.duration) { audio.pause(); invalidate(); }
   hitSounds.tick(session.chart, tempo, session.lineIndex);
-  if (!atHome && (audio.playing || dirtyFrame || trajectoryPanel.active || noiseTrackingPanel.active && noiseTrackingPanel.animating || noiseFitPanel.active && noiseFitPanel.options.animate && noiseFitPanel.options.show && noiseFitPanel.previewChart && !noiseFitPanel.fullPreview) && frameLimiter.shouldRender(timestamp, editorPreferences.fpsLimit ?? preferences.settings.fpsLimit)) {
+  if (!atHome && (audio.playing || dirtyFrame || eventSampler.looping || trajectoryPanel.active || noiseTrackingPanel.active && noiseTrackingPanel.animating || noiseFitPanel.active && noiseFitPanel.options.animate && noiseFitPanel.options.show && noiseFitPanel.previewChart && !noiseFitPanel.fullPreview) && frameLimiter.shouldRender(timestamp, editorPreferences.fpsLimit ?? preferences.settings.fpsLimit)) {
     frameSampleCount++;
     const start = performance.now();
     const beat = currentBeat();
@@ -1895,6 +1897,7 @@ function applyDisplaySettings() {
   timeline.seamlessEvents = element('#seamless-events').checked;
   timeline.drawEventCurves = element('#draw-event-curves').checked;
   session.cutDensity = Number(element('#event-cut-density').value);
+  session.dragSensitivity = Number(element('#event-drag-sensitivity').value);
   clipboardHistory.enabled = element('#clipboard-history-enabled').checked;
   lineSwitcher.enabled = element('#line-switcher-enabled').checked;
   if (!lineSwitcher.enabled) lineSwitcher.hide();

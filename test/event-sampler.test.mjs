@@ -97,3 +97,47 @@ test('多次数值取样仅在应用时提交，取消及完成均恢复编辑�
   assert.equal(session.chart.judgeLineList[0].eventLayers[0].alphaEvents[0].end, 160);
   assert.equal(classes.has('event-sampling'), false);
 });
+
+test('数值取样提交可使用调用方标签，空取样不产生历史', () => {
+  const { sampler, session } = fixture();
+  sampler.updateValueDraft({ type: 'alphaEvents', index: 0, field: 'start', lineIndex: 0 }, 80);
+  sampler.finishValue(true, '拖动修改事件起始透明度');
+  assert.equal(session.history.undoStack.at(-1).label, '拖动修改事件起始透明度');
+  const historyLength = session.history.undoStack.length;
+  sampler.finishValue(false);
+  sampler.finishValue(true, '拖动修改事件起始透明度');
+  assert.equal(session.history.undoStack.length, historyLength);
+});
+
+test('数值取样暂停时循环预览事件时间段，播放中跟随当前时间', () => {
+  const { sampler, session, context } = fixture();
+  const event = session.chart.judgeLineList[0].eventLayers[0].alphaEvents[0];
+  const start = context.tempo.seconds(event.startTime, 1);
+  const end = context.tempo.seconds(event.endTime, 1);
+  assert.ok(end > start, '默认事件有正的时间跨度');
+  sampler.updateValueDraft({ type: 'alphaEvents', index: 0, field: 'start', lineIndex: 0 }, 80);
+  assert.equal(sampler.looping, true);
+  const first = sampler.previewState().seconds;
+  assert.ok(first >= start - 1e-9 && first <= end + 1e-9, `${first} 应落在 [${start}, ${end}]`);
+  sampler.valueDraft.startedAt -= 200;
+  const second = sampler.previewState().seconds;
+  assert.notEqual(second, first, '预览时间随时间推进');
+  assert.ok(second >= start - 1e-9 && second <= end + 1e-9);
+  context.playing = () => true;
+  assert.equal(sampler.looping, false);
+  assert.equal(sampler.previewState().seconds, 0, '播放中沿用当前时间');
+  context.playing = () => false;
+  sampler.finishValue(false);
+  assert.equal(sampler.looping, false, '结束取样后停止循环');
+  assert.equal(sampler.previewState(), null);
+});
+
+test('无时间跨度的事件退化为当前时间静态预览', () => {
+  const chart = createChart();
+  chart.judgeLineList[0].eventLayers[0].alphaEvents = [createEvent(0, 0, 2, 2)];
+  const { sampler, context } = fixture(chart);
+  sampler.updateValueDraft({ type: 'alphaEvents', index: 0, field: 'start', lineIndex: 0 }, 80);
+  assert.equal(sampler.looping, false);
+  assert.equal(sampler.previewState().seconds, context.seconds());
+});
+

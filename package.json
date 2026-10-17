@@ -7,8 +7,13 @@
   "author": "cmdysj",
   "license": "PolyForm-Noncommercial-1.0.0",
   "homepage": "https://kclg-ysj.github.io/rpe-next/",
-  "repository": { "type": "git", "url": "https://github.com/kclg-YSJ/rpe-next.git" },
-  "engines": { "node": ">=22" },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kclg-YSJ/rpe-next.git"
+  },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "start": "node tools/serve.mjs --open",
     "copy-assets": "node tools/copy-rpe-assets.mjs",
@@ -27,8 +32,12 @@
     "build": "node tools/build.mjs",
     "build:pages": "node tools/build.mjs --pages",
     "build:desktop": "node tools/build-desktop.mjs",
+    "build:release": "node tools/build-release.mjs",
     "desktop": "electron desktop/main.cjs",
     "smoke-build": "node tools/smoke-build.mjs"
   },
-  "devDependencies": { "electron": "44.5.1" }
+  "devDependencies": {
+    "@electron/packager": "20.3.0",
+    "electron": "44.5.1"
+  }
 }

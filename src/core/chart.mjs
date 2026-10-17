@@ -79,6 +79,7 @@ export function assertChart(chart) {
     const path = `judgeLineList[${lineIndex}]`;
     if (!line || typeof line !== 'object') throw new Error(`${path}: 无效判定线`);
     if (line.bpmfactor !== undefined && (!Number.isFinite(line.bpmfactor) || line.bpmfactor <= 0)) throw new Error(`${path}.bpmfactor 必须大于零`);
+    if (line.anchor !== undefined && (!Array.isArray(line.anchor) || line.anchor.length !== 2 || !line.anchor.every(Number.isFinite))) throw new Error(`${path}.anchor 必须为两个有限数字`);
     if (line.notes != null && !Array.isArray(line.notes)) throw new Error(`${path}.notes 必须为数组`);
     for (const [index, note] of (line.notes ?? []).entries()) {
       if (!note || typeof note !== 'object') throw new Error(`${path}.notes[${index}]: 无效音符`);

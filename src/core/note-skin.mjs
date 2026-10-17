@@ -102,9 +102,9 @@ export function noteSkinFrame(info, age) {
   return {index,column:index%info.hitFx[0],row:Math.floor(index/info.hitFx[0])};
 }
 
-export function holdSkinLayout(info, image, highlighted, head, tail, width) {
+export function holdSkinLayout(info, image, highlighted, head, tail, width, heightWidth = width) {
   const [tailPixels,headPixels] = info[highlighted ? 'holdAtlasMH' : 'holdAtlas'];
-  const scale = width / image.width; const headHeight = headPixels * scale; const tailHeight = tailPixels * scale;
+  const scale = heightWidth / image.width; const headHeight = headPixels * scale; const tailHeight = tailPixels * scale;
   const length = Math.abs(tail-head); const direction = tail <= head ? 1 : -1;
   return {direction,length,scale,headHeight,tailHeight,bodyPixels:image.height-tailPixels-headPixels,
     headY:info.holdCompact ? -headHeight/2 : 0,

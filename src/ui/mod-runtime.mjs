@@ -1,3 +1,4 @@
+import { localPreferences } from '../platform/local-preferences.mjs';
 import { rewriteModModule,resolveModImport,modPath,modSettingValue } from '../core/mod-package.mjs';
 import { registerModHook,emitModHook } from '../core/mod-hooks.mjs';
 import { parseShortcut,formatShortcut } from '../core/shortcut-spec.mjs';
@@ -103,7 +104,7 @@ export class ModRuntime {
       mount:(node,parent=document.body)=>{parent.append(node);scope.defer(()=>node.remove());return node;},
       style:css=>{const sheet=document.createElement('style');sheet.textContent=css;document.head.append(sheet);scope.defer(()=>sheet.remove());return sheet;},
       settings:{get:key=>state.settings[key],set:async(key,value)=>{const definition=Object.hasOwn(record.manifest.settings,key)?record.manifest.settings[key]:null;if(!definition)throw Error('未知模组设置项：'+key);modSettingValue(definition,value,key);await state.onSetting(key,value);},onChange:fn=>scope.listen(this.events,'settings:'+id,event=>fn(event.detail))},
-      storage:{read:(fallback={})=>{try{return JSON.parse(localStorage.getItem(storedKey))??structuredClone(fallback);}catch{return structuredClone(fallback);}},write:value=>localStorage.setItem(storedKey,JSON.stringify(value)),clear:()=>localStorage.removeItem(storedKey)},
+      storage:{read:(fallback={})=>{try{return JSON.parse(localPreferences.getItem(storedKey))??structuredClone(fallback);}catch{return structuredClone(fallback);}},write:value=>localPreferences.setItem(storedKey,JSON.stringify(value)),clear:()=>localPreferences.removeItem(storedKey)},
       package:{files:()=>[...record.files.keys()],bytes:path=>record.files.get(modPath(path))?.slice()??null,
         text:path=>new TextDecoder('utf-8',{fatal:true}).decode(record.files.get(modPath(path))??new Uint8Array()),
         url:(path,type)=>{const bytes=record.files.get(modPath(path));if(!bytes)throw Error('模组素材不存在：'+path);const extension=path.split('.').at(-1).toLowerCase();const mime=type??({png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',svg:'image/svg+xml',webp:'image/webp',gif:'image/gif',ogg:'audio/ogg',wav:'audio/wav',mp3:'audio/mpeg',json:'application/json',css:'text/css',woff2:'font/woff2',ttf:'font/ttf'}[extension]??'application/octet-stream');const url=URL.createObjectURL(new Blob([bytes],{type:mime}));scope.defer(()=>URL.revokeObjectURL(url));return url;},

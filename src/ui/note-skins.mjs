@@ -1,3 +1,4 @@
+import { localPreferences } from '../platform/local-preferences.mjs';
 import { parseNoteSkin, noteSkinInfo, NOTE_SKIN_IMAGES, NOTE_SKIN_SOUNDS, NOTE_SKIN_LIMITS } from '../core/note-skin.mjs';
 import { builtinNoteSkins, readNoteSkins, storeNoteSkin, deleteNoteSkin, importNoteSkin, exportNoteSkin, updateNoteSkin, decodeNoteSkinSounds } from '../platform/note-skins.mjs';
 import { ResourceNoteSkin } from './resource-note-skin.mjs';
@@ -29,8 +30,8 @@ export class NoteSkins {
           record.builtin=Boolean(builtin);record.originalFiles=builtin?.files??new Map(stored.originalFiles??stored.files);this.records.set(record.id,record);
         } catch(error) {this.notify('已跳过损坏的音符皮肤：'+error.message,'warning');}
       }
-      const id=localStorage.getItem(ACTIVE_KEY)??'default';
-      if(id!=='default'&&!this.records.has(id)) {localStorage.removeItem(ACTIVE_KEY);this.notify('找不到已保存的音符皮肤，已使用默认皮肤。','warning');}
+      const id=localPreferences.getItem(ACTIVE_KEY)??'default';
+      if(id!=='default'&&!this.records.has(id)) {localPreferences.removeItem(ACTIVE_KEY);this.notify('找不到已保存的音符皮肤，已使用默认皮肤。','warning');}
       else if(id!=='default')await this.activate(id,false);
     } catch(error) {this.notify('音符皮肤读取失败，继续使用默认皮肤：'+error.message,'warning');}
     this.summary.textContent=title(this.records.get(this.current));
@@ -181,7 +182,7 @@ export class NoteSkins {
       try {const sounds=await decodeNoteSkinSounds(record,this.audio.ensureContext());await beforeActivate();this.skin.setResourcePack(runtime);this.hitSounds.setSoundPack(sounds);}
       catch(error){runtime.dispose();throw error;}
     }
-    this.current=id;if(persist)localStorage.setItem(ACTIVE_KEY,id);this.summary.textContent=title(record);this.updateToolImages();this.invalidate();document.dispatchEvent(new CustomEvent('rpen-note-skin-changed',{detail:{id}}));
+    this.current=id;if(persist)localPreferences.setItem(ACTIVE_KEY,id);this.summary.textContent=title(record);this.updateToolImages();this.invalidate();document.dispatchEvent(new CustomEvent('rpen-note-skin-changed',{detail:{id}}));
   }
   updateToolImages(){
     const generation=this.toolGeneration=(this.toolGeneration??0)+1;

@@ -1,13 +1,11 @@
+import { openDatabase, ensureStore } from './storage.mjs';
 import { readZip, writeZip } from './archive.mjs';
 import { parseNoteSkin, serializeNoteSkinInfo, NOTE_SKIN_LIMITS } from '../core/note-skin.mjs';
 import { assetUrl } from '../core/asset-url.mjs';
+import { nativeStorage, nativePackages } from './native.mjs';
 
 async function access(mode, action) {
-  const database = await new Promise((resolve,reject) => {
-    const request = indexedDB.open('rpe-next-note-skins',1);
-    request.onupgradeneeded = () => request.result.createObjectStore('packages',{keyPath:'id'});
-    request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
-  });
+  const database = await openDatabase('rpe-next-note-skins', 1, (connection, transaction) => ensureStore(connection, transaction, 'packages', { keyPath: 'id' }));
   return new Promise((resolve,reject) => {
     const transaction = database.transaction('packages',mode); let request;
     try {request=action(transaction.objectStore('packages'));} catch(error) {database.close();reject(error);return;}
@@ -15,9 +13,9 @@ async function access(mode, action) {
     transaction.onabort=transaction.onerror=()=>{database.close();reject(transaction.error??new Error('皮肤存储失败'));};
   });
 }
-export const readNoteSkins = () => access('readonly',store=>store.getAll());
-export const storeNoteSkin = record => access('readwrite',store=>store.put({id:record.id,files:[...record.files],originalFiles:[...(record.originalFiles??record.files)],imported:Date.now()}));
-export const deleteNoteSkin = id => access('readwrite',store=>store.delete(id));
+export const readNoteSkins = () => nativeStorage ? nativePackages('note-skins', 'read') : access('readonly',store=>store.getAll());
+export const storeNoteSkin = record => { const stored = {id:record.id,files:[...record.files],originalFiles:[...(record.originalFiles??record.files)],imported:Date.now()}; return nativeStorage ? nativePackages('note-skins', 'write', stored.id, stored) : access('readwrite',store=>store.put(stored)); };
+export const deleteNoteSkin = id => nativeStorage ? nativePackages('note-skins', 'delete', id) : access('readwrite',store=>store.delete(id));
 export const exportNoteSkin = record => writeZip(record.files);
 
 export async function decodeNoteSkinSounds(record,context) {

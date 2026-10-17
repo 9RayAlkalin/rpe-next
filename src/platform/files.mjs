@@ -1,6 +1,6 @@
 import { serializeChart, stringifyPreservingNumbers, EVENT_TYPES, EXTENDED_TYPES } from '../core/chart.mjs';
 import { parseDocument } from '../core/formats.mjs';
-import { readZip, writeZip, crc32 } from './archive.mjs';
+import { readZip, writeZip, crc32, inspectZip } from './archive.mjs';
 import { decodeLegacy, parseInfo } from './legacy-text.mjs';
 import { serializeShaderEvent } from '../core/shader-events.mjs';
 import { expandTrajectory } from '../application/trajectory-commands.mjs';
@@ -8,12 +8,18 @@ import { TempoMap } from '../core/tempo.mjs';
 import { beatValue } from '../core/beat.mjs';
 import { NOISE_TRACKS } from '../core/noise-areas.mjs';
 import { integerChartAlpha } from '../core/alpha-values.mjs';
+import { chartExportStem, safeExportStem, DownloadNames } from '../core/export-filename.mjs';
 
-export async function openFiles(fileList) {
+export async function openFiles(fileList, { confirmLargeArchive } = {}) {
   const files = [...fileList];
   if (!files.length) return null;
   let assets = new Map();
-  if (files.length === 1 && /\.(pez|zip)$/i.test(files[0].name)) assets = await readZip(await files[0].arrayBuffer());
+  if (files.length === 1 && /\.(pez|zip)$/i.test(files[0].name)) {
+    const buffer = await files[0].arrayBuffer(), info = inspectZip(buffer);
+    const large = info.declaredBytes > 1024 ** 3 || info.largestFile > 512 * 1024 ** 2 || info.count > 20000 || info.largestRatio > 500;
+    if (large && !await confirmLargeArchive?.(info)) throw Object.assign(new Error('谱面包解压后的体积、文件数或压缩倍率过大，已停止导入；确认来源可信后可再次打开并确认。'), { name: 'ArchiveLimitError' });
+    assets = await readZip(buffer, { maxFiles: large ? info.count : 20000, maxBytes: large ? info.declaredBytes : 1024 ** 3, maxFileBytes: large ? info.largestFile : 512 * 1024 ** 2 });
+  }
   else for (const file of files) assets.set(file.name, new Uint8Array(await file.arrayBuffer()));
   const candidates = [];
   const errors = [];
@@ -51,7 +57,7 @@ export function assetBytes(assets, name, chartName = '') {
   return assets.get(assetPath(assets, name, chartName)) ?? null;
 }
 
-function assetPath(assets, name, chartName = '') {
+export function assetPath(assets, name, chartName = '') {
   if (!name) return null;
   const chartPath = chartName.replaceAll('\\', '/');
   const directory = chartPath.includes('/') ? chartPath.slice(0, chartPath.lastIndexOf('/') + 1) : '';
@@ -66,19 +72,23 @@ function assetPath(assets, name, chartName = '') {
   return matches.length === 1 ? matches[0][0] : null;
 }
 
+const downloadNames = new DownloadNames();
+export const suggestDownloadName = name => downloadNames.suggest(name);
+
 export function download(blob, name) {
   const link = document.createElement('a');
   const url = URL.createObjectURL(blob);
   link.href = url;
-  link.download = name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_');
+  link.download = downloadNames.reserve(name);
   document.body.append(link);
   link.click();
   link.remove();
   setTimeout(() => URL.revokeObjectURL(url), 60000);
+  return link.download;
 }
 
 export function exportChart(chart, name) {
-  download(new Blob([serializeChart(orderedExportChart(chart))], { type: 'application/json' }), name.replace(/\.(pec|pez|zip)$/i, '.json'));
+  download(new Blob([serializeChart(orderedExportChart(chart))], { type: 'application/json' }), chartExportStem(chart, name) + '.json');
 }
 
 function orderedExportChart(chart) {
@@ -135,7 +145,7 @@ export function legacyChart(chart, splitSettings = {}) {
 }
 
 export function exportLegacyChart(chart, name) {
-  download(new Blob([serializeChart(legacyChart(chart))], { type: 'application/json' }), name.replace(/\.(json|pec|pez|zip)$/i, '') + '.rpe.json');
+  download(new Blob([serializeChart(legacyChart(chart))], { type: 'application/json' }), chartExportStem(chart, name) + '.rpe.json');
 }
 
 function normalizePath(path) {
@@ -244,18 +254,18 @@ export function packageEntries(chart, assets, chartName, options = {}) {
 }
 
 export function exportPackage(chart, assets, chartName) {
-  download(writeZip(packageEntries(chart, assets, chartName)), 'RPE-export.pez');
+  download(writeZip(packageEntries(chart, assets, chartName)), chartExportStem(chart, chartName) + '.pez');
 }
 
 export function createChartExport(chart, assets, chartName, options = {}) {
-  const { format = 'pez', compatibility = 'next', name = chartName, split = {} } = options;
+  const { format = 'pez', compatibility = 'next', name, split = {} } = options;
   if (!['json', 'pez'].includes(format) || !['next', 'rpe'].includes(compatibility)) throw new Error('导出格式无效');
   let source = compatibility === 'rpe' && options.removeNoiseAreas ? { ...chart, blockAreaList: [] } : chart;
   if (compatibility === 'rpe' && options.removeGlobalEvents) { source = { ...source }; delete source.globalEvents; }
   const snapshot = compatibility === 'rpe' ? legacyChart(source, split) : orderedExportChart(chart);
   delete snapshot.chartTime;
-  const stem = String(name).trim().replace(/\.(json|pez|pec|zip)$/i, '');
-  if (!stem) throw new Error('请输入导出文件名');
+  if (name !== undefined && !String(name).trim()) throw new Error('请输入导出文件名');
+  const stem = name === undefined ? chartExportStem(chart, chartName) : safeExportStem(name);
   const blob = format === 'pez' ? writeZip(packageEntries(snapshot, assets, chartName, options)) : new Blob([serializeChart(snapshot, { compact: options.compact !== false })], { type: 'application/json' });
   return { blob, name: stem + '.' + format };
 }

@@ -13,10 +13,13 @@ import { renderProperties } from './inspector.mjs';
 import { showDialog, editJson, choose, confirmAction, dialogOpen } from './dialog.mjs';
 import { migratePreferences, shortcutAction, shortcutReleased, shortcutMatches, DEFAULT_HOTKEYS } from '../core/preferences.mjs';
 import { directoryEntries, uploadedEntries, scanMigration } from '../platform/migration.mjs';
-import { readProject, readPreferences, storePreferences, storeProject, readClipboardHistory, storeClipboardHistory } from '../platform/library.mjs';
+import { readProject, readPreferences, storePreferences, storeProject, readClipboardHistory, storeClipboardHistory, subscribeLibrary } from '../platform/library.mjs';
+import { storageFailure, requestPersistence } from '../platform/storage.mjs';
+import { StoragePanel, noteLibrarySave, noteExternalBackup } from './storage-panel.mjs';
 import { migrationDialog } from './migration-dialog.mjs';
 import { LinePanel } from './line-panel.mjs';
 import { AssetLibraryPanel } from './asset-library.mjs';
+import { remapAssetReferences } from '../platform/asset-library.mjs';
 import { HELP_TEXT } from './help.mjs';
 import { download } from '../platform/files.mjs';
 import { RpeSkin } from './skin.mjs';
@@ -73,6 +76,17 @@ import { ModManager } from './mod-manager.mjs';
 import { emitModHook } from '../core/mod-hooks.mjs';
 import { GlobalEventRegistry, registerPlaceholderGlobalEvent } from '../core/global-events.mjs';
 import { GlobalEventsEditor } from './global-events.mjs';
+import { initializeLocalPreferences, flushLocalPreferences } from '../platform/local-preferences.mjs';
+import { nativeStorage } from '../platform/native.mjs';
+
+try { await initializeLocalPreferences(); }
+catch (error) {
+  const host = document.createElement('div'); host.className = 'native-storage-migration';
+  const message = document.createElement('p'); message.textContent = '桌面存储未能完成初始化：' + error.message + '。旧数据仍保留。请检查磁盘空间和文件夹权限后重试。';
+  const retry = document.createElement('button'); retry.textContent = '重试'; retry.onclick = () => location.reload();
+  host.append(message, retry); document.body.append(host); throw error;
+}
+if (globalThis.rpenDesktopStorage) globalThis.rpenFlushPreferences = flushLocalPreferences;
 
 const element = selector => document.querySelector(selector);
 let mods;
@@ -113,8 +127,10 @@ let tempo = new TempoMap(session.chart.BPMList);
 let tempoEntries = session.chart.BPMList;
 let dirtyFrame = true;
 let lastDraftDocument;
+let lastDraftAssets = [], lastDraftFolders = [];
 let preferences = migratePreferences();
 let libraryProject = null;
+let persistenceRequested = false;
 const manualSaves = new ManualSaveQueue(storeProject);
 let editorPreferences = readEditorPreferences();
 let atHome = true;
@@ -232,7 +248,7 @@ const textLinesPanel = new TextLinesPanel(element('#text-lines-editor'), () => (
 const noiseFitPanel = new NoiseFitPanel(element('#noise-fit-editor'), element('.stage'), () => ({ session, tempo, timeline, previewVisible: preview.visible, seconds: () => chartSeconds() }), { invalidate, notify, activate: activatePane, pause: () => playback.pause() });
 const noiseTrackingPanel = new NoiseTrackingPanel(element('#noise-tracking-editor'), element('.stage'), () => ({ session, tempo, timeline, preview, realtimePreview, previewVisible: preview.visible, seconds: () => chartSeconds(), wheel: event => previewWheel(event) }), { invalidate, notify, activate: activatePane, pause: () => playback.pause() });
 const multiLinePanel = new MultiLinePanel(element('#multi-line-editor'), () => session, { timeline, render: renderSession, notify, persist: persistEditor });
-const linePanel = new LinePanel(element('#line-panel'), () => session, { render: renderSession, notify, getAssets: () => assets, afterTexture: () => images.load(session.chart, assets, chartName) });
+const linePanel = new LinePanel(element('#line-panel'), () => session, { render: renderSession, notify, getAssets: () => assets, getChartName: () => chartName, afterTexture: () => images.load(session.chart, assets, chartName) });
 const editorSkins = new EditorSkins(element('#editor-skin-settings'), { invalidate, notify });
 const noteSkins = new NoteSkins(element('#note-skin-settings'), { skin, hitSounds, audio, invalidate, notify, settings: settingsDialog, pause: () => playback.pause() });
 document.addEventListener('rpen-editor-skin-changed', () => {
@@ -242,21 +258,16 @@ document.addEventListener('rpen-editor-skin-changed', () => {
 document.addEventListener('rpen-note-skin-changed', () => { if (textLinesPanel.active) textLinesPanel.refresh(); });
 const assetLibrary = new AssetLibraryPanel(element('#asset-library'), () => ({ assets, folders: assetFolders, chart: session.chart, chartName }), {
   notify,
-  onChange: (nextAssets, nextFolders) => {
-    assets = nextAssets; assetFolders = new Set(nextFolders ?? []); images.load(session.chart, assets, chartName); assetDirty = true; status('素材库已修改，请保存谱面以保留资源'); renderSession();
+  onChange: (nextAssets, nextFolders, paths) => {
+    const nextChart = remapAssetReferences(session.chart, assets, nextAssets, paths, chartName);
+    assets = nextAssets; assetFolders = new Set(nextFolders ?? []); assetDirty = true;
+    if (nextChart !== session.chart) session.commit('同步图片资源路径', nextChart);
+    images.load(session.chart, assets, chartName); status('素材库已修改，请保存谱面以保留资源'); renderSession();
   },
-  onTexture: (oldName, newName = oldName) => {
-    const lines = [...session.chart.judgeLineList];
-    if (newName !== oldName) {
-      let changed = false; for (let index = 0; index < lines.length; index++) if (lines[index]?.Texture === oldName) { lines[index] = { ...lines[index], Texture: newName }; changed = true; }
-      if (changed) session.commit('同步重命名判定线贴图', { ...session.chart, judgeLineList: lines });
-      images.load(session.chart, assets, chartName);
-      return;
-    }
-    const index = session.lineIndex; if (!lines[index]) return;
-    lines[index] = { ...lines[index], Texture: newName }; session.commit('更改判定线贴图', { ...session.chart, judgeLineList: lines });
-    images.load(session.chart, assets, chartName);
-  },
+  openFolder: nativeStorage ? async (path, folder) => {
+    if (!libraryProject || assetDirty) throw Error('请先保存谱面和素材修改，再打开本地位置');
+    await nativeStorage.call('openAssetFolder', libraryProject.id, path, folder);
+  } : undefined,
 });
 const clipboardHistory = new ClipboardHistory();
 const selectionOverlay = new SelectionOverlay(element('.stage'), timeline);
@@ -372,7 +383,18 @@ function notify(message, level = 'success', duration = 2800) {
   const timer = setTimeout(() => { item.classList.add('leaving'); setTimeout(() => item.remove(), 260); notificationTimers.delete(timer); }, duration); notificationTimers.add(timer);
 }
 timeline.notify = (message, level = 'warning') => notify(message, level);
-const reportError = error => { status(error.message); notify(error.message, 'error', 5000); showDialog('操作未完成', error.message); };
+const reportError = error => {
+  const message = storageFailure(error); status(message); notify(message, 'error', 7000);
+  const host = showDialog(error.name === 'ProjectConflictError' ? '保存冲突，已保留当前编辑' : '操作未完成', message);
+  if (error.name === 'ProjectConflictError' && libraryProject?.id === error.projectId && hasDocument) {
+    for (const [label, run] of [['导出当前谱面 PEZ', () => showExportDialog(session.chart, assets, chartName, (_name, format) => { if (format === 'pez') noteExternalBackup(); }, libraryProject?.identifier)],
+      ['另存为新项目', async () => { libraryProject = null; session.history.savedDocument = null; await save(); }]]) {
+      const button = document.createElement('button'); button.type = 'button'; button.textContent = label;
+      button.onclick = async () => { element('#modal').close(); try { await run(); } catch (failure) { reportError(failure); } }; host.append(button);
+    }
+  }
+};
+document.addEventListener('rpen-storage-blocked', () => notify('数据库正在等待其他编辑器窗口释放，请关闭旧窗口后重试。', 'warning', 7000));
 const tips = [
   'Tips: 坐标系范围为 [-675,675]x[-450,450]', 'Tips: 速度为10表示每秒移动 1200 像素~', 'Tips: 编辑器的分辨率正比于 1920*1080', 'Tips: 很多金色的组件都是可以被点击的',
   'Tips: 谱面名可不为英文，但标识名只能是一串数字', 'Tips: 添加资源文件时闪退可能是其损坏，常见于直接改后缀名', 'Tips: CTRL+滚轮 可以快速切换线',
@@ -449,9 +471,10 @@ const playback = new EditorPlayback(audio, hitSounds, () => {
 timeline.onDragScroll = seconds => playback.seek(audio.time + seconds);
 const autoSave = new AutoSaveClock(async () => {
   const current = session; const document = current.chart; const snapshot = { ...document }; delete snapshot.chartTime;
-  await saveSnapshot(libraryProject?.id ?? recoveryId, chartName, snapshot, [...assets], editorPreferences.autoSaveLimit ?? preferences.settings.autoSaveLimit, { lineIndex: current.lineIndex });
-  if (current === session) { lastDraftDocument = document; status('自动备份已保存（包含音乐、曲绘与编辑位置）'); notify('自动备份已保存', 'success'); }
-}, error => status(`自动保存失败：${error.message}，请手动保存或导出 PEZ`));
+  const media = [...assets], folders = [...assetFolders];
+  await saveSnapshot(libraryProject?.id ?? recoveryId, chartName, snapshot, media, editorPreferences.autoSaveLimit ?? preferences.settings.autoSaveLimit, { lineIndex: current.lineIndex });
+  if (current === session) { lastDraftDocument = document; lastDraftAssets = media; lastDraftFolders = folders; status('自动备份已保存（包含音乐、曲绘与编辑位置）'); notify('自动备份已保存', 'success'); }
+}, error => { const message = `自动备份失败：${storageFailure(error)}，请导出 PEZ 保留当前修改`; status(message); notify(message, 'error', 7000); });
 timeline.onWheel = event => {
   if (event.ctrlKey) {
     if (event.deltaY) {
@@ -515,12 +538,32 @@ const home = new ProjectHome(async id => {
   guardReplace(() => loadCandidate({ chart: project.chart, name: project.chartName, info: project.info, project }, new Map(project.assets)).catch(reportError));
 }, reportError, project => {
   if (libraryProject?.id === project.id) {
+    if (project.deleted) {
+      libraryProject = null;
+      if (atHome) {
+        hasDocument = false; session.history.markSaved(); assetDirty = false;
+        setHome(true);
+      } else {
+        session.history.savedDocument = null; renderSession();
+      }
+      return;
+    }
     const renamed = libraryProject.chart.META.name !== project.chart.META.name;
     libraryProject = project;
     if (!session.history.dirty) {
       session.commit('更新项目信息', project.chart); session.history.markSaved(); renderSession();
     } else if (renamed) session.commit('更新项目名称', { ...session.chart, META: { ...session.chart.META, name: project.chart.META.name } });
   }
+});
+const storagePanel = new StoragePanel(settingsDialog, { reportError, notify, canSwitchLibrary: () => {
+  if (hasDocument && (session.history.dirty || assetDirty)) { notify('请先保存或放弃当前谱面的修改，再切换谱面库', 'warning'); return false; }
+  return true;
+} });
+document.addEventListener('rpen-preference-error', event => reportError(event.detail));
+document.addEventListener('rpen-library-refresh', () => home.refresh().catch(reportError));
+subscribeLibrary(change => {
+  if (atHome) home.refresh().catch(reportError);
+  if (libraryProject?.id === change.id && change.revision !== libraryProject.storageRevision) notify(change.deleted ? '当前项目已在另一个窗口删除。这里的编辑仍保留，可另存为新项目或导出 PEZ。' : '当前项目已在另一个窗口保存。这里再次保存时会检查冲突，避免覆盖。', 'warning', 7000);
 });
 
 function setHome(visible) {
@@ -788,6 +831,7 @@ function renderSession() {
   if (materialHint) materialHint.textContent = missingMedia.length ? `缺少${missingMedia.join('、')} · 进入谱面信息添加` : '';
   const mediaStatus = element('#metadata-media-status');
   if (mediaStatus) mediaStatus.textContent = `音乐：${songName && assets.has(songName) ? songName : '未载入'}　封面：${backgroundName && assets.has(backgroundName) ? backgroundName : '未载入'}`;
+  syncProjectFolderButton();
   if (!session.liveBeatEdit) element('#offset').value = session.chart.META.offset ?? 0;
   element('#selection-info').textContent = session.focus === 'events' ? `${session.eventSelection.size} 个事件已选` : `${session.selection.size} 个音符已选`;
   element('#undo').disabled = !session.history.undoStack.length;
@@ -900,7 +944,7 @@ function replaceChart(chart, name, nextAssets = new Map(), nextFolders = []) {
   session.history.limit = preferences.settings.historyLimit;
   session.addEventListener('change', renderSession);
   recoveryId = crypto.randomUUID();
-  lastDraftDocument = undefined;
+  lastDraftDocument = undefined; lastDraftAssets = []; lastDraftFolders = [];
   autoSave.reset(performance.now());
   heldPreview = null; curveStart = null; curveEnd = null; curveAnchorMode = null; curveEditorOpen = false; loop = null; element('#loop-enabled').checked = false;
   assets = nextAssets;
@@ -925,7 +969,7 @@ function replaceChart(chart, name, nextAssets = new Map(), nextFolders = []) {
 
 function guardReplace(action) {
   noiseEditor.flush();
-  if (session.history.dirty || assetDirty) confirmAction('切换谱面？', action);
+  if (hasDocument && (session.history.dirty || assetDirty)) confirmAction('切换谱面？', action);
   else action();
 }
 
@@ -933,6 +977,7 @@ async function loadCandidate(candidate, nextAssets) {
   attachExternalEffects([candidate], nextAssets);
   replaceChart(candidate.chart, candidate.name, nextAssets, candidate.project?.assetFolders ?? []);
   libraryProject = candidate.project ?? null;
+  syncProjectFolderButton();
   images.load(candidate.chart, assets, chartName, candidate.info);
   const references = resourceReferences(candidate.chart, assets, chartName, candidate.info);
   const bytes = assetBytes(assets, references.song, chartName);
@@ -1007,6 +1052,7 @@ async function togglePlayback() {
 
 function save() {
   noiseEditor.flush();
+  if (!persistenceRequested) { persistenceRequested = true; requestPersistence().then(() => storagePanel.refresh()).catch(() => {}); }
   editorSkinSignal('save-started');
   mods?.runtime.emit('editor:save-started',{});
   const savingSession = session;
@@ -1020,6 +1066,7 @@ function save() {
     savingSession.history.markSaved(document);
     if (session !== savingSession) return;
     libraryProject = project;
+    noteLibrarySave(); storagePanel.refresh().catch(() => {});
     assetDirty = assets.size !== project.assets.length || project.assets.some(([name, bytes]) => assets.get(name) !== bytes)
       || assetFolders.size !== project.assetFolders.length || project.assetFolders.some(folder => !assetFolders.has(folder));
     renderSession();
@@ -1050,7 +1097,13 @@ listen('#resume-editor', () => setHome(false));
 listen('#open', () => { element('#file-input').click(); });
 element('#file-input').addEventListener('change', async event => {
   try {
-    const loaded = await openFiles(event.target.files);
+    const loaded = await openFiles(event.target.files, { confirmLargeArchive: info => new Promise(resolve => {
+      const host = showDialog('确认导入大谱面包', `目录声明解压后 ${(info.declaredBytes / 1024 ** 2).toFixed(1)} MiB，共 ${info.count} 个文件。大体积或异常压缩倍率可能耗尽内存；只继续导入来源可信的谱面。`);
+      const modal = host.closest('dialog'), apply = element('#modal-apply'); let decided = false;
+      modal.addEventListener('close', () => { if (!decided) resolve(false); }, { once: true });
+      apply.hidden = false; apply.textContent = '确认来源可信，继续导入';
+      apply.onclick = () => { decided = true; modal.close(); resolve(true); };
+    }) });
     if (!loaded) return;
     const proceed = () => {
       if (loaded.candidates.length === 1) loadCandidate(loaded.candidates[0], loaded.assets).catch(reportError);
@@ -1061,7 +1114,7 @@ element('#file-input').addEventListener('change', async event => {
   finally { event.target.value = ''; }
 });
 listen('#save', () => save());
-listen('#export', () => { noiseEditor.flush(); showExportDialog(session.chart, assets, chartName, name => status(`已发起下载：${name}`), libraryProject?.identifier ?? libraryProject?.info?.Path); });
+listen('#export', () => { noiseEditor.flush(); showExportDialog(session.chart, assets, chartName, (name, format) => { status(`已发起下载：${name}`); if (format === 'pez') { noteExternalBackup(); storagePanel.refresh().catch(() => {}); } }, libraryProject?.identifier ?? libraryProject?.info?.Path); });
 listen('#view-toggle', () => togglePreview());
 listen('#close-preview', () => togglePreview(false, true));
 listen('#background', () => element('#background-input').click());
@@ -1281,7 +1334,17 @@ listen('#mirror', () => {
   if (session.focus === 'events') transformEvents(session, '镜像 X / 旋转事件', (event, type) => ['moveXEvents', 'rotateEvents'].includes(type) ? { ...event, start: -event.start, end: -event.end } : event);
   else session.transformSelection('镜像音符', note => ({ ...note, positionX: -note.positionX }));
 });
+function syncProjectFolderButton() {
+  const button = element('#open-project-folder');
+  button.hidden = !nativeStorage;
+  button.disabled = !nativeStorage || !libraryProject?.id;
+  button.title = libraryProject?.id ? '打开当前谱面在本地谱面库中的存档文件夹' : '请先保存到谱面库，再打开所在文件夹';
+}
 listen('#metadata', () => { activatePane('metadata'); renderMetadataPanel(session, element('#metadata-editor'), () => { activatePane('chart'); renderSession(); }); });
+listen('#open-project-folder', async () => {
+  if (!nativeStorage || !libraryProject?.id) return;
+  await nativeStorage.call('openProjectFolder', libraryProject.id);
+});
 listen('#bpm', () => { activatePane('bpm'); renderBpmPanel(session, element('#bpm-editor')); });
 listen('#audio-leading-silence', prependAudioSilence);
 listen('#assets', () => { activatePane('assets'); assetLibrary.render(); });
@@ -1567,7 +1630,7 @@ window.addEventListener('keyup', event => {
 }, true);
 window.addEventListener('blur', () => { if (heldPreview) { togglePreview(false); heldPreview = null; } });
 
-window.addEventListener('beforeunload', event => { if (session.history.dirty || assetDirty) { event.preventDefault(); event.returnValue = ''; } });
+window.addEventListener('beforeunload', event => { if (hasDocument && (session.history.dirty || assetDirty)) { event.preventDefault(); event.returnValue = ''; } });
 window.addEventListener('resize', invalidate);
 element('#modal').addEventListener('close', () => { if (atHome) home.refresh().catch(reportError); });
 const markerResizeObserver = new ResizeObserver(() => { renderTimelineMarkers(); invalidate(); });
@@ -1594,8 +1657,14 @@ function frame(timestamp) {
     if (info && !element('#chart-info').hidden) info.textContent = info.textContent.replace(/Time: .*$/, `Time: ${formatEditTime(editTimeSeconds)}  FPS: ${measuredFps.toFixed(1)}`);
     lastInfoTick = timestamp;
   }
-  if (hasDocument && !atHome && !document.hidden) autoSave.tick(timestamp, editorPreferences.autoSave ?? preferences.settings.autoSave,
-    editorPreferences.autoSaveSeconds ?? preferences.settings.autoSaveSeconds, session.history.dirty && session.chart !== lastDraftDocument);
+  if (hasDocument && !atHome && !document.hidden) {
+    const interval = editorPreferences.autoSaveSeconds ?? preferences.settings.autoSaveSeconds;
+    // Compare media only when a backup is due, not on every animation frame.
+    const mediaDirty = assetDirty && !autoSave.pending && timestamp - autoSave.last >= interval * 1000
+      && (assets.size !== lastDraftAssets.length || lastDraftAssets.some(([name, bytes]) => assets.get(name) !== bytes)
+        || assetFolders.size !== lastDraftFolders.length || lastDraftFolders.some(folder => !assetFolders.has(folder)));
+    autoSave.tick(timestamp, editorPreferences.autoSave ?? preferences.settings.autoSave, interval, session.history.dirty && session.chart !== lastDraftDocument || mediaDirty);
+  }
   if (audio.playing && !mods?.runtime.locks.size && loop && currentBeat() >= loop.end) seekBeat(loop.start, false);
   if (audio.playing && audio.time >= audio.duration) { audio.pause(); invalidate(); }
   hitSounds.tick(session.chart, tempo, session.lineIndex);
@@ -1671,7 +1740,8 @@ function frame(timestamp) {
     element('#beat-display').textContent = `${(Math.abs(beat) < 0.0005 ? 0 : beat).toFixed(3)} 拍`;
     element('#scrubber').value = audio.time;
     const tempoPoint = tempo.points[Math.max(0, upperBound(tempo.points, beat, point => point.beat) - 1)];
-    element('#bpm-display').textContent = `${(60 / tempoPoint.secondsPerBeat).toFixed(2)} BPM`;
+    const lineTimeFactor = noiseEditor.active || globalEvents.active ? 1 : session.line?.bpmfactor ?? 1;
+    element('#bpm-display').textContent = `${(60 / (tempoPoint.secondsPerBeat * lineTimeFactor)).toFixed(2)} BPM`;
     const draggedLineIndex = Number.isInteger(timeline.drag?.lineIndex) ? timeline.drag.lineIndex : session.lineIndex;
     const draggedSource = session.chart.judgeLineList?.[draggedLineIndex]?.notes?.[timeline.drag?.anchor];
     const draggedNote = ['move', 'startTime', 'endTime'].includes(timeline.drag?.kind) ? timeline.movedNote(draggedSource) : null;

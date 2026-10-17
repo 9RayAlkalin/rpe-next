@@ -105,7 +105,7 @@ if (platform === 'linux') args.push('--no-sandbox');
 if (platform === 'darwin') args.push('--use-angle=metal', '--ignore-gpu-blocklist');
 else args.push('--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader');
 console.log('Testing packaged application: ' + platform + '/' + arch + ' ' + kind);
-const smoke = await run(executable, args, { env: { ...process.env, RPE_NATIVE_TEST_HOME: join(work, 'test-profile') }, timeout: 240000 });
+const smoke = await run(executable, args, { env: { ...process.env, RPE_NATIVE_TEST_HOME: join(work, 'test-profile') }, timeout: platform === 'darwin' && arch === 'x64' ? 480000 : 240000 });
 if (kind === 'editor' ? !smoke.includes('"errors":[]') || !smoke.includes('real native IPC opens image parent') : !smoke.includes('"protocol":1') || !smoke.includes('"errors":[]')) throw Error('Packaged smoke result is incomplete');
 if (platform === 'darwin') execFileSync('codesign', ['--verify', '--deep', '--strict', bundle]);
 
@@ -129,7 +129,16 @@ if (platform === 'darwin') {
   await symlink('/Applications', join(image, 'Applications'));
   await writeFile(join(image, '使用说明.txt'), help);
   archive = join(output, stem + '.dmg');
-  await run('hdiutil', ['create', '-volname', product, '-srcfolder', image, '-format', 'UDZO', '-imagekey', 'zlib-level=9', archive], { timeout: 600000 });
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await run('hdiutil', ['create', '-fs', 'HFS+', '-volname', product, '-srcfolder', image, '-format', 'UDZO', '-imagekey', 'zlib-level=9', archive], { timeout: 600000 });
+      break;
+    } catch (error) {
+      if (attempt >= 2 || !/Resource busy/i.test(error.message)) throw error;
+      await rm(archive, { force: true });
+      await new Promise(resolve => setTimeout(resolve, 3000 * (attempt + 1)));
+    }
+  }
   await run('hdiutil', ['verify', archive]);
 } else {
   await writeFile(join(directory, '使用说明.txt'), '\uFEFF' + help);

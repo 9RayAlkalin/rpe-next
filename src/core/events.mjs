@@ -2,17 +2,61 @@ import { upperBound } from './beat.mjs';
 import { easing, bezier } from './easing.mjs';
 import { trajectoryEventValue } from './curve-trajectory.mjs';
 
+function tabulate(entries) {
+  const origin = Math.min(0, entries[0].start);
+  const span = Math.max(entries.at(-1).start - origin, 1e-3);
+  const length = Math.max(64, Math.min(entries.length * 4, 4096));
+  const cell = Math.pow(2, Math.ceil(Math.log2(span / length)));
+  const cells = new Int32Array(Math.max(1, Math.ceil(span / cell) + 1));
+  let index = 0;
+  for (let position = 0; position < cells.length; position++) {
+    const until = origin + position * cell;
+    while (index + 1 < entries.length && entries[index + 1].start <= until) index++;
+    cells[position] = index;
+  }
+  return { cells, cell, origin };
+}
+
+function search(entries, table, seconds) {
+  if (!(seconds >= entries[0].start)) return 0;
+  let index = table.cells[Math.min(table.cells.length - 1, Math.max(0, Math.floor((seconds - table.origin) / table.cell)))];
+  while (index + 1 < entries.length && entries[index + 1].start <= seconds) index++;
+  return index;
+}
+
 export class EventTrack {
   constructor(events, tempo, factor = 1, fallback = 0) {
     this.fallback = fallback;
     this.events = (events ?? []).map(event => ({ event, start: tempo.seconds(event.startTime, factor), end: tempo.seconds(event.endTime, factor) }))
       .sort((left, right) => left.start - right.start);
+    this.cursor = -1;
+    this.cursorTime = -Infinity;
+  }
+
+  locate(seconds) {
+    const events = this.events;
+    if (!events.length) return 0;
+    if (this.table) return search(events, this.table, seconds);
+    if (this.cursor >= 0 && seconds >= this.cursorTime) {
+      let index = this.cursor;
+      while (index + 1 < events.length && events[index + 1].start <= seconds) index++;
+      this.cursor = index;
+      this.cursorTime = seconds;
+      return index;
+    }
+    if (this.cursor >= 0) {
+      this.table = tabulate(events);
+      return search(events, this.table, seconds);
+    }
+    const index = Math.max(0, upperBound(events, seconds, item => item.start) - 1);
+    this.cursor = index;
+    this.cursorTime = seconds;
+    return index;
   }
 
   value(seconds) {
     if (!this.events.length) return this.fallback;
-    const entry = this.events[Math.max(0, upperBound(this.events, seconds, item => item.start) - 1)];
-    return this.sample(entry, seconds);
+    return this.sample(this.events[this.locate(seconds)], seconds);
   }
 
   sample(entry, seconds) {
@@ -46,6 +90,8 @@ export class EventTrack {
 export class SpeedIntegral extends EventTrack {
   constructor(events, tempo, factor = 1) {
     super(events, tempo, factor, 0);
+    this.segmentCursor = -1;
+    this.segmentTime = -Infinity;
     const cuts = [...new Set([0, ...this.events.flatMap(entry => [entry.start, entry.end])])].sort((left, right) => left - right);
     this.segments = [];
     let distance = 0;
@@ -80,10 +126,31 @@ export class SpeedIntegral extends EventTrack {
     return sum * step / 3;
   }
 
+  locateSegment(seconds) {
+    const segments = this.segments;
+    if (!segments.length) return 0;
+    if (this.segmentTable) return search(segments, this.segmentTable, seconds);
+    if (this.segmentCursor >= 0 && seconds >= this.segmentTime) {
+      let index = this.segmentCursor;
+      while (index + 1 < segments.length && segments[index + 1].start <= seconds) index++;
+      this.segmentCursor = index;
+      this.segmentTime = seconds;
+      return index;
+    }
+    if (this.segmentCursor >= 0) {
+      this.segmentTable = tabulate(segments);
+      return search(segments, this.segmentTable, seconds);
+    }
+    const index = Math.max(0, upperBound(segments, seconds, entry => entry.start) - 1);
+    this.segmentCursor = index;
+    this.segmentTime = seconds;
+    return index;
+  }
+
   raw(seconds) {
     if (seconds <= this.firstTime) return (seconds - this.firstTime) * this.value(this.firstTime);
     if (seconds >= this.lastTime) return this.lastDistance + (seconds - this.lastTime) * this.value(this.lastTime);
-    const segment = this.segments[Math.max(0, upperBound(this.segments, seconds, entry => entry.start) - 1)];
+    const segment = this.segments[this.locateSegment(seconds)];
     return segment.distance + this.integrate(segment, seconds);
   }
 

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { beatValue, fromNumber, parseBeat } from '../src/core/beat.mjs';
+import { beatValue, fromNumber, parseBeat, upperBound } from '../src/core/beat.mjs';
 import { TempoMap } from '../src/core/tempo.mjs';
 import { diagnose, createChart, createNote, createEvent, parseChart, serializeChart, assertChart } from '../src/core/chart.mjs';
 import { easing, bezier } from '../src/core/easing.mjs';
@@ -132,6 +132,65 @@ test('事件使用真实秒插值，速度积分跨 BPM 及事件间隙', () => 
   assert.ok(Math.abs(integral.distance(4) - 3000) < 1e-8);
   const gap = new SpeedIntegral([createEvent(1, 1, 0, 1), createEvent(2, 2, 4, 5)], tempo);
   assert.ok(Math.abs(gap.distance(4) - 600) < 1e-8);
+});
+
+test('事件与速度段的游标、桶索引在播放、回跳、重复与边界查询下与二分完全等价', () => {
+  const tempo = new TempoMap([{ bpm: 150, startTime: [0, 0, 1] }, { bpm: 90, startTime: [1600, 0, 1] }]);
+  let seed = 7;
+  const random = () => (seed = seed * 48271 % 2147483647) / 2147483647;
+  const queries = [Number.NEGATIVE_INFINITY, -1e9, Number.NaN, 1e9, Number.POSITIVE_INFINITY];
+  let time = -6;
+  for (let step = 0; step < 300; step++) {
+    time += random() * 0.7;
+    if (random() < 0.08) time = random() * 26 - 6;
+    queries.push(time);
+    if (random() < 0.05) queries.push(time);
+  }
+  for (let round = 0; round < 20; round++) {
+    const beats = [];
+    for (let index = 0; index < Math.floor(random() * 60); index++) beats.push(index && random() < 0.2 ? beats[index - 1] : random() * 2400 - 200);
+    const events = beats.map(beat => {
+      const colored = random() < 0.2;
+      const start = colored ? [random() * 255, random() * 255, random() * 255] : Math.round(random() * 1000) / 10;
+      const end = colored ? [random() * 255, random() * 255, random() * 255] : Math.round(random() * 1000) / 10;
+      return createEvent(start, end, beat, beat + random() * 200);
+    });
+    const track = new EventTrack([...events], tempo);
+    for (const seconds of queries) {
+      const expected = track.events.length ? track.sample(track.events[Math.max(0, upperBound(track.events, seconds, item => item.start) - 1)], seconds) : track.fallback;
+      assert.deepEqual(track.value(seconds), expected);
+    }
+    if (events.length) {
+      const last = track.events.at(-1).start;
+      assert.deepEqual(track.value(last), track.sample(track.events.at(-1), last));
+      const early = track.events[0].start - 1;
+      assert.deepEqual(track.value(early), track.sample(track.events[0], early));
+      assert.ok(track.table, '回跳后应建立桶索引');
+    }
+    const speeds = Array.from({ length: Math.floor(random() * 40) }, () => {
+      const beat = random() * 2400 - 200;
+      return createEvent(Math.round(random() * 200) / 10, Math.round(random() * 200) / 10, beat, beat + random() * 200);
+    });
+    const integral = new SpeedIntegral(speeds, tempo);
+    const referenceRaw = seconds => {
+      if (seconds <= integral.firstTime) return (seconds - integral.firstTime) * integral.value(integral.firstTime);
+      if (seconds >= integral.lastTime) return integral.lastDistance + (seconds - integral.lastTime) * integral.value(integral.lastTime);
+      const segment = integral.segments[Math.max(0, upperBound(integral.segments, seconds, entry => entry.start) - 1)];
+      return segment.distance + integral.integrate(segment, seconds);
+    };
+    for (const seconds of queries) {
+      if (!integral.segments.length && Number.isNaN(seconds)) continue;
+      assert.equal(integral.raw(seconds), referenceRaw(seconds));
+    }
+    if (integral.segments.length) {
+      const span = integral.lastTime - integral.firstTime;
+      assert.equal(integral.raw(integral.firstTime + span * 0.5), referenceRaw(integral.firstTime + span * 0.5));
+      assert.equal(integral.raw(integral.firstTime + span * 0.001), referenceRaw(integral.firstTime + span * 0.001));
+      assert.ok(integral.segmentTable, '回跳后应建立段桶索引');
+    }
+  }
+  assert.equal(new EventTrack([], tempo).value(3), 0);
+  assert.equal(new SpeedIntegral([], tempo).distance(3), 0);
 });
 
 test('可见区必须包含头部在屏外的长 Hold', () => {

@@ -90,6 +90,7 @@ function run(program, args, options = {}) {
 const packaged = await packager({
   dir: stage, out: packageFolder, name: product, executableName, platform, arch,
   electronVersion, appVersion: metadata.version,
+  icon: join(root, 'desktop/icons/app.png'),
   appBundleId: kind === 'server' ? 'io.github.kclg-ysj.rpe-next.server' : 'io.github.kclg-ysj.rpe-next',
   appCopyright: 'Copyright 2026 cmdysj', prune: false, asar: false, overwrite: false,
   darwinDarkModeSupport: true,
@@ -130,6 +131,7 @@ if (platform === 'darwin') {
   await symlink('/Applications', join(image, 'Applications'));
   await writeFile(join(image, '使用说明.txt'), help);
   archive = join(output, stem + '.dmg');
+  await rm(archive, { force: true });
   for (let attempt = 0; ; attempt++) {
     try {
       await run('hdiutil', ['create', '-fs', 'HFS+', '-volname', product, '-srcfolder', image, '-format', 'UDZO', '-imagekey', 'zlib-level=9', archive], { timeout: 600000 });

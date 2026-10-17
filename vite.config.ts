@@ -7,14 +7,19 @@ import { defineConfig, type Plugin } from 'vitest/config';
 const root = fileURLToPath(new URL('.', import.meta.url));
 const pristine = ['src/core', 'src/application', 'src/platform', 'src/ui', 'assets', 'styles.css', 'LICENSE', 'NOTICE', 'protocols', 'schemas', 'start.cmd', 'README.md'];
 
-const shellTag = (source: string) => `  <script type="module" src="${source}"></script>\n</body>`;
+const appScript = '<script type="module" src="./src/ui/app.mjs"></script>';
+
+function injectShell(html: string, source: string): string {
+  if (!html.includes(appScript)) throw new Error('index.html 缺少应用入口脚本锚点');
+  return html.replace(appScript, `<script type="module" src="${source}"></script>\n  ${appScript}`);
+}
 
 function devShell(): Plugin {
   return {
     name: 'rpen-dev-shell',
     apply: 'serve',
     transformIndexHtml(html) {
-      return html.replace('</body>', shellTag('/app/main.ts'));
+      return injectShell(html, '/app/main.ts');
     },
   };
 }
@@ -33,7 +38,7 @@ function pristineModules(): Plugin {
       await writeFile(join(dist, 'package.json'), JSON.stringify(metadata, null, 2) + '\n');
       await writeFile(join(dist, '.nojekyll'), '');
       const html = await readFile(join(root, 'index.html'), 'utf8');
-      await writeFile(join(dist, 'index.html'), html.replace('</body>', shellTag('./assets/shell.js')));
+      await writeFile(join(dist, 'index.html'), injectShell(html, './assets/shell.js'));
     },
   };
 }

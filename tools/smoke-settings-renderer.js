@@ -17,6 +17,25 @@
   const projectId = `settings-smoke-${crypto.randomUUID()}`;
   try {
     document.querySelector('#home-new').click();
+    const settingsIsland = Boolean(globalThis.rpenIslands?.settings);
+    document.querySelector('#preferences').click();
+    const settingsDialog = document.querySelector('#settings-modal');
+    check(settingsDialog?.open, '设置面板未打开');
+    for (const id of ['fps-unlimited', 'fps-limit', 'fps-limit-error', 'bar-width', 'editor-skin-settings', 'note-skin-settings', 'advanced-preferences']) check(document.querySelector(`#${id}`), `设置字段缺失：${id}`);
+    const fpsLimit = document.querySelector('#fps-limit');
+    fpsLimit.value = '90'; fpsLimit.dispatchEvent(new Event('input', { bubbles: true }));
+    check(readEditorPreferences().fpsLimit === 90, '帧率上限未即时保存');
+    fpsLimit.value = '2'; fpsLimit.dispatchEvent(new Event('input', { bubbles: true }));
+    check(document.querySelector('#fps-limit-error').hidden === false && readEditorPreferences().fpsLimit === 90, '非法帧率未拦截或未提示');
+    fpsLimit.value = '120'; fpsLimit.dispatchEvent(new Event('input', { bubbles: true }));
+    check(document.querySelector('#fps-limit-error').hidden === true && readEditorPreferences().fpsLimit === 120, '帧率上限未恢复');
+    const fpsUnlimited = document.querySelector('#fps-unlimited');
+    fpsUnlimited.checked = true; fpsUnlimited.dispatchEvent(new Event('change', { bubbles: true }));
+    check(fpsLimit.disabled && readEditorPreferences().fpsLimit === 0, '无上限未即时生效');
+    fpsUnlimited.checked = false; fpsUnlimited.dispatchEvent(new Event('change', { bubbles: true }));
+    check(!fpsLimit.disabled && readEditorPreferences().fpsLimit === 120, '取消无上限未恢复帧率上限');
+    settingsDialog.close();
+    check(!settingsDialog.open, '设置面板未关闭');
     const thickness = document.querySelector('#default-line-thickness'); thickness.value = '2.2'; thickness.dispatchEvent(new Event('change', { bubbles: true }));
     check(readEditorPreferences().lineScale === 2.2, '线宽未持久化');
     showHotkeySettings(migratePreferences(), async next => { await library.storePreferences(next); saved = next; });
@@ -65,7 +84,7 @@
     const latest = await library.readProject(projectId);
     await library.storeProject({ ...latest, assets: [], chart: { ...chart, META: { ...chart.META, name: 'newer' } } });
     check((await library.readProject(projectId)).chart.META.name === 'newer', '基于最新版本的后续保存失败');
-    return { hotkeys: true, thickness: true, backgroundSave: true, atomicRollback: true, savedMediaBytes: restored.assets[1][1].byteLength, responsiveTicks };
+    return { hotkeys: true, thickness: true, fpsValidation: true, settingsIsland, backgroundSave: true, atomicRollback: true, savedMediaBytes: restored.assets[1][1].byteLength, responsiveTicks };
   } finally {
     if (modal.open) modal.close();
     await library.storePreferences(previousPreferences ?? migratePreferences());

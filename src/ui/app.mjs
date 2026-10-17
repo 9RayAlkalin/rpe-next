@@ -122,6 +122,7 @@ const displayFields = [
   ['autosave-enabled', 'autoSave', true], ['autosave-seconds', 'autoSaveSeconds', 60], ['autosave-limit', 'autoSaveLimit', 10],
 ];
 const settingsDialog = createSettingsPanel();
+const settingsIsland = Boolean(globalThis.rpenIslands?.settings?.createSettingsPanel);
 let session = new EditorSession();
 let assets = new Map();
 let assetFolders = new Set();
@@ -1929,16 +1930,31 @@ function applyFpsLimit() {
 document.addEventListener('dragstart', event => {
   if (!editorPreferences.textSelectionDrag && isTextEntry(event.target)) event.preventDefault();
 }, true);
-element('#fps-limit').addEventListener('input', applyFpsLimit);
-element('#fps-unlimited').addEventListener('change', applyFpsLimit);
-for (const [id, key] of displayFields) element(`#${id}`).addEventListener(element(`#${id}`).type === 'number' ? 'change' : 'input', event => {
-  const control = event.target;
+if (!settingsIsland) {
+  element('#fps-limit').addEventListener('input', applyFpsLimit);
+  element('#fps-unlimited').addEventListener('change', applyFpsLimit);
+}
+function setDisplayField(key, control) {
   if (control.type === 'checkbox') editorPreferences[key] = control.checked;
   else if (control.type === 'color') editorPreferences[key] = control.value;
   else if (control.value.trim() && control.validity.valid && Number.isFinite(Number(control.value))) editorPreferences[key] = Number(control.value);
   else return;
   applyDisplaySettings(); persistEditor();
-});
+}
+for (const [id, key] of displayFields) {
+  const control = element(`#${id}`);
+  if (settingsIsland && control.closest('#settings-modal')) continue;
+  control.addEventListener(control.type === 'number' ? 'change' : 'input', event => setDisplayField(key, event.target));
+}
+if (settingsIsland) globalThis.rpenSettingsBridge = {
+  setDisplayField,
+  validateFpsLimit(raw, unlimited) {
+    const value = Number(raw);
+    const valid = Boolean(unlimited || String(raw).trim() && value > 10 && validFpsLimit(value));
+    return { valid, value: valid ? (unlimited ? 0 : value) : Number.NaN };
+  },
+  commitFpsLimit(value) { editorPreferences.fpsLimit = value; persistEditor(); invalidate(); },
+};
 timeline.eventPlacementType = timeline.eventTypes[0];
 
 const modEditor={

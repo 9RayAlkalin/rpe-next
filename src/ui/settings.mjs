@@ -1,4 +1,6 @@
 export function createSettingsPanel() {
+  const island = globalThis.rpenIslands?.settings?.createSettingsPanel;
+  if (typeof island === 'function') return island();
   const dialog = document.createElement('dialog'); dialog.id = 'settings-modal';
   const title = document.createElement('h2'); title.textContent = '设置'; dialog.append(title);
   const body = document.createElement('div'); body.className = 'settings-body'; dialog.append(body);

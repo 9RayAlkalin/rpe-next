@@ -78,6 +78,7 @@ import { GlobalEventRegistry, registerPlaceholderGlobalEvent } from '../core/glo
 import { GlobalEventsEditor } from './global-events.mjs';
 import { initializeLocalPreferences, flushLocalPreferences } from '../platform/local-preferences.mjs';
 import { nativeStorage } from '../platform/native.mjs';
+import { DEFAULT_EDITOR_PREFERENCES } from '../core/default-settings.mjs';
 
 try { await initializeLocalPreferences(); }
 catch (error) {
@@ -132,7 +133,7 @@ let preferences = migratePreferences();
 let libraryProject = null;
 let persistenceRequested = false;
 const manualSaves = new ManualSaveQueue(storeProject);
-let editorPreferences = readEditorPreferences();
+let editorPreferences = { ...DEFAULT_EDITOR_PREFERENCES, ...readEditorPreferences() };
 let atHome = true;
 let hasDocument = false;
 let previewReturnTime = 0;

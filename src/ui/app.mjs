@@ -1358,14 +1358,32 @@ listen('#assets', () => { activatePane('assets'); assetLibrary.render(); });
 listen('#audio-analysis-tool', () => {
   audioAnalysis.enabled = true; activatePane('audio-analysis'); audioAnalysis.render(element('#audio-analysis-panel')); audioAnalysis.draw(offsetSeconds()); persistEditor();
 });
+function travelToHistoryStep(index) {
+  const current = session.history.undoStack.length;
+  const direction = index < current ? 'undo' : 'redo';
+  for (let count = 0; count < Math.abs(index - current); count++) travel(direction, true);
+  renderHistoryPanel(); notify(`已定位到编辑历史第 ${index} 步`, 'success', 1800);
+}
+function historySnapshot() {
+  const history = session.history; const current = history.undoStack.length;
+  return { current, entries: [{ label: '当前可回退的起点', index: 0 }, ...history.undoStack.map((command, index) => ({ label: command.label, index: index + 1 })), ...history.redoStack.toReversed().map((command, index) => ({ label: command.label, index: current + index + 1 }))] };
+}
+let historyIsland;
+function historyIslandHandle() {
+  if (historyIsland !== undefined) return historyIsland;
+  const create = globalThis.rpenIslands?.history?.createHistoryPanel;
+  historyIsland = typeof create === 'function' ? create({ host: element('#history-results'), onTravel: travelToHistoryStep }) : null;
+  return historyIsland;
+}
 function renderHistoryPanel() {
   const host = element('#history-results'); if (!host) return;
+  const island = historyIslandHandle();
+  if (island) { island.render(historySnapshot()); return; }
   host.replaceChildren();
-  const history = session.history; const current = history.undoStack.length;
-  const entries = [{ label: '当前可回退的起点', index: 0 }, ...history.undoStack.map((command, index) => ({ label: command.label, index: index + 1 })), ...history.redoStack.toReversed().map((command, index) => ({ label: command.label, index: current + index + 1 }))];
+  const { current, entries } = historySnapshot();
   for (const entry of entries) {
     const button = document.createElement('button'); button.type = 'button'; button.className = entry.index === current ? 'active' : ''; button.textContent = `${entry.index === current ? '● ' : ''}${entry.index} · ${entry.label}`;
-    button.onclick = () => { const direction = entry.index < current ? 'undo' : 'redo'; for (let count = 0; count < Math.abs(entry.index - current); count++) travel(direction, true); renderHistoryPanel(); notify(`已定位到编辑历史第 ${entry.index} 步`, 'success', 1800); };
+    button.onclick = () => travelToHistoryStep(entry.index);
     host.append(button);
   }
 }
@@ -1415,9 +1433,19 @@ function deleteDiagnosticIssue(issue) {
   else return;
   session.commit('删除检查项', chart); notify('已删除检查项对应对象', 'success');
 }
+function locateDiagnosticIssue(issue) {
+  if (issue.noiseArea !== undefined) { openNoisePanel(); noiseEditor.select(issue.noiseArea, issue.noiseTrack ? { type: issue.noiseTrack, index: issue.index } : null); }
+  else session.selectLine(issue.line); seekBeat(issue.beat);
+}
+let diagnoseIsland;
+function diagnoseIslandHandle() {
+  if (diagnoseIsland !== undefined) return diagnoseIsland;
+  const create = globalThis.rpenIslands?.diagnose?.createDiagnosePanel;
+  diagnoseIsland = typeof create === 'function' ? create({ host: element('#diagnose-results'), onLocate: locateDiagnosticIssue, onDelete: deleteDiagnosticIssue }) : null;
+  return diagnoseIsland;
+}
 function renderDiagnostics() {
   const host = element('#diagnose-results'); if (!host) return;
-  host.replaceChildren();
   const issues = diagnose(session.chart); const visible = element('#diagnose-show-low')?.checked !== false;
   const signature = issues.map(issue => `${issue.severity}:${issue.path}:${issue.message}`).sort().join('|');
   if (lastDiagnosticSignature !== null && signature !== lastDiagnosticSignature) {
@@ -1427,6 +1455,9 @@ function renderDiagnostics() {
     else if (added.some(issue => issue.severity === 'warning')) notify(`谱面检查新增 ${added.filter(issue => issue.severity === 'warning').length} 个警告`, 'warning', 3600);
   }
   lastDiagnosticSignature = signature;
+  const island = diagnoseIslandHandle();
+  if (island) { island.render({ issues, visible }); return; }
+  host.replaceChildren();
   const category = issue => {
     const top = issue.noiseArea !== undefined ? '噪域' : issue.path.startsWith('notes[') ? '音符' : issue.path.match(/Events\[/) ? '事件' : '其他';
     const sub = issue.message.includes('超出') ? '超界' : issue.message.includes('重叠') ? '重叠' : issue.message.includes('时长') ? '时长' : issue.message.includes('父线') ? '父线' : '其他';
@@ -1447,7 +1478,7 @@ function renderDiagnostics() {
         for (const issue of grouped) {
           const row = document.createElement('div'); row.className = `diagnose-item ${severity}`;
           const locate = document.createElement('button'); locate.type = 'button'; locate.textContent = `${issue.noiseArea !== undefined ? '噪域 ' + issue.noiseArea : 'Line ' + issue.line} · ${issue.beat} 拍 · ${issue.message}`;
-          locate.onclick = () => { if (issue.noiseArea !== undefined) { openNoisePanel(); noiseEditor.select(issue.noiseArea, issue.noiseTrack ? { type: issue.noiseTrack, index: issue.index } : null); } else session.selectLine(issue.line); seekBeat(issue.beat); };
+          locate.onclick = () => locateDiagnosticIssue(issue);
           const remove = document.createElement('button'); remove.type = 'button'; remove.textContent = '删除'; remove.disabled = !issue.path.includes('[') && issue.path !== 'father'; remove.onclick = () => deleteDiagnosticIssue(issue);
           row.append(locate, remove); subgroup.append(row);
         }

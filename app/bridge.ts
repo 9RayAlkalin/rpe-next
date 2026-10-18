@@ -124,6 +124,62 @@ export interface RpenMigrationIsland {
   createMigrationDialog(payload: RpenMigrationDialogPayload): void;
 }
 
+export interface RpenHistoryEntry {
+  label: string;
+  index: number;
+}
+
+export interface RpenHistoryPanelData {
+  current: number;
+  entries: RpenHistoryEntry[];
+}
+
+export interface RpenHistoryHandles {
+  render(data: RpenHistoryPanelData): void;
+}
+
+export interface RpenHistoryPanelPayload {
+  host: HTMLElement;
+  onTravel(index: number): void;
+}
+
+export interface RpenHistoryIsland {
+  createHistoryPanel(payload: RpenHistoryPanelPayload): RpenHistoryHandles;
+}
+
+export interface RpenDiagnoseIssue {
+  severity: string;
+  path: string;
+  message: string;
+  beat?: number;
+  line?: number;
+  layer?: number;
+  index?: number;
+  extended?: boolean;
+  noiseArea?: number;
+  noiseTrack?: string;
+  [key: string]: unknown;
+}
+
+export interface RpenDiagnosePanelData {
+  issues: RpenDiagnoseIssue[];
+  visible: boolean;
+}
+
+export interface RpenDiagnoseHandles {
+  render(data: RpenDiagnosePanelData): void;
+}
+
+export interface RpenDiagnosePanelPayload {
+  host: HTMLElement;
+  onLocate(issue: RpenDiagnoseIssue): void;
+  onDelete(issue: RpenDiagnoseIssue): void;
+}
+
+export interface RpenDiagnoseIsland {
+  createDiagnosePanel(payload: RpenDiagnosePanelPayload): RpenDiagnoseHandles;
+}
+
 declare global {
   interface Window {
     rpenIslands?: {
@@ -131,6 +187,8 @@ declare global {
       dialog?: RpenDialogIsland;
       export?: RpenExportIsland;
       migration?: RpenMigrationIsland;
+      history?: RpenHistoryIsland;
+      diagnose?: RpenDiagnoseIsland;
     };
     rpenSettingsBridge?: RpenSettingsBridge;
   }

@@ -158,7 +158,25 @@
     const latest = await library.readProject(projectId);
     await library.storeProject({ ...latest, assets: [], chart: { ...chart, META: { ...chart.META, name: 'newer' } } });
     check((await library.readProject(projectId)).chart.META.name === 'newer', '基于最新版本的后续保存失败');
-    return { hotkeys: true, thickness: true, fpsValidation: true, settingsIsland, dialogIsland, exportIsland: Boolean(globalThis.rpenIslands?.export), exportDialog: true, migrationIsland: Boolean(globalThis.rpenIslands?.migration), migrationDialog: true, backgroundSave: true, atomicRollback: true, savedMediaBytes: restored.assets[1][1].byteLength, responsiveTicks };
+
+    document.querySelector('#history-panel').click();
+    await tick();
+    const historyButtons = [...document.querySelectorAll('#history-results > button')];
+    check(historyButtons.length >= 1 && historyButtons[0].textContent === '● 0 · 当前可回退的起点' && historyButtons[0].classList.contains('active'), '编辑历史面板未渲染');
+    document.querySelector('#history-close').click();
+    document.querySelector('#diagnose').click();
+    await tick();
+    const diagnoseGroupSummaries = () => [...document.querySelectorAll('#diagnose-results > details.diagnose-group > summary')].map(node => node.textContent);
+    const summaries = diagnoseGroupSummaries();
+    check(summaries.length === 3 && ['错误', '警告', '提示'].every((title, index) => summaries[index].startsWith(title)), '谱面检查分组错误');
+    const diagnoseEmpty = document.querySelector('#diagnose-results > p.hint');
+    check(!diagnoseEmpty || diagnoseEmpty.textContent === '未发现当前检查规则覆盖的问题。', '谱面检查空提示错误');
+    document.querySelector('#diagnose-show-low').checked = false; document.querySelector('#diagnose-show-low').dispatchEvent(new Event('change'));
+    await tick();
+    check(diagnoseGroupSummaries()[2] === '提示（0）', '低级问题过滤无效');
+    document.querySelector('#diagnose-close').click();
+
+    return { hotkeys: true, thickness: true, fpsValidation: true, settingsIsland, dialogIsland, exportIsland: Boolean(globalThis.rpenIslands?.export), exportDialog: true, migrationIsland: Boolean(globalThis.rpenIslands?.migration), migrationDialog: true, historyIsland: Boolean(globalThis.rpenIslands?.history), historyPanel: true, diagnoseIsland: Boolean(globalThis.rpenIslands?.diagnose), diagnosePanel: true, backgroundSave: true, atomicRollback: true, savedMediaBytes: restored.assets[1][1].byteLength, responsiveTicks };
   } finally {
     if (modal.open) modal.close();
     await library.storePreferences(previousPreferences ?? migratePreferences());

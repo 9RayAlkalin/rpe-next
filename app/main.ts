@@ -1,9 +1,10 @@
 import { SHELL_HOST_ID, mountShell } from './shell';
 import { createDialogShell } from './islands/dialog/register';
 import { createExportDialog } from './islands/export/register';
+import { createMigrationDialog } from './islands/migration/register';
 import { createSettingsPanel } from './islands/settings/register';
 
-window.rpenIslands = { settings: { createSettingsPanel }, dialog: { createDialogShell }, export: { createExportDialog } };
+window.rpenIslands = { settings: { createSettingsPanel }, dialog: { createDialogShell }, export: { createExportDialog }, migration: { createMigrationDialog } };
 
 const host = document.createElement('div');
 host.id = SHELL_HOST_ID;

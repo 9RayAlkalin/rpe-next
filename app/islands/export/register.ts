@@ -1,12 +1,9 @@
-import { createApp, type App } from 'vue';
+import { createApp } from 'vue';
 import type { RpenExportDialogPayload } from '../../bridge';
+import { mountContentIsland } from '../host';
 import ExportDialog from './ExportDialog.vue';
-
-let current: App<Element> | null = null;
 
 export function createExportDialog(payload: RpenExportDialogPayload): void {
   const { host, ...props } = payload;
-  current?.unmount();
-  current = createApp(ExportDialog, props);
-  current.mount(host);
+  mountContentIsland(createApp(ExportDialog, props), host);
 }

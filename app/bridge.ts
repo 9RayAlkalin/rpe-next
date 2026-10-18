@@ -14,6 +14,7 @@ export interface RpenDialogHandles {
   apply: HTMLButtonElement;
   remove: HTMLButtonElement;
   error: HTMLElement;
+  releaseContent(): void;
 }
 
 export interface RpenDialogIsland {
@@ -48,9 +49,89 @@ export interface RpenExportIsland {
   createExportDialog(payload: RpenExportDialogPayload): void;
 }
 
+export interface RpenMigrationProject {
+  path: string;
+  directory?: string;
+  name?: string;
+  identifier?: string;
+  id?: string;
+  error?: string;
+  extra?: unknown;
+  [key: string]: unknown;
+}
+
+export interface RpenMigrationFailure {
+  path: string;
+  message?: string;
+}
+
+export interface RpenMigrationReport {
+  appliedHotkeys: unknown[];
+  appliedSettings: string[];
+  retainedHotkeys: unknown[];
+  retainedSettings: unknown[];
+}
+
+export interface RpenMigrationPlan {
+  sourceName: string;
+  projects: RpenMigrationProject[];
+  failures: RpenMigrationFailure[];
+  skipped?: unknown[];
+  preferences: { report: RpenMigrationReport; [key: string]: unknown };
+  entries: Array<{ path: string; getFile(): Promise<File> }>;
+}
+
+export interface RpenMigrationStoredProject {
+  id: string;
+  storageRevision?: unknown;
+  source: string;
+  bytes: number;
+  [key: string]: unknown;
+}
+
+export interface RpenMigrationEntry {
+  project: RpenMigrationProject;
+  existing?: RpenMigrationStoredProject | null;
+}
+
+export interface RpenMigrationResult {
+  source: string;
+  imported: Array<{ source: string; bytes: number; overwritten: boolean; extra?: unknown }>;
+  failed: RpenMigrationFailure[];
+  skipped?: Array<{ source: string; reason: string }>;
+  preferences: RpenMigrationReport;
+}
+
+export interface RpenMigrationHelpers {
+  listProjects(): Promise<RpenMigrationStoredProject[]>;
+  migrationConflicts(projects: RpenMigrationProject[], existing: RpenMigrationStoredProject[]): RpenMigrationEntry[];
+  materializeProject(plan: RpenMigrationPlan, project: RpenMigrationProject): Promise<RpenMigrationStoredProject>;
+  storeProject(project: RpenMigrationStoredProject): Promise<void>;
+  storePreferences(preferences: unknown): Promise<void>;
+  readProjectRevision(id: string): Promise<{ deleted?: boolean; revision?: unknown } | null | undefined>;
+  storageFailure(error: unknown): string;
+  download(blob: Blob, name: string): string;
+}
+
+export interface RpenMigrationDialogPayload {
+  host: HTMLElement;
+  plan: RpenMigrationPlan;
+  applyPreferences(preferences: RpenMigrationPlan['preferences']): void;
+  helpers: RpenMigrationHelpers;
+}
+
+export interface RpenMigrationIsland {
+  createMigrationDialog(payload: RpenMigrationDialogPayload): void;
+}
+
 declare global {
   interface Window {
-    rpenIslands?: { settings?: RpenSettingsIsland; dialog?: RpenDialogIsland; export?: RpenExportIsland };
+    rpenIslands?: {
+      settings?: RpenSettingsIsland;
+      dialog?: RpenDialogIsland;
+      export?: RpenExportIsland;
+      migration?: RpenMigrationIsland;
+    };
     rpenSettingsBridge?: RpenSettingsBridge;
   }
 }

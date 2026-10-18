@@ -88,6 +88,52 @@
     document.querySelector('#modal .modal-actions button[value="cancel"]').click();
     check(!modal.open, '导出弹窗未关闭');
 
+    const { migrationDialog } = await import('/src/ui/migration-dialog.mjs');
+    await library.storeProject({ id: 'conflict-smoke', chart: createChart(), chartName: 'conflict-smoke.json', identifier: 'conflict-smoke', assets: [], updated: Date.now() });
+    const migrationPlan = {
+      sourceName: 'smoke-rpe',
+      projects: [
+        { path: 'resources/conflict-smoke/chart.json', directory: 'resources/conflict-smoke/', name: 'Conflicted', identifier: 'conflict-smoke', id: 'conflict-smoke', chart: exportChart, info: {} },
+        { path: 'resources/broken/chart.json', directory: 'resources/broken/', name: 'Broken', error: '谱面解析失败', id: 'broken' },
+      ],
+      failures: [{ path: 'resources/other/bad.json', message: '读取失败' }],
+      preferences: { report: { appliedHotkeys: [0, 0], appliedSettings: ['键位', '界面'], retainedHotkeys: [0], retainedSettings: [0] } },
+    };
+    let appliedPreferences = 0;
+    migrationDialog(migrationPlan, () => { appliedPreferences++; });
+    check(document.querySelector('#modal-title').textContent === '迁移原 RPE 文件夹', '迁移弹窗标题错误');
+    check(document.querySelector('#modal-description').textContent.includes('发现 2 个谱面项目；1 项待处理'), '迁移弹窗描述错误');
+    const configCheck = document.querySelector('#modal-content > label input[type=checkbox]');
+    check(configCheck.checked && configCheck.parentElement.textContent.includes('迁移热键及设置'), '迁移设置选项状态错误');
+    const choiceChecks = [...document.querySelectorAll('#modal-content label.choice input')];
+    check(choiceChecks.length === 2 && choiceChecks[0].checked && !choiceChecks[0].disabled, '迁移项目默认选择错误');
+    check(choiceChecks[1].disabled && choiceChecks[1].parentElement.textContent.includes(' · 谱面解析失败'), '错误项目未禁用');
+    const summaryText = document.querySelectorAll('#modal-content > p')[0].textContent;
+    check(summaryText.includes('可应用：2 项热键，键位、界面') && summaryText.includes('其余 1 项热键、1 项设置'), '迁移设置摘要错误');
+    const migrateButton = document.querySelector('#modal-content > button.primary');
+    check(migrateButton.textContent === '迁移选中项目' && !migrateButton.disabled, '迁移按钮状态错误');
+    configCheck.checked = false; configCheck.dispatchEvent(new Event('change'));
+    migrateButton.click();
+    await waitFor(() => document.querySelector('#modal-content > section'));
+    const conflictSection = document.querySelector('#modal-content > section');
+    check(conflictSection.querySelector('h3').textContent === '1 个谱面标识已存在' && conflictSection.querySelector('details').open, '冲突提示未出现');
+    check(conflictSection.querySelector('li').textContent === 'conflict-smoke · Conflicted', '冲突列表内容错误');
+    check(document.activeElement === conflictSection.querySelector('button'), '冲突按钮未聚焦');
+    check(migrateButton.disabled && choiceChecks[0].disabled && configCheck.disabled, '迁移进行中控件未禁用');
+    [...conflictSection.querySelectorAll('button')].find(button => button.textContent === '取消迁移').click();
+    await waitFor(() => !document.querySelector('#modal-content > section'));
+    const progressText = () => document.querySelectorAll('#modal-content > p')[1].textContent;
+    check(progressText() === '已取消，尚未写入项目或设置。' && !migrateButton.disabled && !configCheck.disabled, '冲突取消未恢复状态');
+    check(!choiceChecks[0].disabled && choiceChecks[1].disabled, '冲突取消未恢复项目选择');
+    migrateButton.click();
+    await waitFor(() => document.querySelector('#modal-content > section'));
+    [...document.querySelectorAll('#modal-content > section button')].find(button => button.textContent === '跳过重复谱面').click();
+    await waitFor(() => migrateButton.textContent === '下载迁移报告');
+    check(progressText() === '已迁移 0 个项目，1 项未迁移，跳过 1 项。关闭后点击“谱面库”打开；数据保存在当前浏览器，建议另导出 PEZ。', '跳过完成状态错误');
+    check(appliedPreferences === 0 && (await library.listProjects()).find(item => item.id === 'conflict-smoke')?.identifier === 'conflict-smoke', '设置被误应用或冲突项目被覆盖');
+    document.querySelector('#modal .modal-actions button[value="cancel"]').click();
+    check(!modal.open, '迁移弹窗未关闭');
+
     const canvas = document.createElement('canvas'); canvas.width = 32; canvas.height = 32; canvas.getContext('2d').fillRect(0, 0, 32, 32);
     const cover = new Uint8Array(await (await new Promise(resolve => canvas.toBlob(resolve))).arrayBuffer());
     const chart = createChart(); chart.META.background = 'cover.png';
@@ -112,7 +158,7 @@
     const latest = await library.readProject(projectId);
     await library.storeProject({ ...latest, assets: [], chart: { ...chart, META: { ...chart.META, name: 'newer' } } });
     check((await library.readProject(projectId)).chart.META.name === 'newer', '基于最新版本的后续保存失败');
-    return { hotkeys: true, thickness: true, fpsValidation: true, settingsIsland, dialogIsland, exportIsland: Boolean(globalThis.rpenIslands?.export), exportDialog: true, backgroundSave: true, atomicRollback: true, savedMediaBytes: restored.assets[1][1].byteLength, responsiveTicks };
+    return { hotkeys: true, thickness: true, fpsValidation: true, settingsIsland, dialogIsland, exportIsland: Boolean(globalThis.rpenIslands?.export), exportDialog: true, migrationIsland: Boolean(globalThis.rpenIslands?.migration), migrationDialog: true, backgroundSave: true, atomicRollback: true, savedMediaBytes: restored.assets[1][1].byteLength, responsiveTicks };
   } finally {
     if (modal.open) modal.close();
     await library.storePreferences(previousPreferences ?? migratePreferences());
@@ -121,11 +167,14 @@
     if (nativeStorage) {
       const savedProject = await library.readProject(projectId);
       if (savedProject) { await library.deleteProject(projectId, savedProject.storageRevision); const head = await library.readProjectRevision(projectId); await nativeStorage.call('purge', projectId, head.revision); }
+      const conflictProject = await library.readProject('conflict-smoke');
+      if (conflictProject) { await library.deleteProject('conflict-smoke', conflictProject.storageRevision); const head = await library.readProjectRevision('conflict-smoke'); await nativeStorage.call('purge', 'conflict-smoke', head.revision); }
     } else await new Promise((resolve, reject) => {
       const request = indexedDB.open('rpe-next-library'); request.onerror = () => reject(request.error);
       request.onsuccess = () => {
         const connection = request.result; const transaction = connection.transaction(['projects', 'summaries'], 'readwrite');
         transaction.objectStore('projects').delete(projectId); transaction.objectStore('summaries').delete(projectId);
+        transaction.objectStore('projects').delete('conflict-smoke'); transaction.objectStore('summaries').delete('conflict-smoke');
         transaction.oncomplete = () => { connection.close(); resolve(); }; transaction.onabort = () => { connection.close(); reject(transaction.error); };
       };
     });

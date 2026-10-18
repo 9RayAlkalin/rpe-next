@@ -1,5 +1,6 @@
 import { createApp } from 'vue';
 import type { RpenDialogHandles } from '../../bridge';
+import { releaseContentIsland } from '../host';
 import DialogShell from './DialogShell.vue';
 
 let handles: RpenDialogHandles | null = null;
@@ -26,6 +27,7 @@ export function createDialogShell(): RpenDialogHandles {
     apply: required(modal, '#modal-apply'),
     remove: required(modal, '#modal-delete'),
     error: required(modal, '#modal-error'),
+    releaseContent: releaseContentIsland,
   };
   return handles;
 }

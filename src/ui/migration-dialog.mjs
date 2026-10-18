@@ -26,6 +26,12 @@ function resolveConflicts(content, conflicts) {
 }
 
 export function migrationDialog(plan, applyPreferences) {
+  const island = globalThis.rpenIslands?.migration?.createMigrationDialog;
+  if (typeof island === 'function') {
+    const host = showDialog('迁移原 RPE 文件夹', `发现 ${plan.projects.length} 个谱面项目；${plan.failures.length} 项待处理。选择要复制到本浏览器谱面库的项目。原文件夹只读。音乐、封面及谱面文件夹内附属文件一同保存。`);
+    island({ host, plan, applyPreferences, helpers: { listProjects, migrationConflicts, materializeProject, storeProject, storePreferences, readProjectRevision, storageFailure, download } });
+    return;
+  }
   const content = showDialog('迁移原 RPE 文件夹', `发现 ${plan.projects.length} 个谱面项目；${plan.failures.length} 项待处理。选择要复制到本浏览器谱面库的项目。原文件夹只读。音乐、封面及谱面文件夹内附属文件一同保存。`);
   const configLabel = document.createElement('label');
   const configCheck = document.createElement('input'); configCheck.type = 'checkbox'; configCheck.checked = true;

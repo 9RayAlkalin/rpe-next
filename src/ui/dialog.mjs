@@ -9,6 +9,7 @@ const remove = shell?.remove ?? document.querySelector('#modal-delete');
 const error = shell?.error ?? document.querySelector('#modal-error');
 
 export function showDialog(title, description) {
+  shell?.releaseContent?.();
   if (modal.open) modal.close();
   document.querySelector('#modal-title').textContent = title;
   document.querySelector('#modal-description').textContent = description;

@@ -242,7 +242,38 @@
       homeSection.hidden = restoreHidden;
     }
 
-    return { hotkeys: true, thickness: true, fpsValidation: true, settingsIsland, dialogIsland, exportIsland: Boolean(globalThis.rpenIslands?.export), exportDialog: true, migrationIsland: Boolean(globalThis.rpenIslands?.migration), migrationDialog: true, historyIsland: Boolean(globalThis.rpenIslands?.history), historyPanel: true, diagnoseIsland: Boolean(globalThis.rpenIslands?.diagnose), diagnosePanel: true, storageIsland: Boolean(globalThis.rpenIslands?.storage), storagePanel: true, homeIsland: Boolean(globalThis.rpenIslands?.home), homePanel: true, backgroundSave: true, atomicRollback: true, savedMediaBytes: restored.assets[1][1].byteLength, responsiveTicks };
+    const modsIsland = Boolean(globalThis.rpenIslands?.mods);
+    const manager = globalThis.rpenMods?.manager;
+    check(manager, '模组管理器未初始化');
+    await manager.ready;
+    const modCards = () => [...document.querySelectorAll('#mod-manager .mod-card')];
+    await waitFor(() => modCards().length === 3);
+    document.querySelector('#mods-open').click();
+    await waitFor(() => document.querySelector('#mod-manager').open);
+    check(modCards()[0].getAttribute('aria-pressed') === 'true', '模组默认选中错误');
+    const modTitle = () => document.querySelector('#mod-manager .mod-manager-details h3')?.textContent;
+    check(modTitle() === modCards()[0].querySelector('strong').textContent, '模组详情与选中不一致');
+    modCards()[2].click();
+    await waitFor(() => modCards()[2].getAttribute('aria-pressed') === 'true' && modTitle() === modCards()[2].querySelector('strong').textContent);
+    [...document.querySelectorAll('#mod-manager .mod-manager-toolbar button')].find(button => button.textContent === '协议与 API').click();
+    await waitFor(() => modTitle() === '模组协议 API 1');
+    check(document.querySelectorAll('#mod-manager .mod-manager-details .mod-manager-toolbar button').length === 4, '协议下载按钮缺失');
+    modCards()[0].click();
+    await waitFor(() => modTitle() === modCards()[0].querySelector('strong').textContent);
+    const toggleButton = () => document.querySelector('#mod-manager .mod-manager-details .mod-manager-toolbar button:first-child');
+    check(toggleButton().textContent === '启用模组' && !toggleButton().disabled, '模组默认状态错误');
+    toggleButton().click();
+    await waitFor(() => toggleButton().textContent === '禁用模组' && globalThis.rpenMods.runtime.loaded.size === 1);
+    check(document.querySelector('#mod-manager [role=status]').textContent === '模组已装载。', '模组装载提示错误');
+    check(document.querySelector('#mods-status').hidden === false && document.querySelector('#mods-status').textContent === '已装载 1 个模组', '模组状态栏未更新');
+    toggleButton().click();
+    await waitFor(() => toggleButton().textContent === '启用模组' && globalThis.rpenMods.runtime.loaded.size === 0);
+    check(document.querySelector('#mod-manager [role=status]').textContent === '模组已禁用，受管理的资源已清理。', '模组禁用提示错误');
+    check(document.querySelector('#mods-status').hidden === true, '模组状态栏未清空');
+    document.querySelector('#mod-manager .mod-manager-heading button').click();
+    await waitFor(() => !document.querySelector('#mod-manager').open);
+
+    return { hotkeys: true, thickness: true, fpsValidation: true, settingsIsland, dialogIsland, exportIsland: Boolean(globalThis.rpenIslands?.export), exportDialog: true, migrationIsland: Boolean(globalThis.rpenIslands?.migration), migrationDialog: true, historyIsland: Boolean(globalThis.rpenIslands?.history), historyPanel: true, diagnoseIsland: Boolean(globalThis.rpenIslands?.diagnose), diagnosePanel: true, storageIsland: Boolean(globalThis.rpenIslands?.storage), storagePanel: true, homeIsland: Boolean(globalThis.rpenIslands?.home), homePanel: true, modsIsland, modManager: true, backgroundSave: true, atomicRollback: true, savedMediaBytes: restored.assets[1][1].byteLength, responsiveTicks };
   } finally {
     if (modal.open) modal.close();
     await library.storePreferences(previousPreferences ?? migratePreferences());

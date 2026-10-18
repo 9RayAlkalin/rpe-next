@@ -7,8 +7,9 @@ import { createMigrationDialog } from './islands/migration/register';
 import { createSettingsPanel } from './islands/settings/register';
 import { createStoragePanel } from './islands/storage/register';
 import { createHomePanel } from './islands/home/register';
+import { createModManagerDialog } from './islands/mods/register';
 
-window.rpenIslands = { settings: { createSettingsPanel }, dialog: { createDialogShell }, export: { createExportDialog }, migration: { createMigrationDialog }, history: { createHistoryPanel }, diagnose: { createDiagnosePanel }, storage: { createStoragePanel }, home: { createHomePanel } };
+window.rpenIslands = { settings: { createSettingsPanel }, dialog: { createDialogShell }, export: { createExportDialog }, migration: { createMigrationDialog }, history: { createHistoryPanel }, diagnose: { createDiagnosePanel }, storage: { createStoragePanel }, home: { createHomePanel }, mods: { createModManagerDialog } };
 
 const host = document.createElement('div');
 host.id = SHELL_HOST_ID;

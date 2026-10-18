@@ -10,10 +10,13 @@ const read=(key,fallback)=>{try{return JSON.parse(localPreferences.getItem(key))
 const object=value=>value&&typeof value==='object'&&!Array.isArray(value);
 const text=(tag,value,className='')=>{const node=document.createElement(tag);node.textContent=value;node.className=className;return node;};
 const button=(value,run)=>{const node=document.createElement('button');node.type='button';node.textContent=value;node.onclick=run;return node;};
+const shimText=(apply,initial='')=>{let value=initial;return{get textContent(){return value;},set textContent(next){value=next;apply(next);}};};
 export class ModManager {
   constructor(editor,{notify,invalidate}){
     Object.assign(this,{editor,notify,invalidate});this.records=new Map();this.errors=new Map();const options=read(OPTIONS,{});this.options=Object.assign(Object.create(null),object(options)?options:{});this.desired=new Set(Array.isArray(read(ENABLED,[]))?read(ENABLED,[]):[]);this.selected=null;this.busy=false;
     this.runtime=new ModRuntime({editor,notify,invalidate,changed:()=>this.updateStatus()});this.runtime.emergency=()=>this.disableAll(true);this.runtime.installInput();
+    const factory=globalThis.rpenIslands?.mods?.createModManagerDialog;
+    if(typeof factory==='function')this.island=factory({helpers:{formatShortcut,shortcutFromEvent},actions:{select:id=>{this.selected=id;this.renderList();},toggle:id=>this.toggle(id),export:id=>download(exportMod(this.records.get(id)),id+'.rpenmod'),remove:id=>this.remove(id),close:()=>this.dialog.close(),saveSetting:(id,key,value)=>this.saveSetting(id,key,value),resetSettings:id=>this.resetSettings(id),runCommand:(id,key)=>{const command=[...this.runtime.commands.values()].find(entry=>entry.owner===id&&entry.id===key);this.dialog.close();command?.run();},disableAll:()=>this.disableAll(),pickPackage:()=>this.file.click(),pickDirectory:()=>this.directory.click(),downloadDoc:path=>this.downloadDoc(path)}});
     this.render();document.querySelector('#mods-open').onclick=()=>this.open();document.querySelector('#mods-status').onclick=()=>this.open();
     window.rpenMods={apiVersion:MOD_API_VERSION,editor,runtime:this.runtime,manager:this,resolveModule:(...args)=>this.runtime.resolveModule(...args),disableAll:()=>this.disableAll(true)};installModApi(window.rpenMods);this.ready=this.load();
   }
@@ -29,16 +32,21 @@ export class ModManager {
     }catch(error){this.banner.textContent='模组目录读取失败：'+error.message;this.notify(this.banner.textContent,'warning');}
   }
   render(){
-    this.dialog=document.createElement('dialog');this.dialog.id='mod-manager';this.dialog.className='mod-manager';this.dialog.dataset.modInteractive='true';
-    const heading=document.createElement('div');heading.className='mod-manager-heading';heading.append(text('h2','模组管理器'),button('关闭',()=>this.dialog.close()));
-    const actions=document.createElement('div');actions.className='mod-manager-toolbar';
+    if(this.island)this.dialog=this.island.dialog;
+    else{this.dialog=document.createElement('dialog');this.dialog.id='mod-manager';this.dialog.className='mod-manager';this.dialog.dataset.modInteractive='true';}
+    if(this.island){this.banner=shimText(value=>this.island.setBanner(value),'模组可更改编辑器行为与谱面结构；启用前请保存谱面。');this.message=shimText(value=>this.island.setMessage(value),'内置模组和导入模组均需手动启用。启用状态与参数保存在本机。');}
+    else{
+      const heading=document.createElement('div');heading.className='mod-manager-heading';heading.append(text('h2','模组管理器'),button('关闭',()=>this.dialog.close()));
+      const actions=document.createElement('div');actions.className='mod-manager-toolbar';
+      actions.append(button('导入模组包',()=>this.file.click()),button('导入文件夹',()=>this.directory.click()),button('禁用全部模组',()=>this.disableAll()),button('协议与 API',()=>this.showProtocol()));
+      this.banner=text('p','模组可更改编辑器行为与谱面结构；启用前请保存谱面。','hint');
+      const body=document.createElement('div');body.className='mod-manager-body';this.list=document.createElement('div');this.list.className='mod-manager-list';this.list.setAttribute('aria-label','已安装模组');this.details=document.createElement('div');this.details.className='mod-manager-details';body.append(this.list,this.details);
+      this.message=text('p','内置模组和导入模组均需手动启用。启用状态与参数保存在本机。','hint');this.message.setAttribute('role','status');
+      this.dialog.append(heading,actions,this.banner,body,this.message);document.body.append(this.dialog);
+    }
     this.file=document.createElement('input');this.file.type='file';this.file.accept='.rpenmod,.zip';this.file.hidden=true;this.file.setAttribute('aria-label','导入模组包');this.file.onchange=()=>this.importFiles(this.file.files);
     this.directory=document.createElement('input');this.directory.type='file';this.directory.webkitdirectory=true;this.directory.multiple=true;this.directory.hidden=true;this.directory.setAttribute('aria-label','导入模组目录');this.directory.onchange=()=>this.importFiles(this.directory.files,true);
-    actions.append(button('导入模组包',()=>this.file.click()),button('导入文件夹',()=>this.directory.click()),button('禁用全部模组',()=>this.disableAll()),button('协议与 API',()=>this.showProtocol()));
-    this.banner=text('p','模组可更改编辑器行为与谱面结构；启用前请保存谱面。','hint');
-    const body=document.createElement('div');body.className='mod-manager-body';this.list=document.createElement('div');this.list.className='mod-manager-list';this.list.setAttribute('aria-label','已安装模组');this.details=document.createElement('div');this.details.className='mod-manager-details';body.append(this.list,this.details);
-    this.message=text('p','内置模组和导入模组均需手动启用。启用状态与参数保存在本机。','hint');this.message.setAttribute('role','status');
-    this.dialog.append(heading,actions,this.banner,body,this.message,this.file,this.directory);document.body.append(this.dialog);
+    this.dialog.append(this.file,this.directory);
     this.dialog.addEventListener('cancel',event=>{if(event.target===this.dialog){event.preventDefault();this.dialog.close();}});
     this.dialog.addEventListener('dragover',event=>event.preventDefault());this.dialog.addEventListener('drop',event=>{event.preventDefault();this.importFiles(event.dataTransfer.files);});
     this.warning=document.createElement('dialog');this.warning.id='mod-import-warning';this.warning.dataset.modInteractive='true';this.warning.className='mod-import-warning';document.body.append(this.warning);
@@ -47,10 +55,12 @@ export class ModManager {
   async open(){await this.ready;this.renderList();if(!this.dialog.open)this.dialog.showModal();}
   renderList(){
     if(!this.selected||!this.records.has(this.selected))this.selected=this.records.keys().next().value;
+    if(this.island){this.island.render(this.viewState());return;}
     this.list.replaceChildren();for(const [id,record]of this.records){const active=this.runtime.loaded.has(id);const node=button('',()=>{this.selected=id;this.renderList();});node.className='mod-card';node.dataset.modId=id;node.setAttribute('aria-pressed',String(this.selected===id));node.append(text('strong',record.manifest.name),text('span',`${record.builtin?'内置':'导入'} · ${record.manifest.version} · ${record.manifest.author}`),text('small',active?'已装载':this.errors.has(id)?'装载失败':'已禁用'));this.list.append(node);}
     this.renderDetails();
   }
   renderDetails(){
+    if(this.island){this.island.render(this.viewState());return;}
     this.details.replaceChildren();const record=this.records.get(this.selected);if(!record){this.details.append(text('p','尚无模组'));return;}const {manifest}=record;const active=this.runtime.loaded.get(manifest.id);
     this.details.append(text('h3',manifest.name),text('p',manifest.description),text('p',`${manifest.id} · v${manifest.version} · API ${manifest.api} · ${manifest.author}`,'hint'));
     const actions=document.createElement('div');actions.className='mod-manager-toolbar';const toggle=button(active?'禁用模组':'启用模组',()=>this.toggle(manifest.id));toggle.className=active?'':'primary';toggle.disabled=this.busy;actions.append(toggle,button('导出模组',()=>download(exportMod(record),manifest.id+'.rpenmod')));
@@ -58,7 +68,7 @@ export class ModManager {
     if(this.errors.has(manifest.id))this.details.append(text('pre',this.errors.get(manifest.id),'mod-error'));
     if(manifest.dependencies.length)this.details.append(text('p','依赖：'+manifest.dependencies.join('、'),'hint'));if(manifest.conflicts.length)this.details.append(text('p','冲突：'+manifest.conflicts.join('、'),'hint'));
     const settings=this.settingsFor(record);
-    if(Object.keys(manifest.settings).length)this.details.append(button('恢复默认参数',async()=>{for(const [key,definition]of Object.entries(manifest.settings))await this.setSetting(manifest.id,key,structuredClone(definition.default));this.renderDetails();}));
+    if(Object.keys(manifest.settings).length)this.details.append(button('恢复默认参数',()=>this.resetSettings(manifest.id)));
     for(const [key,definition]of Object.entries(manifest.settings)){
       const row=document.createElement('label');row.className='field';row.append(text('span',definition.label));let control;
       if(definition.type==='select'){control=document.createElement('select');for(const [value,label]of Object.entries(definition.options))control.append(new Option(label,value));control.value=settings[key];}
@@ -72,6 +82,25 @@ export class ModManager {
     if(active){const commands=[...this.runtime.commands.values()].filter(command=>command.owner===manifest.id);if(commands.length){this.details.append(text('h4','操作'));for(const command of commands)this.details.append(button(command.title??command.id,()=>{this.dialog.close();command.run();}));}this.details.append(text('p',`运行中 · 错误 ${active.errors} 次`,'hint'));}
     const source=document.createElement('details');source.append(text('summary','包内文件与源码'));const code=document.createElement('pre');code.className='mod-source';code.textContent=[...record.files].filter(([name])=>/\.(json|m?js|css|md)$/.test(name)).map(([name,bytes])=>`— ${name} —\n${new TextDecoder().decode(bytes).slice(0,100000)}`).join('\n\n');source.append(code);this.details.append(source);
   }
+  viewState(){
+    const cards=[];for(const [id,record]of this.records){const active=this.runtime.loaded.has(id);cards.push({id,name:record.manifest.name,active,selected:this.selected===id,span:`${record.builtin?'内置':'导入'} · ${record.manifest.version} · ${record.manifest.author}`,status:active?'已装载':this.errors.has(id)?'装载失败':'已禁用'});}
+    const record=this.records.get(this.selected);let detail=null;
+    if(record){const {manifest}=record;const active=this.runtime.loaded.get(manifest.id);const settings=this.settingsFor(record);
+      detail={id:manifest.id,name:manifest.name,description:manifest.description,label:`${manifest.id} · v${manifest.version} · API ${manifest.api} · ${manifest.author}`,builtin:record.builtin,active:Boolean(active),busy:this.busy,error:this.errors.has(manifest.id)?this.errors.get(manifest.id):'',
+        dependencies:manifest.dependencies.length?'依赖：'+manifest.dependencies.join('、'):'',conflicts:manifest.conflicts.length?'冲突：'+manifest.conflicts.join('、'):'',
+        settings:Object.entries(manifest.settings).map(([key,definition])=>({key,type:definition.type,label:definition.label,description:definition.description??'',value:definition.type==='shortcut'?formatShortcut(settings[key]):settings[key],options:definition.type==='select'?Object.entries(definition.options).map(([value,label])=>({value,label})):[],min:definition.min??null,max:definition.max??null,step:definition.step??null,shortcut:definition.type==='shortcut'})),
+        commands:active?[...this.runtime.commands.values()].filter(command=>command.owner===manifest.id).map(command=>({id:command.id,title:command.title??command.id})):[],
+        running:active?`运行中 · 错误 ${active.errors} 次`:'',
+        source:[...record.files].filter(([name])=>/\.(json|m?js|css|md)$/.test(name)).map(([name,bytes])=>`— ${name} —\n${new TextDecoder().decode(bytes).slice(0,100000)}`).join('\n\n')};
+    }
+    return {cards,detail};
+  }
+  async saveSetting(id,key,value){
+    try{await this.setSetting(id,key,value);this.message.textContent='模组设置已保存。';return null;}
+    catch(error){this.message.textContent=error.message;return error.message;}
+  }
+  async resetSettings(id){const record=this.records.get(id);if(!record)return;for(const [key,definition]of Object.entries(record.manifest.settings))await this.setSetting(id,key,structuredClone(definition.default));this.renderDetails();}
+  async downloadDoc(path){try{const response=await fetch(new URL('../../'+path,import.meta.url));if(!response.ok)throw Error('文档读取失败');download(await response.blob(),path.split('/').at(-1));}catch(error){this.notify(error.message,'error');}}
   settingsFor(record){const id=record.manifest.id;if(!Object.hasOwn(this.options,id)||!object(this.options[id]))this.options[id]=Object.create(null);const values=this.options[id];for(const [key,definition]of Object.entries(record.manifest.settings)){try{if(!Object.hasOwn(values,key))throw Error();modSettingValue(definition,values[key],key);}catch{values[key]=structuredClone(definition.default);}}return values;}
   async setSetting(id,key,value){const record=this.records.get(id);if(!record)throw Error('模组不存在');modSettingValue(Object.hasOwn(record.manifest.settings,key)?record.manifest.settings[key]:null,value,key);this.settingsFor(record)[key]=value;localPreferences.setItem(OPTIONS,JSON.stringify(this.options));const state=this.runtime.loaded.get(id);if(state){state.settings=this.options[id];this.runtime.emit('settings:'+id,{key,value});}}
   persist(){localPreferences.setItem(ENABLED,JSON.stringify([...this.desired]));localPreferences.setItem(OPTIONS,JSON.stringify(this.options));}
@@ -99,6 +128,6 @@ export class ModManager {
   async remove(id){if(!confirm('删除模组及其参数？'))return;await this.disable(id);await deleteMod(id);delete this.options[id];localPreferences.removeItem('rpe-next-mod-data:'+id);this.records.delete(id);this.persist();this.renderList();}
   showProtocol(){this.details.replaceChildren(text('h3','模组协议 API 1'),text('p','每个包包含 mod.json 和入口 ES 模块，入口导出 activate(api)。支持 package 内多文件导入、完整编辑器对象、提交谱面、事件钩子、界面挂载、预览叠加、快捷键与自动清理。'),text('p','模组运行于编辑器页面，没有权限沙箱。无法保证任意直接改写都可卸载还原；优先使用 api.patch / api.dispose，异常时禁用并重新载入。'));
     const pre=text('pre',JSON.stringify({protocol:'rpen-mod',api:1,id:'example-mod',name:'示例',version:'1.0.0',author:'作者',description:'说明',entry:'main.mjs'},null,2)+'\n\nexport function activate(api) {\n  api.commands.register({ id: "hello", title: "问好", shortcut: "F7", run: () => api.notify("Hello") });\n  return () => {};\n}','mod-source');this.details.append(pre,text('p','完整协议：protocols/MOD-PROTOCOL.zh-CN.md · API：window.rpenMods.editor · 恢复启动：?mods=off','hint'));
-    const actions=document.createElement('div');actions.className='mod-manager-toolbar';for(const [label,path]of [['下载完整协议','protocols/MOD-PROTOCOL.zh-CN.md'],['下载全局事件协议','protocols/GLOBAL-EVENTS-PROTOCOL.zh-CN.md'],['下载 API 声明','schemas/mod-api-v1.d.ts'],['下载清单 Schema','schemas/mod-v1.schema.json']])actions.append(button(label,async()=>{try{const response=await fetch(new URL('../../'+path,import.meta.url));if(!response.ok)throw Error('文档读取失败');download(await response.blob(),path.split('/').at(-1));}catch(error){this.notify(error.message,'error');}}));this.details.append(actions);
+    const actions=document.createElement('div');actions.className='mod-manager-toolbar';for(const [label,path]of [['下载完整协议','protocols/MOD-PROTOCOL.zh-CN.md'],['下载全局事件协议','protocols/GLOBAL-EVENTS-PROTOCOL.zh-CN.md'],['下载 API 声明','schemas/mod-api-v1.d.ts'],['下载清单 Schema','schemas/mod-v1.schema.json']])actions.append(button(label,()=>this.downloadDoc(path)));this.details.append(actions);
   }
 }

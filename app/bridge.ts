@@ -355,6 +355,91 @@ export interface RpenHomeIsland {
   createHomePanel(payload: RpenHomeCreatePayload): RpenHomeHandles;
 }
 
+export interface RpenModManagerHelpers {
+  formatShortcut(value: unknown): string;
+  shortcutFromEvent(event: KeyboardEvent): string | null;
+}
+
+export interface RpenModManagerCard {
+  id: string;
+  name: string;
+  active: boolean;
+  selected: boolean;
+  span: string;
+  status: string;
+}
+
+export interface RpenModManagerSetting {
+  key: string;
+  type: string;
+  label: string;
+  description: string;
+  value: unknown;
+  options: Array<{ value: string; label: string }>;
+  min: number | null;
+  max: number | null;
+  step: number | string | null;
+  shortcut: boolean;
+}
+
+export interface RpenModManagerCommand {
+  id: string;
+  title: string;
+}
+
+export interface RpenModManagerDetail {
+  id: string;
+  name: string;
+  description: string;
+  label: string;
+  builtin: boolean;
+  active: boolean;
+  busy: boolean;
+  error: string;
+  dependencies: string;
+  conflicts: string;
+  settings: RpenModManagerSetting[];
+  commands: RpenModManagerCommand[];
+  running: string;
+  source: string;
+}
+
+export interface RpenModManagerState {
+  cards: RpenModManagerCard[];
+  detail: RpenModManagerDetail | null;
+}
+
+export interface RpenModManagerActions {
+  select(id: string): void;
+  toggle(id: string): Promise<void>;
+  export(id: string): void;
+  remove(id: string): Promise<void>;
+  close(): void;
+  saveSetting(id: string, key: string, value: unknown): Promise<string | null>;
+  resetSettings(id: string): Promise<void>;
+  runCommand(id: string, key: string): void;
+  disableAll(): Promise<void>;
+  pickPackage(): void;
+  pickDirectory(): void;
+  downloadDoc(path: string): Promise<void>;
+}
+
+export interface RpenModManagerPayload {
+  helpers: RpenModManagerHelpers;
+  actions: RpenModManagerActions;
+}
+
+export interface RpenModManagerHandles {
+  dialog: HTMLDialogElement;
+  render(state: RpenModManagerState): void;
+  setBanner(text: string): void;
+  setMessage(text: string): void;
+}
+
+export interface RpenModManagerIsland {
+  createModManagerDialog(payload: RpenModManagerPayload): RpenModManagerHandles;
+}
+
 declare global {
   interface Window {
     rpenIslands?: {
@@ -366,6 +451,7 @@ declare global {
       diagnose?: RpenDiagnoseIsland;
       storage?: RpenStorageIsland;
       home?: RpenHomeIsland;
+      mods?: RpenModManagerIsland;
     };
     rpenSettingsBridge?: RpenSettingsBridge;
   }

@@ -8,6 +8,7 @@ import { ZipFile } from 'yazl';
 import { createHash } from 'node:crypto';
 import { dirname, join, resolve, basename, relative, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { extractReleaseTar, verifyReleaseSourceDirectory, verifyReleaseSourceZip } from './release-source.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const kind = process.argv.includes('--server') ? 'server' : 'editor';
@@ -35,7 +36,8 @@ if (await readdir(work).then(items => items.length)) throw Error('Build workspac
 await mkdir(stage);
 const sourceTar = join(work, 'source.tar');
 execFileSync('git', ['archive', '--format=tar', '--output=' + sourceTar, 'HEAD', '--', ...sourcePaths], { cwd: root });
-execFileSync('tar', ['-xf', sourceTar, '-C', stage]);
+extractReleaseTar(sourceTar, stage);
+await verifyReleaseSourceDirectory(root, sourceCommit, sourcePaths, stage);
 await rm(sourceTar);
 if (kind === 'server') {
   await cp(join(root, 'collaboration-server/node_modules/ws'), join(stage, 'collaboration-server/node_modules/ws'), { recursive: true });
@@ -98,6 +100,8 @@ const packaged = await packager({
 if (packaged.length !== 1) throw Error('Unexpected package count');
 const directory = packaged[0];
 const bundle = platform === 'darwin' ? join(directory, product + '.app') : directory;
+const application = platform === 'darwin' ? join(bundle, 'Contents/Resources/app') : join(directory, 'resources/app');
+const sourceFilesVerified = await verifyReleaseSourceDirectory(root, sourceCommit, sourcePaths, application);
 const executable = platform === 'darwin' ? join(bundle, 'Contents/MacOS', executableName) : join(directory, executableName + (platform === 'win32' ? '.exe' : ''));
 if (platform === 'win32') execFileSync('icacls.exe', [directory, '/grant', '*S-1-15-2-1:(OI)(CI)(RX)', '/T', '/Q'], { windowsHide: true, stdio: 'pipe' });
 const args = kind === 'server' ? ['--smoke-test'] : ['--smoke-native', '--mods-off'];
@@ -107,6 +111,7 @@ else args.push('--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swi
 console.log('Testing packaged application: ' + platform + '/' + arch + ' ' + kind);
 const smoke = await run(executable, args, { env: { ...process.env, RPE_NATIVE_TEST_HOME: join(work, 'test-profile') }, timeout: platform === 'darwin' && arch === 'x64' ? 480000 : 240000 });
 if (kind === 'editor' ? !smoke.includes('"errors":[]') || !smoke.includes('real native IPC opens image parent') : !smoke.includes('"protocol":1') || !smoke.includes('"errors":[]')) throw Error('Packaged smoke result is incomplete');
+if (kind === 'editor' && !smoke.includes('built-in note skin files and images load through the packaged application protocol')) throw Error('Built-in note skin check is missing');
 if (platform === 'darwin') execFileSync('codesign', ['--verify', '--deep', '--strict', bundle]);
 
 const help = [
@@ -154,6 +159,7 @@ if (platform === 'darwin') {
       }
     };
     await add(directory); zip.end(); await finished;
+    await verifyReleaseSourceZip(root, sourceCommit, sourcePaths, archive, basename(directory) + '/resources/app/');
   } else {
     archive = join(output, stem + '.tar.xz');
     await run('tar', ['-cJf', archive, '-C', dirname(directory), basename(directory)], { env: { ...process.env, XZ_OPT: '-9e -T2' }, timeout: 900000 });
@@ -162,6 +168,6 @@ if (platform === 'darwin') {
 }
 const digest = createHash('sha256'); for await (const chunk of createReadStream(archive)) digest.update(chunk);
 const bytes = (await stat(archive)).size;
-const manifest = { ...buildInfo, file: basename(archive), bytes, sha256: digest.digest('hex'), unpackedBytes: await directoryBytes(directory), removedLocaleBytes, verified: true };
+const manifest = { ...buildInfo, file: basename(archive), bytes, sha256: digest.digest('hex'), unpackedBytes: await directoryBytes(directory), removedLocaleBytes, sourceFilesVerified, verified: true };
 await writeFile(join(output, stem + '.json'), JSON.stringify(manifest, null, 2) + '\n');
 console.log(JSON.stringify(manifest));

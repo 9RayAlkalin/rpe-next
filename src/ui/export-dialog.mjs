@@ -5,6 +5,12 @@ import { DEFAULT_TRAJECTORY_SPLIT } from '../core/trajectory-simplify.mjs';
 import { diagnoseNoiseAreas } from '../core/noise-areas.mjs';
 
 export function showExportDialog(chart, assets, chartName, onExport, identifier) {
+  const island = globalThis.rpenIslands?.export?.createExportDialog;
+  if (typeof island === 'function') {
+    const host = showDialog('导出谱面', 'Next 格式保留整体曲线轨迹；原 RPE 格式将轨迹转换为普通事件。JSON 只包含谱面，PEZ 同时打包已载入的音乐、图片及其他资源。');
+    island({ host, chart, assets, chartName, onExport, identifier, helpers: { createChartExport, download, suggestDownloadName, chartExportStem, DEFAULT_TRAJECTORY_SPLIT, diagnoseNoiseAreas } });
+    return;
+  }
   const host = showDialog('导出谱面', 'Next 格式保留整体曲线轨迹；原 RPE 格式将轨迹转换为普通事件。JSON 只包含谱面，PEZ 同时打包已载入的音乐、图片及其他资源。');
   const field = (title, control) => { const label = document.createElement('label'); label.className = 'field'; label.append(title, control); control.setAttribute('aria-label', title); host.append(label); return control; };
   const format = document.createElement('select');

@@ -62,6 +62,32 @@
     check(!overflow, '快捷键行横向溢出');
     modal.close();
 
+    const tick = () => new Promise(resolve => setTimeout(resolve, 0));
+    const { showExportDialog } = await import('/src/ui/export-dialog.mjs');
+    const exportChart = createChart();
+    exportChart.globalEvents = { types: { message: { columns: { text: { events: [{}] } } } } };
+    let exportCalls = 0;
+    showExportDialog(exportChart, new Map(), 'chart.json', () => { exportCalls++; }, 'smoke');
+    check(modal.open, '导出弹窗未打开');
+    const exportApply = document.querySelector('#modal-apply');
+    check(!exportApply.hidden && exportApply.textContent === '导出', '导出按钮状态错误');
+    const formatSelect = document.querySelector('#modal-content select');
+    check(formatSelect && formatSelect.value === 'next:pez', '导出格式默认值错误');
+    const trajectory = document.querySelector('#modal-content fieldset');
+    check(trajectory.hidden, 'Next 格式不应显示轨迹转换设置');
+    formatSelect.value = 'rpe:json'; formatSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    await tick();
+    check(!trajectory.hidden, 'RPE 格式应显示轨迹转换设置');
+    const globalLabel = [...document.querySelectorAll('#modal-content label')].find(label => label.textContent.includes('全局事件'));
+    check(globalLabel && !globalLabel.hidden, '全局事件移除选项未显示');
+    exportApply.click();
+    check(document.querySelector('#modal-error').textContent.includes('全局事件') && modal.open && exportCalls === 0, '全局事件校验未拦截导出');
+    formatSelect.value = 'next:pez'; formatSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    await tick();
+    check(trajectory.hidden, '切回 Next 格式未隐藏轨迹转换设置');
+    document.querySelector('#modal .modal-actions button[value="cancel"]').click();
+    check(!modal.open, '导出弹窗未关闭');
+
     const canvas = document.createElement('canvas'); canvas.width = 32; canvas.height = 32; canvas.getContext('2d').fillRect(0, 0, 32, 32);
     const cover = new Uint8Array(await (await new Promise(resolve => canvas.toBlob(resolve))).arrayBuffer());
     const chart = createChart(); chart.META.background = 'cover.png';
@@ -86,7 +112,7 @@
     const latest = await library.readProject(projectId);
     await library.storeProject({ ...latest, assets: [], chart: { ...chart, META: { ...chart.META, name: 'newer' } } });
     check((await library.readProject(projectId)).chart.META.name === 'newer', '基于最新版本的后续保存失败');
-    return { hotkeys: true, thickness: true, fpsValidation: true, settingsIsland, dialogIsland, backgroundSave: true, atomicRollback: true, savedMediaBytes: restored.assets[1][1].byteLength, responsiveTicks };
+    return { hotkeys: true, thickness: true, fpsValidation: true, settingsIsland, dialogIsland, exportIsland: Boolean(globalThis.rpenIslands?.export), exportDialog: true, backgroundSave: true, atomicRollback: true, savedMediaBytes: restored.assets[1][1].byteLength, responsiveTicks };
   } finally {
     if (modal.open) modal.close();
     await library.storePreferences(previousPreferences ?? migratePreferences());

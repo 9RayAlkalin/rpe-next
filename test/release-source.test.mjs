@@ -4,9 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtemp, mkdir, writeFile, readFile, rename, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { pipeline } from 'node:stream/promises';
-import { createWriteStream } from 'node:fs';
-import { ZipFile } from 'yazl';
+import { writeZip } from '../src/platform/archive.mjs';
 import { extractReleaseTar, verifyReleaseSourceDirectory, verifyReleaseSourceZip } from '../tools/release-source.mjs';
 
 async function fixture(context) {
@@ -46,9 +44,8 @@ test('发布 ZIP 校验实际归档的中文路径和内容，拒绝打包后的
   const prefix = 'Application/resources/app/';
   for (const damaged of [false, true]) {
     const archive = join(root, damaged ? 'bad.zip' : 'good.zip');
-    const zip = new ZipFile(), finished = pipeline(zip.outputStream, createWriteStream(archive));
-    zip.addFile(join(stage, name), prefix + (damaged ? 'assets/incorrect.png' : name));
-    zip.end(); await finished;
+    const zip = writeZip(new Map([[prefix + (damaged ? 'assets/incorrect.png' : name), new Uint8Array(await readFile(join(stage, name)))] ]));
+    await writeFile(archive, new Uint8Array(await zip.arrayBuffer()));
     if (damaged) await assert.rejects(verifyReleaseSourceZip(root, 'HEAD', ['assets'], archive, prefix), /Missing release source file/);
     else assert.equal(await verifyReleaseSourceZip(root, 'HEAD', ['assets'], archive, prefix), 1);
   }

@@ -45,7 +45,7 @@ import { shaderEvents, replaceShaderEvents, shaderIdentity } from '../core/shade
 import { renderMetadataPanel, renderBpmPanel } from './forms.mjs';
 import { EditorPlayback } from '../application/playback.mjs';
 import { readEditorPreferences, writeEditorPreferences } from '../platform/editor-preferences.mjs';
-import { ProjectHome } from './home.mjs';
+import { createHome } from './home.mjs';
 import { createSettingsPanel } from './settings.mjs';
 import { showHotkeySettings } from './hotkey-settings.mjs';
 import { AutoSaveClock } from '../application/autosave.mjs';
@@ -538,7 +538,7 @@ element('#preview').addEventListener('pointermove', event => {
 });
 element('#preview').addEventListener('pointerleave', event => { if (!element('#note-source-toast')?.contains(event.relatedTarget)) clearNoteSourceToast(); });
 timeline.previewPick = () => false;
-const home = new ProjectHome(async id => {
+const home = createHome(async id => {
   const project = await readProject(id);
   if (!project) throw new Error('此项目不存在');
   guardReplace(() => loadCandidate({ chart: project.chart, name: project.chartName, info: project.info, project }, new Map(project.assets)).catch(reportError));

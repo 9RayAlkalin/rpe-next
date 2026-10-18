@@ -3,6 +3,16 @@ import { deleteProjectDrafts } from '../platform/recovery.mjs';
 import { showDialog } from './dialog.mjs';
 import { projectThumbnail } from '../platform/thumbnail.mjs';
 
+export function createHome(openProject, reportError, changed) {
+  const island = globalThis.rpenIslands?.home?.createHomePanel;
+  if (typeof island !== 'function') return new ProjectHome(openProject, reportError, changed);
+  return island({
+    host: document.getElementById('project-cards'),
+    openProject, reportError, changed,
+    helpers: { nativeStorage, listProjects, readProject, storeProject, projectSummary, updateSummary, deleteProject, deleteProjectDrafts, projectThumbnail, showDialog },
+  });
+}
+
 export class ProjectHome {
   constructor(openProject, reportError, changed) {
     this.openProject = openProject; this.reportError = reportError; this.changed = changed; this.projects = []; this.coverUrls = []; this.coverCache = new Map(); this.limit = 24;

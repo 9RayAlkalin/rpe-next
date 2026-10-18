@@ -6,8 +6,9 @@ import { createHistoryPanel } from './islands/history/register';
 import { createMigrationDialog } from './islands/migration/register';
 import { createSettingsPanel } from './islands/settings/register';
 import { createStoragePanel } from './islands/storage/register';
+import { createHomePanel } from './islands/home/register';
 
-window.rpenIslands = { settings: { createSettingsPanel }, dialog: { createDialogShell }, export: { createExportDialog }, migration: { createMigrationDialog }, history: { createHistoryPanel }, diagnose: { createDiagnosePanel }, storage: { createStoragePanel } };
+window.rpenIslands = { settings: { createSettingsPanel }, dialog: { createDialogShell }, export: { createExportDialog }, migration: { createMigrationDialog }, history: { createHistoryPanel }, diagnose: { createDiagnosePanel }, storage: { createStoragePanel }, home: { createHomePanel } };
 
 const host = document.createElement('div');
 host.id = SHELL_HOST_ID;

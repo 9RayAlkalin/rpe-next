@@ -275,6 +275,86 @@ export interface RpenStorageIsland {
   createStoragePanel(payload: RpenStorageCreatePayload): RpenStorageHandles;
 }
 
+export interface RpenHomeSummary {
+  version: number;
+  id: string;
+  storageRevision?: string | null;
+  name: string;
+  chartName?: string;
+  identifier?: string;
+  source?: string;
+  imported?: number;
+  bytes: number;
+  updated?: number;
+  group?: string | null;
+  pinned?: boolean;
+  archived?: boolean;
+  level?: string;
+  charter?: string;
+  thumbnail?: Blob | null;
+  composer?: string;
+  lines?: number;
+  notes?: number;
+}
+
+export interface RpenHomeProject {
+  id: string;
+  chart: { META: { name: string; [key: string]: unknown }; [key: string]: unknown };
+  chartName?: string;
+  assets?: Map<string, Uint8Array>;
+  info?: unknown;
+  bytes?: number;
+  updated?: number;
+  viewState?: unknown;
+  source?: string;
+  imported?: number;
+  identifier?: string;
+  storageRevision?: string | null;
+  pinned?: boolean;
+  archived?: boolean;
+  deleted?: boolean;
+}
+
+export interface RpenHomeHelpers {
+  nativeStorage: boolean;
+  listProjects(): Promise<RpenHomeSummary[]>;
+  readProject(id: string): Promise<RpenHomeProject | null | undefined>;
+  storeProject(project: RpenHomeProject): Promise<unknown>;
+  projectSummary(project: RpenHomeProject, thumbnail: Blob | null): RpenHomeSummary;
+  updateSummary(summary: RpenHomeSummary): Promise<unknown>;
+  deleteProject(id: string, expectedRevision?: string | null): Promise<unknown>;
+  deleteProjectDrafts(id: string): Promise<unknown>;
+  projectThumbnail(project: RpenHomeProject): Promise<Blob | null>;
+  showDialog(title: string, description: string): HTMLElement;
+}
+
+export interface RpenHomeActions {
+  open(id: string): Promise<void>;
+  edit(project: RpenHomeSummary): Promise<void>;
+  modify(id: string, transform: (source: RpenHomeProject) => RpenHomeProject): Promise<void>;
+  remove(project: RpenHomeSummary): Promise<void>;
+}
+
+export interface RpenHomePanelProps {
+  openProject(id: string): Promise<void>;
+  reportError(error: unknown): void;
+  changed(project: RpenHomeProject | RpenHomeSummary): void;
+  helpers: RpenHomeHelpers;
+  actions: RpenHomeActions;
+}
+
+export interface RpenHomeCreatePayload extends RpenHomePanelProps {
+  host: HTMLElement;
+}
+
+export interface RpenHomeHandles {
+  refresh(): Promise<void>;
+}
+
+export interface RpenHomeIsland {
+  createHomePanel(payload: RpenHomeCreatePayload): RpenHomeHandles;
+}
+
 declare global {
   interface Window {
     rpenIslands?: {
@@ -285,6 +365,7 @@ declare global {
       history?: RpenHistoryIsland;
       diagnose?: RpenDiagnoseIsland;
       storage?: RpenStorageIsland;
+      home?: RpenHomeIsland;
     };
     rpenSettingsBridge?: RpenSettingsBridge;
   }

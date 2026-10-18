@@ -8,7 +8,7 @@ import { ZipFile } from 'yazl';
 import { createHash } from 'node:crypto';
 import { dirname, join, resolve, basename, relative, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { extractReleaseTar, verifyReleaseSourceDirectory, verifyReleaseSourceZip } from './release-source.mjs';
+import { extractReleaseZip, verifyReleaseSourceDirectory, verifyReleaseSourceZip } from './release-source.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const kind = process.argv.includes('--server') ? 'server' : 'editor';
@@ -34,11 +34,11 @@ const packageFolder = join(work, 'packages');
 await mkdir(work, { recursive: true });
 if (await readdir(work).then(items => items.length)) throw Error('Build workspace already exists; use a fresh checkout or remove this build workspace before rebuilding: ' + work);
 await mkdir(stage);
-const sourceTar = join(work, 'source.tar');
-execFileSync('git', ['archive', '--format=tar', '--output=' + sourceTar, 'HEAD', '--', ...sourcePaths], { cwd: root });
-extractReleaseTar(sourceTar, stage);
+const sourceZip = join(work, 'source.zip');
+execFileSync('git', ['archive', '--format=zip', '-0', '--output=' + sourceZip, 'HEAD', '--', ...sourcePaths], { cwd: root });
+await extractReleaseZip(sourceZip, stage);
 await verifyReleaseSourceDirectory(root, sourceCommit, sourcePaths, stage);
-await rm(sourceTar);
+await rm(sourceZip);
 if (kind === 'server') {
   await cp(join(root, 'collaboration-server/node_modules/ws'), join(stage, 'collaboration-server/node_modules/ws'), { recursive: true });
   await writeFile(join(stage, 'collaboration-server/package.json'), JSON.stringify({ type: 'module', version: metadata.version, dependencies: { ws: '8.22.0' } }));

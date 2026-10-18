@@ -5,7 +5,7 @@ import { mkdtemp, mkdir, writeFile, readFile, rename, rm } from 'node:fs/promise
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { writeZip } from '../src/platform/archive.mjs';
-import { extractReleaseTar, verifyReleaseSourceDirectory, verifyReleaseSourceZip } from '../tools/release-source.mjs';
+import { extractReleaseZip, verifyReleaseSourceDirectory, verifyReleaseSourceZip } from '../tools/release-source.mjs';
 
 async function fixture(context) {
   const root = await mkdtemp(join(tmpdir(), 'rpen-release-source-'));
@@ -18,9 +18,9 @@ async function fixture(context) {
   await writeFile(join(root, 'private.txt'), 'not selected');
   git('add', '--', 'assets', 'private.txt');
   git('-c', 'user.name=Release Test', '-c', 'user.email=release-test@example.invalid', '-c', 'commit.gpgsign=false', 'commit', '-m', 'Fixture');
-  const archive = join(root, 'source.tar'), stage = join(root, 'stage');
-  git('archive', '--format=tar', '--output=' + archive, 'HEAD', '--', 'assets');
-  await mkdir(stage); extractReleaseTar(archive, stage);
+  const archive = join(root, 'source.zip'), stage = join(root, 'stage');
+  git('archive', '--format=zip', '-0', '--output=' + archive, 'HEAD', '--', 'assets');
+  await mkdir(stage); await extractReleaseZip(archive, stage);
   return { root, name, stage };
 }
 

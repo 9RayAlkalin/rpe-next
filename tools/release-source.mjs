@@ -1,13 +1,20 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { readFile, readlink } from 'node:fs/promises';
-import { join } from 'node:path';
+import { mkdir, readFile, readlink, writeFile } from 'node:fs/promises';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import { readZip } from '../src/platform/archive.mjs';
 
-export function extractReleaseTar(archive, destination) {
-  // Git writes UTF-8 paths. Windows tar otherwise decodes them using its locale.
-  const encoding = process.platform === 'win32' ? ['--options=hdrcharset=UTF-8'] : [];
-  execFileSync('tar', [...encoding, '-xf', archive, '-C', destination]);
+export async function extractReleaseZip(archive, destination) {
+  const files = await readZip(await readFile(archive));
+  const root = resolve(destination) + sep;
+  for (const [name, bytes] of files) {
+    if (name.endsWith('/')) continue;
+    const target = resolve(destination, name);
+    if (!target.startsWith(root) || target === resolve(destination)) throw Error('Release archive path escaped destination: ' + name);
+    await mkdir(dirname(target), { recursive: true });
+    await writeFile(target, bytes);
+  }
+  return files.size;
 }
 
 async function verifySources(root, ref, paths, read) {

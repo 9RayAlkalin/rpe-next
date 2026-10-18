@@ -176,7 +176,25 @@
     check(diagnoseGroupSummaries()[2] === '提示（0）', '低级问题过滤无效');
     document.querySelector('#diagnose-close').click();
 
-    return { hotkeys: true, thickness: true, fpsValidation: true, settingsIsland, dialogIsland, exportIsland: Boolean(globalThis.rpenIslands?.export), exportDialog: true, migrationIsland: Boolean(globalThis.rpenIslands?.migration), migrationDialog: true, historyIsland: Boolean(globalThis.rpenIslands?.history), historyPanel: true, diagnoseIsland: Boolean(globalThis.rpenIslands?.diagnose), diagnosePanel: true, backgroundSave: true, atomicRollback: true, savedMediaBytes: restored.assets[1][1].byteLength, responsiveTicks };
+    const storageSection = document.querySelector('#storage-settings');
+    check(storageSection && storageSection.closest('#settings-modal'), '存储面板未挂载到设置');
+    check(document.querySelector('#storage-persist').hidden, '桌面版应隐藏持久化按钮');
+    check(['storage-open-root', 'storage-move-root', 'storage-backup-folder', 'storage-trash', 'storage-use-root', 'storage-rebuild', 'storage-collect'].every(id => document.querySelector('#' + id)), '桌面存储按钮缺失');
+    check(document.querySelector('#storage-backup-reminder'), '备份提醒条缺失');
+    await waitFor(() => document.querySelector('#storage-status').textContent.startsWith('谱面库：'));
+    document.querySelector('#storage-refresh').click();
+    await waitFor(() => !document.querySelector('#storage-refresh').disabled);
+    document.querySelector('#storage-trash').click();
+    await waitFor(() => modal.open && document.querySelector('#modal-title').textContent === '谱面库回收站');
+    await waitFor(() => document.querySelector('#modal-content').textContent === '回收站为空。');
+    document.querySelector('#modal .modal-actions button[value="cancel"]').click();
+    document.querySelector('#storage-recovery-manage').click();
+    await waitFor(() => modal.open && document.querySelector('#modal-title').textContent === '管理恢复备份');
+    await waitFor(() => document.querySelector('#modal-content').textContent === '没有恢复备份。');
+    document.querySelector('#modal .modal-actions button[value="cancel"]').click();
+    check(!modal.open, '存储弹窗未关闭');
+
+    return { hotkeys: true, thickness: true, fpsValidation: true, settingsIsland, dialogIsland, exportIsland: Boolean(globalThis.rpenIslands?.export), exportDialog: true, migrationIsland: Boolean(globalThis.rpenIslands?.migration), migrationDialog: true, historyIsland: Boolean(globalThis.rpenIslands?.history), historyPanel: true, diagnoseIsland: Boolean(globalThis.rpenIslands?.diagnose), diagnosePanel: true, storageIsland: Boolean(globalThis.rpenIslands?.storage), storagePanel: true, backgroundSave: true, atomicRollback: true, savedMediaBytes: restored.assets[1][1].byteLength, responsiveTicks };
   } finally {
     if (modal.open) modal.close();
     await library.storePreferences(previousPreferences ?? migratePreferences());

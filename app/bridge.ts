@@ -180,6 +180,101 @@ export interface RpenDiagnoseIsland {
   createDiagnosePanel(payload: RpenDiagnosePanelPayload): RpenDiagnoseHandles;
 }
 
+export interface RpenStorageStatus {
+  native?: boolean;
+  supported?: boolean | null;
+  persistent?: boolean | null;
+  root?: string;
+  usage?: number | null;
+  blobs?: number;
+  free?: number;
+  projects?: number;
+  trash?: number;
+  quota?: number | null;
+  warnings?: string[];
+  [key: string]: unknown;
+}
+
+export interface RpenStorageSnapshot extends RpenStorageStatus {
+  lastBackup: number;
+  firstLibrary: number;
+  projectCount: number;
+}
+
+export interface RpenStorageActions {
+  persist(): Promise<void>;
+  refreshUsage(): Promise<void>;
+  exportAll(): Promise<void>;
+  manageRecovery(): Promise<void>;
+  openRoot(): Promise<void>;
+  moveRoot(): Promise<void>;
+  backupFolder(): Promise<void>;
+  manageTrash(): Promise<void>;
+  useRoot(): Promise<void>;
+  rebuild(): Promise<void>;
+  collect(): Promise<void>;
+}
+
+export interface RpenStorageDraft {
+  id: string;
+  title?: string;
+  name?: string;
+  updated: number;
+}
+
+export interface RpenStorageTrashProject {
+  id: string;
+  name?: string;
+  deletedAt: number;
+  storageRevision?: unknown;
+  [key: string]: unknown;
+}
+
+export interface RpenStorageHelpers {
+  nativeStorage: boolean;
+  nativeCall(method: string, ...args: unknown[]): Promise<unknown>;
+  nativeList(store: string, trashed?: boolean): Promise<RpenStorageTrashProject[]>;
+  storageStatus(): Promise<RpenStorageStatus>;
+  requestPersistence(): Promise<unknown>;
+  listProjects(): Promise<Array<{ id?: string }>>;
+  listDrafts(): Promise<RpenStorageDraft[]>;
+  deleteDraft(id: string): Promise<void>;
+  exportLibrary(options: { progress: (index: number, count: number, name?: string) => void }): Promise<{ blob: Blob; count: number }>;
+  download(blob: Blob, name: string): unknown;
+  flushLocalPreferences(): Promise<void>;
+  notify(message: string, kind?: string, duration?: number): void;
+  showDialog(title: string, description: string): HTMLElement;
+  noteExternalBackup(): void;
+  readBackupTimestamps(): { last: number; first: number };
+  reload(): void;
+}
+
+export interface RpenStoragePanelProps {
+  native: boolean;
+  reportError(error: unknown): void;
+  snapshot(): Promise<RpenStorageSnapshot>;
+  onReminder(update: { hidden: boolean; text: string }): void;
+  actions: RpenStorageActions;
+}
+
+export interface RpenStorageCreatePayload {
+  host: HTMLElement;
+  native: boolean;
+  reportError(error: unknown): void;
+  canSwitchLibrary(): boolean;
+  onReminder(update: { hidden: boolean; text: string }): void;
+  helpers: RpenStorageHelpers;
+}
+
+export interface RpenStorageHandles {
+  refresh(): Promise<void>;
+  setStatus(text: string): void;
+}
+
+export interface RpenStorageIsland {
+  createStoragePanel(payload: RpenStorageCreatePayload): RpenStorageHandles;
+}
+
 declare global {
   interface Window {
     rpenIslands?: {
@@ -189,6 +284,7 @@ declare global {
       migration?: RpenMigrationIsland;
       history?: RpenHistoryIsland;
       diagnose?: RpenDiagnoseIsland;
+      storage?: RpenStorageIsland;
     };
     rpenSettingsBridge?: RpenSettingsBridge;
   }

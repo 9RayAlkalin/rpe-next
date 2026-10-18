@@ -15,7 +15,7 @@ import { migratePreferences, shortcutAction, shortcutReleased, shortcutMatches, 
 import { directoryEntries, uploadedEntries, scanMigration } from '../platform/migration.mjs';
 import { readProject, readPreferences, storePreferences, storeProject, readClipboardHistory, storeClipboardHistory, subscribeLibrary } from '../platform/library.mjs';
 import { storageFailure, requestPersistence } from '../platform/storage.mjs';
-import { StoragePanel, noteLibrarySave, noteExternalBackup } from './storage-panel.mjs';
+import { mountStoragePanel, noteLibrarySave, noteExternalBackup } from './storage-panel.mjs';
 import { migrationDialog } from './migration-dialog.mjs';
 import { LinePanel } from './line-panel.mjs';
 import { AssetLibraryPanel } from './asset-library.mjs';
@@ -561,7 +561,7 @@ const home = new ProjectHome(async id => {
     } else if (renamed) session.commit('更新项目名称', { ...session.chart, META: { ...session.chart.META, name: project.chart.META.name } });
   }
 });
-const storagePanel = new StoragePanel(settingsDialog, { reportError, notify, canSwitchLibrary: () => {
+const storagePanel = mountStoragePanel(settingsDialog, { reportError, notify, canSwitchLibrary: () => {
   if (hasDocument && (session.history.dirty || assetDirty)) { notify('请先保存或放弃当前谱面的修改，再切换谱面库', 'warning'); return false; }
   return true;
 } });

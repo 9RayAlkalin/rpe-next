@@ -13,6 +13,33 @@ export function noteExternalBackup() { try { localPreferences.setItem(BACKUP_KEY
 export function noteLibrarySave() { try { if (!localPreferences.getItem(FIRST_SAVE_KEY)) localPreferences.setItem(FIRST_SAVE_KEY, String(Date.now())); } catch {} }
 const bytes = value => Number.isFinite(value) ? `${(value / 1024 ** 2).toFixed(1)} MiB` : '未知';
 
+const readBackupTimestamps = () => { let last = 0, first = 0; try { last = Number(localPreferences.getItem(BACKUP_KEY)) || 0; first = Number(localPreferences.getItem(FIRST_SAVE_KEY)) || 0; } catch {} return { last, first }; };
+
+export function mountStoragePanel(settings, { reportError, notify, canSwitchLibrary = () => true }) {
+  const island = globalThis.rpenIslands?.storage?.createStoragePanel;
+  if (typeof island !== 'function') return new StoragePanel(settings, { reportError, notify, canSwitchLibrary });
+  const banner = document.createElement('p'); banner.id = 'storage-backup-reminder'; banner.className = 'hint'; banner.hidden = true;
+  document.querySelector('#project-cards').before(banner);
+  const mount = document.createElement('div');
+  settings.querySelector('.settings-body').append(mount);
+  const handle = island({
+    host: mount,
+    native: Boolean(nativeStorage),
+    reportError, canSwitchLibrary,
+    onReminder: update => { banner.hidden = update.hidden; banner.textContent = update.text; },
+    helpers: {
+      nativeStorage: Boolean(nativeStorage),
+      nativeCall: (method, ...args) => nativeStorage.call(method, ...args),
+      nativeList: (store, trashed = false) => nativeList(store, trashed),
+      storageStatus, requestPersistence, exportLibrary, download, flushLocalPreferences, notify, showDialog,
+      listProjects, listDrafts, deleteDraft, noteExternalBackup, readBackupTimestamps,
+      reload: () => location.reload(),
+    },
+  });
+  listProjects().then(projects => { if (projects.length) noteLibrarySave(); }).catch(reportError);
+  return handle;
+}
+
 export class StoragePanel {
   constructor(settings, { reportError, notify, canSwitchLibrary = () => true }) {
     this.reportError = reportError; this.notify = notify;

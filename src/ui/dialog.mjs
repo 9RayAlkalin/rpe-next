@@ -1,10 +1,12 @@
 import { stringifyPreservingNumbers } from '../core/chart.mjs';
 
-const modal = document.querySelector('#modal');
-const content = document.querySelector('#modal-content');
-const apply = document.querySelector('#modal-apply');
-const remove = document.querySelector('#modal-delete');
-const error = document.querySelector('#modal-error');
+const island = globalThis.rpenIslands?.dialog?.createDialogShell;
+const shell = typeof island === 'function' ? island() : null;
+const modal = shell?.modal ?? document.querySelector('#modal');
+const content = shell?.content ?? document.querySelector('#modal-content');
+const apply = shell?.apply ?? document.querySelector('#modal-apply');
+const remove = shell?.remove ?? document.querySelector('#modal-delete');
+const error = shell?.error ?? document.querySelector('#modal-error');
 
 export function showDialog(title, description) {
   if (modal.open) modal.close();

@@ -18,6 +18,7 @@
   try {
     document.querySelector('#home-new').click();
     const settingsIsland = Boolean(globalThis.rpenIslands?.settings);
+    const dialogIsland = Boolean(globalThis.rpenIslands?.dialog);
     document.querySelector('#preferences').click();
     const settingsDialog = document.querySelector('#settings-modal');
     check(settingsDialog?.open, '设置面板未打开');
@@ -40,6 +41,7 @@
     check(readEditorPreferences().lineScale === 2.2, '线宽未持久化');
     showHotkeySettings(migratePreferences(), async next => { await library.storePreferences(next); saved = next; });
     const apply = document.querySelector('#modal-apply');
+    check(apply.textContent === '应用快捷键', '弹窗应用按钮文案被覆盖');
     check(!apply.disabled, '默认热键被误报为冲突');
     const input = document.querySelector('#hotkey-Save'); input.value = 'Ctrl+Z'; input.dispatchEvent(new Event('input'));
     check(apply.disabled && input.getAttribute('aria-invalid') === 'true', '重复快捷键未阻止应用');
@@ -84,7 +86,7 @@
     const latest = await library.readProject(projectId);
     await library.storeProject({ ...latest, assets: [], chart: { ...chart, META: { ...chart.META, name: 'newer' } } });
     check((await library.readProject(projectId)).chart.META.name === 'newer', '基于最新版本的后续保存失败');
-    return { hotkeys: true, thickness: true, fpsValidation: true, settingsIsland, backgroundSave: true, atomicRollback: true, savedMediaBytes: restored.assets[1][1].byteLength, responsiveTicks };
+    return { hotkeys: true, thickness: true, fpsValidation: true, settingsIsland, dialogIsland, backgroundSave: true, atomicRollback: true, savedMediaBytes: restored.assets[1][1].byteLength, responsiveTicks };
   } finally {
     if (modal.open) modal.close();
     await library.storePreferences(previousPreferences ?? migratePreferences());

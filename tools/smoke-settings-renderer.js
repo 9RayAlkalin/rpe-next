@@ -206,21 +206,41 @@
     check(document.querySelector('#project-count').textContent === '1 个项目' && homeCards().length === 1, '搜索过滤未生效');
     homeSearch.value = ''; homeSearch.dispatchEvent(new Event('input', { bubbles: true }));
     await tick();
-    const conflictCard = homeCards().find(card => card.querySelector('.project-cover')?.dataset.projectId === 'conflict-smoke');
+    const liveConflictCard = () => homeCards().find(card => card.querySelector('.project-cover')?.dataset.projectId === 'conflict-smoke');
+    const conflictCard = liveConflictCard();
     check(conflictCard && conflictCard.querySelector('.project-open')?.textContent === '打开谱面' && conflictCard.querySelector('.project-actions')?.children.length === 5, '项目卡片结构不符');
-    [...conflictCard.querySelectorAll('.project-actions button')].find(button => button.textContent === '置顶').click();
+    [...liveConflictCard().querySelectorAll('.project-actions button')].find(button => button.textContent === '置顶').click();
     await settle('置顶后未刷新卡片', () => homeCards().some(card => card.querySelector('h2').textContent.startsWith('★ ')));
-    [...conflictCard.querySelectorAll('.project-actions button')].find(button => button.textContent === '删除').click();
+    [...liveConflictCard().querySelectorAll('.project-actions button')].find(button => button.textContent === '删除').click();
     await settle('删除弹窗未打开', () => modal.open && document.querySelector('#modal-title').textContent === '删除项目');
     check(document.querySelector('#modal-apply').textContent === '移入回收站' && !document.querySelector('#modal-apply').hidden, '删除弹窗操作按钮不符');
     check(document.querySelector('#modal-content input[type=checkbox]')?.getAttribute('aria-label') === '同时删除此项目的恢复备份', '删除备份选项缺失');
     document.querySelector('#modal .modal-actions button[value="cancel"]').click();
     check(!modal.open, '删除弹窗未关闭');
-    [...conflictCard.querySelectorAll('.project-actions button')].find(button => button.textContent === '名称 / 分组').click();
+    [...liveConflictCard().querySelectorAll('.project-actions button')].find(button => button.textContent === '名称 / 分组').click();
     await settle('名称分组弹窗未打开', () => modal.open && document.querySelector('#modal-title').textContent === '项目名称与分组');
     check(document.querySelectorAll('#modal-content input').length === 2, '名称分组输入框缺失');
     document.querySelector('#modal .modal-actions button[value="cancel"]').click();
     check(!modal.open, '名称分组弹窗未关闭');
+    [...liveConflictCard().querySelectorAll('.project-actions button')].find(button => button.textContent === '取消置顶').click();
+    await settle('取消置顶后未刷新卡片', () => homeCards().every(card => !card.querySelector('h2').textContent.startsWith('★ ')));
+    if (globalThis.rpenIslands?.home) {
+      const homeSection = document.querySelector('#home');
+      const restoreHidden = homeSection.hidden; homeSection.hidden = false;
+      for (let index = 0; index < 40; index++) {
+        const bulkChart = createChart(); bulkChart.META.name = `bulk-${index}`;
+        await library.storeProject({ id: `bulk-${index}`, chart: bulkChart, chartName: 'chart.json', assets: [], updated: Date.now() });
+      }
+      document.dispatchEvent(new Event('rpen-library-refresh'));
+      await settle('批量项目未计入', () => document.querySelector('#project-count').textContent === '42 个项目');
+      await settle('虚拟滚动未生效', () => { const count = homeCards().length; return count > 0 && count < 42; });
+      check(document.querySelectorAll('#project-cards .project-virtual-spacer').length >= 1, '虚拟滚动占位缺失');
+      homeSection.scrollTop = homeSection.scrollHeight;
+      await settle('滚动到底部窗口未更新', () => [...document.querySelectorAll('#project-cards .project-cover')].some(cover => cover.dataset.projectId === 'conflict-smoke'));
+      homeSection.scrollTop = 0;
+      await settle('回到顶部窗口未更新', () => { const count = homeCards().length; return count > 0 && count < 42; });
+      homeSection.hidden = restoreHidden;
+    }
 
     return { hotkeys: true, thickness: true, fpsValidation: true, settingsIsland, dialogIsland, exportIsland: Boolean(globalThis.rpenIslands?.export), exportDialog: true, migrationIsland: Boolean(globalThis.rpenIslands?.migration), migrationDialog: true, historyIsland: Boolean(globalThis.rpenIslands?.history), historyPanel: true, diagnoseIsland: Boolean(globalThis.rpenIslands?.diagnose), diagnosePanel: true, storageIsland: Boolean(globalThis.rpenIslands?.storage), storagePanel: true, homeIsland: Boolean(globalThis.rpenIslands?.home), homePanel: true, backgroundSave: true, atomicRollback: true, savedMediaBytes: restored.assets[1][1].byteLength, responsiveTicks };
   } finally {

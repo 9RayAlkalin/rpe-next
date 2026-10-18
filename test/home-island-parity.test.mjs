@@ -31,8 +31,6 @@ const STRINGS = [
   "source: 'Next 项目副本'",
   '`${source.chart.META.name} 副本`',
   '曲绘',
-  '显示更多（还有 ',
-  ' 个）',
   '此项目不存在，请刷新谱面库',
   '删除项目',
   '`将“${project.name}”移入回收站。可在设置 → 本地存储 → 管理回收站恢复；素材在仍被历史版本引用时保留。`',
@@ -47,6 +45,10 @@ const STRINGS = [
   "'名称'",
   "'分组'",
   '请输入项目名称',
+];
+
+const LEGACY_ONLY = [
+  '显示更多（还有 ',
 ];
 
 test('首页岛屿与旧实现的文案、类名和结构一致', async () => {
@@ -64,5 +66,9 @@ test('首页岛屿与旧实现的文案、类名和结构一致', async () => {
   for (const text of STRINGS) {
     assert.ok(legacy.includes(text), `旧实现缺少文案：${text}`);
     assert.ok(island.includes(text), `岛屿缺少文案：${text}`);
+  }
+  for (const text of LEGACY_ONLY) {
+    assert.ok(legacy.includes(text), `旧实现缺少文案：${text}`);
+    assert.ok(!island.includes(text), `岛屿应改用虚拟滚动而非分页：${text}`);
   }
 });

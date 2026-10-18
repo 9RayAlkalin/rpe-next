@@ -1,16 +1,29 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue';
+import { nextTick, onMounted, onUnmounted, ref } from 'vue';
 import type { RpenHomePanelProps, RpenHomeSummary } from '../../bridge';
 
 const props = defineProps<RpenHomePanelProps>();
 
-const projects = ref<RpenHomeSummary[]>([]);
-const visible = ref<RpenHomeSummary[]>([]);
-const remaining = ref(0);
+const OVERSCAN_ROWS = 2;
+const FALLBACK_VIEWPORT = 800;
+const windowed = ref<RpenHomeSummary[]>([]);
+const topHeight = ref(0);
+const bottomHeight = ref(0);
+const columns = ref(1);
 const coverUrls = ref<Record<string, string>>({});
+const projects = ref<RpenHomeSummary[]>([]);
 const coverCache = new Map<string, Blob>();
-let limit = 24;
+let entriesCache: RpenHomeSummary[] = [];
+let heights: number[] = [];
+let startRow = 0;
 let observer: IntersectionObserver | null = null;
+let resizeObserver: ResizeObserver | null = null;
+let scrollScheduled = false;
+let measuring = false;
+
+const cardsHost = () => document.getElementById('project-cards') as HTMLElement | null;
+const homeHost = () => document.getElementById('home') as HTMLElement | null;
+const rowGap = () => { const host = cardsHost(); const gap = host ? Number.parseFloat(getComputedStyle(host).rowGap) : NaN; return Number.isFinite(gap) ? gap : 16; };
 
 function detail(project: RpenHomeSummary) {
   return `${project.level || '未标难度'} · ${project.group ?? '未分组'} · ${project.notes ?? '—'} notes · ${project.lines ?? '—'} 条线`;
@@ -29,14 +42,78 @@ function filtered() {
     .sort((left, right) => Number(Boolean(right.pinned)) - Number(Boolean(left.pinned)) || (sort === 'name' ? left.name.localeCompare(right.name) : (right.updated ?? right.imported ?? 0) - (left.updated ?? left.imported ?? 0)));
 }
 
+function ensureHeights(rows: number, estimate: number) {
+  if (heights.length !== rows) {
+    const next = heights.slice(0, rows);
+    while (next.length < rows) next.push(estimate);
+    heights = next;
+  }
+}
+
+function updateWindow() {
+  const host = cardsHost(); const home = homeHost();
+  if (!host || !home) { windowed.value = entriesCache; topHeight.value = 0; bottomHeight.value = 0; return; }
+  const rows = Math.ceil(entriesCache.length / columns.value);
+  const viewport = home.clientHeight || FALLBACK_VIEWPORT;
+  const gridTop = host.getBoundingClientRect().top - home.getBoundingClientRect().top + home.scrollTop;
+  const top = Math.max(0, home.scrollTop - gridTop);
+  const bottom = top + viewport;
+  let acc = 0; let first = 0;
+  while (first < rows && acc + (heights[first] ?? 0) <= top) { acc += heights[first] ?? 0; first++; }
+  let probe = acc; let last = first;
+  while (last < rows && probe < bottom) { probe += heights[last] ?? 0; last++; }
+  startRow = Math.max(0, first - OVERSCAN_ROWS);
+  const endRow = Math.min(rows, last + OVERSCAN_ROWS);
+  let topSum = 0; for (let index = 0; index < startRow; index++) topSum += heights[index] ?? 0;
+  let bottomSum = 0; for (let index = endRow; index < rows; index++) bottomSum += heights[index] ?? 0;
+  topHeight.value = Math.round(topSum);
+  bottomHeight.value = Math.round(bottomSum);
+  windowed.value = entriesCache.slice(startRow * columns.value, Math.min(entriesCache.length, endRow * columns.value));
+}
+
+async function measure() {
+  if (measuring) return;
+  measuring = true;
+  try {
+    await nextTick();
+    const host = cardsHost(); const home = homeHost();
+    if (!host || !home || home.clientHeight === 0) return;
+    const gap = rowGap();
+    const hostTop = host.getBoundingClientRect().top;
+    const byDelta = new Map<number, number>();
+    for (const card of host.querySelectorAll<HTMLElement>(':scope > .project-card')) {
+      const delta = Math.round(card.getBoundingClientRect().top - hostTop);
+      byDelta.set(delta, Math.max(byDelta.get(delta) ?? 0, card.offsetHeight));
+    }
+    let changed = false;
+    const deltas = [...byDelta.keys()].sort((left, right) => left - right);
+    for (let index = 0; index < deltas.length; index++) {
+      const row = startRow + index;
+      const value = (byDelta.get(deltas[index]) ?? 0) + gap;
+      if (heights[row] !== value) { heights[row] = value; changed = true; }
+    }
+    if (changed) updateWindow();
+  } finally {
+    measuring = false;
+  }
+}
+
 function render() {
   for (const url of Object.values(coverUrls.value)) URL.revokeObjectURL(url);
   coverUrls.value = {};
+  const host = cardsHost();
+  const gap = rowGap();
+  if (host) columns.value = Math.max(1, Math.floor((host.clientWidth + gap) / (265 + gap)));
   const entries = filtered();
+  entriesCache = entries;
   document.getElementById('project-count')!.textContent = `${entries.length} 个项目`;
   document.getElementById('home-empty')!.textContent = entries.length ? '' : '尚无匹配项目。新建后保存，或选择原 RPE 主文件夹迁移项目。';
-  visible.value = entries.slice(0, limit);
-  remaining.value = Math.max(0, entries.length - limit);
+  const width = host ? host.clientWidth : 0;
+  const columnWidth = width ? (width - (columns.value - 1) * gap) / columns.value : 265;
+  const estimate = Math.round(columnWidth * 9 / 16 + 240) + gap;
+  ensureHeights(Math.ceil(entries.length / columns.value), estimate);
+  updateWindow();
+  measure().catch(() => {});
 }
 
 async function reload() {
@@ -50,8 +127,6 @@ async function reload() {
 }
 
 function onFilterChange() { render(); }
-
-function showMore() { limit += 24; render(); }
 
 function observeCover(el: unknown, project: RpenHomeSummary) {
   if (!(el instanceof Element) || coverUrls.value[project.id]) return;
@@ -81,6 +156,21 @@ function modify(project: RpenHomeSummary, transform: Parameters<RpenHomePanelPro
 function remove(project: RpenHomeSummary) { props.actions.remove(project).catch(props.reportError); }
 function duplicate(project: RpenHomeSummary) { modify(project, source => ({ ...source, id: crypto.randomUUID(), storageRevision: null, source: 'Next 项目副本', pinned: false, archived: false, chart: { ...source.chart, META: { ...source.chart.META, name: `${source.chart.META.name} 副本` } } })); }
 
+function onScroll() {
+  if (scrollScheduled) return;
+  scrollScheduled = true;
+  requestAnimationFrame(() => {
+    scrollScheduled = false;
+    updateWindow();
+    measure().catch(() => {});
+  });
+}
+
+function onResize() {
+  heights = [];
+  render();
+}
+
 onMounted(() => {
   observer = new IntersectionObserver(entries => {
     for (const entry of entries) if (entry.isIntersecting) {
@@ -90,10 +180,15 @@ onMounted(() => {
     }
   }, { rootMargin: '100px' });
   for (const id of ['project-search', 'project-group', 'project-sort', 'show-archived']) document.getElementById(id)!.addEventListener(id === 'project-search' ? 'input' : 'change', onFilterChange);
+  const home = homeHost();
+  home?.addEventListener('scroll', onScroll);
+  if (home) { resizeObserver = new ResizeObserver(() => onResize()); resizeObserver.observe(home); }
 });
 
 onUnmounted(() => {
   observer?.disconnect();
+  resizeObserver?.disconnect();
+  homeHost()?.removeEventListener('scroll', onScroll);
   for (const url of Object.values(coverUrls.value)) URL.revokeObjectURL(url);
   for (const id of ['project-search', 'project-group', 'project-sort', 'show-archived']) document.getElementById(id)?.removeEventListener(id === 'project-search' ? 'input' : 'change', onFilterChange);
 });
@@ -102,7 +197,8 @@ defineExpose({ reload });
 </script>
 
 <template>
-  <article v-for="project in visible" :key="project.id" class="project-card">
+  <div v-if="topHeight" class="project-virtual-spacer" aria-hidden="true" :style="{ height: `${topHeight}px`, gridColumn: '1 / -1' }"></div>
+  <article v-for="project in windowed" :key="project.id" class="project-card">
     <div class="project-cover" :data-project-id="project.id" :ref="el => observeCover(el, project)">
       <img v-if="coverUrls[project.id]" :src="coverUrls[project.id]" :alt="`${project.name} 曲绘`">
       <span v-else>♪</span>
@@ -122,5 +218,5 @@ defineExpose({ reload });
       </div>
     </div>
   </article>
-  <button v-if="remaining" @click="showMore">{{ `显示更多（还有 ${remaining} 个）` }}</button>
+  <div v-if="bottomHeight" class="project-virtual-spacer" aria-hidden="true" :style="{ height: `${bottomHeight}px`, gridColumn: '1 / -1' }"></div>
 </template>

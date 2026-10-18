@@ -21,12 +21,27 @@ async function verifySources(root, ref, paths, read) {
     try { bytes = await read(path, mode); }
     catch (cause) { throw Error('Missing release source file: ' + path, { cause }); }
     if (!bytes) throw Error('Missing release source file: ' + path);
-    const actual = createHash('sha1').update('blob ' + bytes.length + '\0').update(bytes).digest('hex');
+    const actual = blobHash(bytes);
     if (actual !== expected) throw Error('Release source content mismatch: ' + path);
     files++;
   }
   if (!files) throw Error('Release source selection is empty');
   return files;
+}
+
+function blobHash(bytes) {
+  const source = Buffer.from(bytes);
+  // Git's core.autocrlf may rewrite tracked text files while extracting the
+  // archive on Windows. Normalize only valid UTF-8 text; binary assets remain
+  // byte-for-byte verified.
+  let normalized = source;
+  if (!source.includes(0)) {
+    try {
+      const text = new TextDecoder('utf-8', { fatal: true }).decode(source);
+      normalized = Buffer.from(text.replace(/\r\n?/g, '\n'));
+    } catch { /* binary or non-UTF-8 content */ }
+  }
+  return createHash('sha1').update('blob ' + normalized.length + '\0').update(normalized).digest('hex');
 }
 
 export function verifyReleaseSourceDirectory(root, ref, paths, directory) {

@@ -224,6 +224,10 @@ small { font-size: 11px; color: #aaa; font-weight: 400; }
 .timeline-context-menu button { width: 100%; padding: 6px 9px; border: 0; background: transparent; text-align: left; }
 .timeline-context-menu button:hover { background: #4b4636; }
 #realtime-preview { position: absolute; inset: 0; pointer-events: none; opacity: .1; }
+input:is([type=number],.numeric-expression-number) { padding-right: 18px !important; background-image: var(--rpen-number-step-image, url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='20' viewBox='0 0 12 20'%3E%3Cpath fill='%23aaa' stroke='%23555' stroke-width='.6' d='m6 3 4 5H2zm0 14-4-5h8z'/%3E%3C/svg%3E")) !important; background-size: 12px 20px !important; background-repeat: no-repeat !important; background-position: right 2px center !important; }
+input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+input.numeric-step-hover { cursor: default !important; }
+input.numeric-expression-number { cursor: text; }
 #audio-analysis-overlay { position: absolute; inset: 0; z-index: 0; pointer-events: none; opacity: 1; }
 .canvases { position: absolute; inset: 0; display: grid; grid-template-columns: 24px minmax(0, 1fr) minmax(0, 1fr) 24px; grid-template-rows: minmax(0, 1fr); column-gap: 12px; }
 #multi-line-labels { position: absolute; z-index: 4; top: 0; left: 36px; right: 36px; height: 24px; overflow: hidden; pointer-events: none; background: #292929; }

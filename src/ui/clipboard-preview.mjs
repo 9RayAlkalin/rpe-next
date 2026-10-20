@@ -24,7 +24,8 @@ export function drawClipboard(timeline, context, width, height, area) {
     const bottom = timeline.verticalForLine(beatValue(note.startTime), lineIndex, height); const top = timeline.verticalForLine(beatValue(note.endTime), lineIndex, height);
     if (bottom < -10 || top > height + 10 || timeline.clampNoteHorizontal(horizontal, noteWidth, width, lineIndex) === null) continue;
     context.fillStyle = colors[note.type];
-    context.fillRect(horizontal - noteWidth / 2, Math.max(-10, note.type === 2 ? top : bottom - 5), noteWidth, note.type === 2 ? Math.min(height + 20, bottom - Math.max(-10, top)) : 10);
+    const noteHeight = 10 * timeline.renderNoteScale;
+    context.fillRect(horizontal - noteWidth / 2, Math.max(-10, note.type === 2 ? top : bottom - noteHeight / 2), noteWidth, note.type === 2 ? Math.min(height + 20, bottom - Math.max(-10, top)) : noteHeight);
   }
   if (area === 'events') for (const [{ type, event }, index] of projected.events.map((entry, index) => [entry, index])) {
     const lineIndex = projected.eventLines?.[index] ?? session.lineIndex;

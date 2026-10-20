@@ -11,11 +11,11 @@ export function installNumericExpressionInputs(root = document) {
   const isInput = input => input?.tagName === 'INPUT' && !input.disabled && !input.readOnly;
   const clearError = input => { if (input.classList.contains('numeric-expression-error')) { input.classList.remove('numeric-expression-error'); input.removeAttribute('aria-invalid'); } };
   const editingType = (input, state) => {
-    if (state.type === 'number') input.type = 'text';
+    if (state.type === 'number') { if (input.type !== 'text') input.type = 'text'; input.classList.add('numeric-expression-number'); }
     input.inputMode = 'decimal';
   };
   const restoreType = (input, state) => {
-    input.type = state.type;
+    if (input.type !== state.type) input.type = state.type;
     if (state.inputMode === null) input.removeAttribute('inputmode'); else input.setAttribute('inputmode', state.inputMode);
   };
   const normalize = (input, state, source) => {
@@ -24,11 +24,85 @@ export function installNumericExpressionInputs(root = document) {
     if (!Number.isFinite(value)) throw new Error('表达式结果必须为有限数字');
     return String(value);
   };
+  const beginEditing = input => {
+    let state = states.get(input);
+    if (!state) {
+      state = { type: input.type, kind: input.dataset.numericExpression, inputMode: input.getAttribute('inputmode'), accepted: input.value, confirmed: false };
+      states.set(input, state);
+    }
+    editingType(input, state);
+    return state;
+  };
+  const overStepper = (input, event) => {
+    const rectangle = input.getBoundingClientRect();
+    const right = rectangle.right - (Number.parseFloat(getComputedStyle(input).borderRightWidth) || 0);
+    return event.clientX >= right - 16 && event.clientX <= right && event.clientY >= rectangle.top && event.clientY <= rectangle.bottom;
+  };
+  let hoveredStep = null;
+  const updateStepperCursor = event => {
+    const input = event.target;
+    if (isInput(input) && input.type === 'number') beginEditing(input);
+    const hovered = isInput(input) && (states.get(input)?.type ?? input.type) === 'number' && overStepper(input, event) ? input : null;
+    if (hoveredStep !== hovered) { hoveredStep?.classList.remove('numeric-step-hover'); hovered?.classList.add('numeric-step-hover'); hoveredStep = hovered; }
+  };
+  root.addEventListener('pointerover', updateStepperCursor, true);
+  root.addEventListener('pointermove', updateStepperCursor, true);
+  root.addEventListener('pointerout', event => {
+    const input = event.target;
+    if (input === hoveredStep) { hoveredStep.classList.remove('numeric-step-hover'); hoveredStep = null; }
+    const state = states.get(input);
+    if (state && root.activeElement !== input && !state.applying) { restoreType(input, state); input.classList.remove('numeric-expression-number'); states.delete(input); }
+  }, true);
+  let stopSpin = () => {};
+  root.addEventListener('pointerdown', event => {
+    const input = event.target;
+    let state = states.get(input);
+    if (event.button !== 0 || !isInput(input) || (state?.type ?? input.type) !== 'number') return;
+    const rectangle = input.getBoundingClientRect();
+    if (!overStepper(input, event)) { beginEditing(input); return; }
+    event.preventDefault(); event.stopPropagation(); stopSpin();
+    state = beginEditing(input); input.focus({ preventScroll: true });
+    const direction = event.clientY < (rectangle.top + rectangle.bottom) / 2 ? 1 : -1;
+    const spin = () => {
+      if (!input.isConnected || !isInput(input)) { stopSpin(); return; }
+      let value;
+      try { value = state?.liveSource === input.value ? state.accepted : normalize(input, state ?? {}, input.value || '0'); }
+      catch { value = state?.accepted ?? '0'; }
+      const selection = [input.selectionStart, input.selectionEnd, input.selectionDirection];
+      if (state) state.applying = true;
+      input.type = 'number'; input.value = value;
+      const previous = input.value;
+      try {
+        if (input.step === 'any') input.value = String(Math.max(input.min === '' ? -Infinity : Number(input.min), Math.min(input.max === '' ? Infinity : Number(input.max), Number(value) + direction)));
+        else input.stepUp(direction);
+        clearError(input);
+        if (input.value !== previous) {
+          if (!input.onchange) input.dispatchEvent(new Event('input', { bubbles: true }));
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        if (state) { state.accepted = input.value; state.liveSource = null; state.confirmed = true; }
+      } finally {
+        if (state) {
+          state.applying = false;
+          if (input.isConnected && root.activeElement === input) { editingType(input, state); if (selection[0] !== null) input.setSelectionRange(...selection); }
+        }
+      }
+    };
+    const view = root.defaultView ?? window;
+    let timer;
+    stopSpin = () => {
+      clearTimeout(timer);
+      view.removeEventListener('pointerup', stopSpin, true); view.removeEventListener('pointercancel', stopSpin, true); view.removeEventListener('blur', stopSpin);
+    };
+    view.addEventListener('pointerup', stopSpin, true); view.addEventListener('pointercancel', stopSpin, true); view.addEventListener('blur', stopSpin);
+    spin();
+    const repeat = () => { spin(); if (input.isConnected && isInput(input)) timer = setTimeout(repeat, 80); };
+    timer = setTimeout(repeat, 400);
+  }, true);
   root.addEventListener('focus', event => {
     const input = event.target;
-    if (!isInput(input) || input.type !== 'number' && !['number', 'beat'].includes(input.dataset.numericExpression)) return;
-    const state = { type: input.type, kind: input.dataset.numericExpression, inputMode: input.getAttribute('inputmode'), accepted: input.value, confirmed: false };
-    states.set(input, state); editingType(input, state);
+    if (!isInput(input) || input.type !== 'number' && !states.has(input) && !['number', 'beat'].includes(input.dataset.numericExpression)) return;
+    const state = beginEditing(input); state.accepted = input.value;
   }, true);
   root.addEventListener('input', event => {
     const input = event.target, state = states.get(input); if (!state || state.applying) return;
@@ -107,6 +181,6 @@ export function installNumericExpressionInputs(root = document) {
     if (!state.confirmed && input.value !== state.accepted) input.dispatchEvent(new Event('change', { bubbles: true }));
     // An invalid expression never reaches the field's change/input handlers.
     if (input.classList.contains('numeric-expression-error')) input.value = state.accepted;
-    clearError(input); restoreType(input, state); states.delete(input);
+    clearError(input); restoreType(input, state); input.classList.remove('numeric-expression-number', 'numeric-step-hover'); states.delete(input);
   }, true);
 }

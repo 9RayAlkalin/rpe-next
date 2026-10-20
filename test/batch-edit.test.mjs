@@ -166,7 +166,7 @@ test('剪贴板虚影跟随光标拍数且无命中目标，隐藏后仍可粘�
   timeline.origin = 2; timeline.clipboardPointer = { x: 300, y: timeline.vertical(3.25) };
   assert.equal(clipboardBeat(timeline), 3.25);
   drawClipboard(timeline, context, 500, 600, 'notes');
-  assert.equal(rectangles.length, 1); assert.equal(rectangles[0][1] + 5, timeline.vertical(3.25));
+  assert.equal(rectangles.length, 1); assert.equal(rectangles[0][1] + rectangles[0][3] / 2, timeline.vertical(3.25));
   session.clipboardVisible = false; drawClipboard(timeline, context, 500, 600, 'notes'); assert.equal(rectangles.length, 1);
   pasteObjects(session, clipboardBeat(timeline)); assert.equal(beatValue(session.notes[2].startTime), 3.25);
   assert.equal(session.clipboardVisible, true);

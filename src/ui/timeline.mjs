@@ -56,7 +56,6 @@ export class Timeline {
     this.eventRects = [];
     this.eventInteraction = new EventInteraction(this, reportError);
     this.noteScale = 1;
-    this.originalPanelWidth = 0;
     this.multiLineWidth = 0;
     this.multiLineEventWidth = 0;
     this.multiLineWidthExplicit = false;
@@ -194,12 +193,8 @@ export class Timeline {
     return snap ? beatValue(snapTime(this.timeAt(vertical), this.division, this.tempo, factor)) : this.tempo.beat(this.timeAt(vertical), factor);
   }
   get renderNoteScale() {
-    const session = this.getSession();
     const width = this.panelWidth(this.notesCanvas.clientWidth, 'notes');
-    const gap = this.columnGap ?? 24;
-    const baseWidth = this.originalPanelWidth || this.notesCanvas.clientWidth || width;
-    const notesViewOnly = this.notesOnly;
-    return this.noteScale * (width / Math.max(1, baseWidth)) * (notesViewOnly ? width / Math.max(1, (width - gap) / 2) : 1);
+    return this.noteScale * width / 1350 * 175 / 68;
   }
   horizontal(position) { return this.noteHorizontal(position); }
   noteInset(width = this.panelWidth(this.notesCanvas.clientWidth, 'notes')) { return Math.min(48 * this.renderNoteScale, Math.max(0, width / 2 - 1)); }
@@ -568,7 +563,6 @@ export class Timeline {
     const session = this.getSession();
     this.syncMultiLineChrome('notes', this.notesCanvas.clientWidth);
     const { context, width, height } = prepareCanvas(this.notesCanvas);
-    if (!session.multiLineActive || !this.multiLineWidth) this.originalPanelWidth = width;
     const multiNotes = session.multiLineActive && session.multiLineMode === 'notes';
     if (session.multiLineActive && this.panelCount('notes') > 1) {
       const panelWidth = this.panelWidth(width, 'notes'); const gap = this.panelGap(width, 'notes'); const offset = this.multiLineViewportOffset(width, 'notes');
@@ -620,16 +614,16 @@ export class Timeline {
       if (renderedHorizontal == null) continue;
       context.globalAlpha = note.isFake ? 0.45 : noteIsAbove(note) ? 1 : 0.7;
       context.fillStyle = NOTE_COLORS[note.type];
-      const textured = note.type === 2 ? this.skin?.hold(context, renderedHorizontal, vertical, endVertical, baseWidth, highlight, true, note.tint ?? note.color, 68 * this.renderNoteScale) : this.skin?.head(context, note.type, renderedHorizontal, vertical, baseWidth, highlight, note.tint ?? note.color, 5, 68 * this.renderNoteScale);
+      const textured = note.type === 2 ? this.skin?.hold(context, renderedHorizontal, vertical, endVertical, baseWidth, highlight, true, note.tint ?? note.color, 68 * this.renderNoteScale) : this.skin?.head(context, note.type, renderedHorizontal, vertical, baseWidth, highlight, note.tint ?? note.color, 5 * this.renderNoteScale, 68 * this.renderNoteScale);
       if (!textured && note.type === 2) {
         context.globalAlpha *= 0.45;
         const top = Math.max(-10, endVertical);
         context.fillRect(renderedHorizontal - noteWidth / 2, top, noteWidth, Math.min(height + 20, vertical - top));
         context.globalAlpha = 1;
-        context.fillRect(renderedHorizontal - noteWidth / 2, endVertical - 3, noteWidth, 6);
+        context.fillRect(renderedHorizontal - noteWidth / 2, endVertical - 3 * this.renderNoteScale, noteWidth, 6 * this.renderNoteScale);
       }
-      if (!textured) context.fillRect(renderedHorizontal - noteWidth / 2, vertical - 4, noteWidth, 8);
-      if (selected) { context.strokeStyle = '#fff'; context.lineWidth = 2; context.strokeRect(renderedHorizontal - noteWidth / 2 - 3, vertical - 7, noteWidth + 6, 14); context.lineWidth = 1; }
+      if (!textured) context.fillRect(renderedHorizontal - noteWidth / 2, vertical - 4 * this.renderNoteScale, noteWidth, 8 * this.renderNoteScale);
+      if (selected) { context.strokeStyle = '#fff'; context.lineWidth = 2; context.strokeRect(renderedHorizontal - noteWidth / 2 - 3, vertical - 4 * this.renderNoteScale - 3, noteWidth + 6, 8 * this.renderNoteScale + 6); context.lineWidth = 1; }
       context.globalAlpha = 1;
     }
     if (this.drag?.kind === 'rectangle' && !this.marqueeOverlay) {
@@ -642,15 +636,17 @@ export class Timeline {
       const lineIndex = this.pendingHold.lineIndex ?? this.getSession().lineIndex;
       const head = this.verticalForLine(this.pendingHold.beat, lineIndex, height); const tail = this.verticalForLine(this.snappedBeat(this.cursor.y), lineIndex, height);
       const pendingHorizontal = this.noteHorizontal(this.pendingHold.positionX, lineIndex);
+      const width = this.noteBaseWidth({ size: 1 });
       context.globalAlpha = 0.65;
-          if (!this.skin?.hold(context, pendingHorizontal, head, tail, 68 * this.renderNoteScale)) context.fillRect(pendingHorizontal - 20, Math.min(head, tail), 40, Math.abs(tail - head));
+      if (!this.skin?.hold(context, pendingHorizontal, head, tail, width)) context.fillRect(pendingHorizontal - width / 2, Math.min(head, tail), width, Math.abs(tail - head));
       context.globalAlpha = 1;
     } else if (this.cursor && this.tool) {
       const lineIndex = this.cursorLineIndex ?? this.lineIndexAt(this.cursor.x, width, 'notes');
       const positionX = this.notePositionAt(this.cursor.x, lineIndex);
       context.fillStyle = NOTE_COLORS[this.tool] + '88';
       const vertical = this.verticalForLine(this.snappedBeat(this.cursor.y), lineIndex, height);
-      context.fillRect(this.noteHorizontal(positionX, lineIndex) - 24, vertical - 3, 48, 6);
+      const width = this.noteBaseWidth({ size: 1 });
+      context.fillRect(this.noteHorizontal(positionX, lineIndex) - width / 2, vertical - 3 * this.renderNoteScale, width, 6 * this.renderNoteScale);
     }
     context.globalAlpha = 1;
     if (this.drag?.kind === 'stroke') {
@@ -693,10 +689,10 @@ export class Timeline {
         const selected = selectedSet.has(index);
         context.globalAlpha = note.isFake ? 0.45 : noteIsAbove(note) ? 1 : 0.7;
         context.fillStyle = NOTE_COLORS[note.type] ?? '#b8c8ff';
-        const textured = note.type === 2 ? this.skin?.hold(context, rendered, vertical, endVertical, baseWidth, highlight, true, note.tint ?? note.color, 68 * this.renderNoteScale) : this.skin?.head(context, note.type, rendered, vertical, baseWidth, highlight, note.tint ?? note.color, 5, 68 * this.renderNoteScale);
+        const textured = note.type === 2 ? this.skin?.hold(context, rendered, vertical, endVertical, baseWidth, highlight, true, note.tint ?? note.color, 68 * this.renderNoteScale) : this.skin?.head(context, note.type, rendered, vertical, baseWidth, highlight, note.tint ?? note.color, 5 * this.renderNoteScale, 68 * this.renderNoteScale);
         if (!textured && note.type === 2) { const alpha = context.globalAlpha; context.globalAlpha = alpha * 0.45; context.fillRect(rendered - noteWidth / 2, Math.min(vertical, endVertical), noteWidth, Math.abs(vertical - endVertical)); context.globalAlpha = alpha; }
-        if (!textured) context.fillRect(rendered - noteWidth / 2, vertical - 4, noteWidth, 8);
-        if (selected) { context.strokeStyle = '#fff'; context.lineWidth = 2; context.strokeRect(rendered - noteWidth / 2 - 3, vertical - 7, noteWidth + 6, 14); context.lineWidth = 1; }
+        if (!textured) context.fillRect(rendered - noteWidth / 2, vertical - 4 * this.renderNoteScale, noteWidth, 8 * this.renderNoteScale);
+        if (selected) { context.strokeStyle = '#fff'; context.lineWidth = 2; context.strokeRect(rendered - noteWidth / 2 - 3, vertical - 4 * this.renderNoteScale - 3, noteWidth + 6, 8 * this.renderNoteScale + 6); context.lineWidth = 1; }
         if (session.multiLineMerge && session.targetLineIndices.length > 1) { context.fillStyle = '#f0d887'; context.font = '14px RPE, sans-serif'; context.textAlign = 'center'; context.fillText(String(lineIndex), rendered, vertical + 18); context.textAlign = 'left'; }
       }
     }
@@ -824,7 +820,7 @@ export class Timeline {
         const width = 52 * this.renderNoteScale;
         const renderedHorizontal = this.clampNoteHorizontal(horizontal, width);
         if (renderedHorizontal == null) continue;
-        context.fillRect(renderedHorizontal - width / 2, vertical - 5, width, 10); context.strokeRect(renderedHorizontal - width / 2 - 2, vertical - 7, width + 4, 14);
+        context.fillRect(renderedHorizontal - width / 2, vertical - 5 * this.renderNoteScale, width, 10 * this.renderNoteScale); context.strokeRect(renderedHorizontal - width / 2 - 2, vertical - 5 * this.renderNoteScale - 2, width + 4, 10 * this.renderNoteScale + 4);
       }
       context.restore();
     }

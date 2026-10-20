@@ -24,7 +24,7 @@ export class NoisePreview {
     const context = canvas.getContext('2d'); context.setTransform(ratio, 0, 0, ratio, 0, 0); context.globalAlpha = 1; context.globalCompositeOperation = 'source-over'; context.clearRect(0, 0, width, height);
     return { canvas, context };
   }
-  draw(target, chart, tempo, seconds, width, height, scale, selected = -1, viewport = { left: 0, top: 0, width, height }) {
+  draw(target, chart, tempo, seconds, width, height, scale, selected = -1, viewport = { left: 0, top: 0, width, height }, options = {}) {
     this.guides = []; this.hitEntries = []; this.width = width; this.height = height;
     if (!width || !height) return;
     const areas = chart.blockAreaList ?? [];
@@ -35,14 +35,19 @@ export class NoisePreview {
       this.source = areas; this.tempo = tempo;
       this.lifetimes = new IntervalIndex(this.source, area => tempo.seconds(area.appearTime), area => tempo.seconds(area.disappearTime));
     }
-    this.guides = this.lifetimes.query(seconds, seconds).filter(entry => seconds < entry.end && !this.hiddenLayers?.has(noiseLayerId(entry.item))).map(entry => ({ area: entry.item, index: entry.index, ...noiseRuntime(entry.item, tempo).sample(seconds) }));
-    if (this.transformGeometry) this.guides = this.guides.map(entry => this.transformGeometry(entry, { width, height, scale, viewport, seconds })).filter(Boolean);
+    this.guides = options.sourceGuides ?? this.lifetimes.query(seconds, seconds).filter(entry => seconds < entry.end && !this.hiddenLayers?.has(noiseLayerId(entry.item))).map(entry => ({ area: entry.item, index: entry.index, ...noiseRuntime(entry.item, tempo).sample(seconds) }));
+    if (!options.sourceGuides && this.transformGeometry) this.guides = this.guides.map(entry => this.transformGeometry(entry, { width, height, scale, viewport, seconds })).filter(Boolean);
     const margin = Math.max(2, scale * 5);
-    const entries = this.guides.filter(entry => entry.scaleX !== 0 && entry.scaleY !== 0 &&
+    let entries = this.guides.filter(entry => entry.scaleX !== 0 && entry.scaleY !== 0 &&
       !entry.points.every(point => width / 2 + point.x * scale < -margin) && !entry.points.every(point => width / 2 + point.x * scale > width + margin) &&
       !entry.points.every(point => height / 2 - point.y * scale < -margin) && !entry.points.every(point => height / 2 - point.y * scale > height + margin));
+    const interior = options.excludeInside;
+    if (interior && interior.right > interior.left && !definitions.some(layer => this.usesSkin(layer))) entries = entries.filter(entry => !entry.points.every(point => {
+      const horizontal = width / 2 + point.x * scale;
+      return horizontal > interior.left && horizontal < interior.right;
+    }));
     for (const entry of entries) entry.path = polygon(entry.points, width, height, scale);
-    const ratio = globalThis.devicePixelRatio || 1;
+    const ratio = options.pixelRatio ?? (globalThis.devicePixelRatio || 1);
     entries.sort((left, right) => rank[left.state] - rank[right.state] || left.index - right.index);
     this.hitEntries = definitions.flatMap(layer => entries.filter(entry => noiseLayerId(entry.area) === layer.id));
     for (const definition of definitions) {

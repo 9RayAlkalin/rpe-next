@@ -16,6 +16,11 @@ export function previewViewport(width, height, ratio = 1.5) {
     left: (width - logicalWidth * scale) / 2, top: (height - logicalHeight * scale) / 2 };
 }
 
+export function overflowTextureSize(width, height, pixelRatio, blur, filterRadius = 8) {
+  const ratio = blur > 0 ? Math.min(pixelRatio, 1, filterRadius / Math.max(filterRadius, blur), Math.sqrt(480000 / Math.max(1, width * height))) : pixelRatio;
+  return { width: Math.max(1, Math.round(width * ratio)), height: Math.max(1, Math.round(height * ratio)) };
+}
+
 // Positions adapt to the visible frame; sprite dimensions and rotation stay uniform.
 export function previewPositionScale(ratio = 1.5) {
   return { x: Math.min(1, ratio / 1.5), y: Math.min(1, 1.5 / ratio) };

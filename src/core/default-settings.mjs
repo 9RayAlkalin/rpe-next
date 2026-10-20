@@ -28,6 +28,9 @@ export const DEFAULT_SETTINGS = Object.freeze({
 });
 
 export const DEFAULT_EDITOR_PREFERENCES = Object.freeze({
+  "viewportOverflow": false,
+  "overflowBlur": 25,
+  "overflowDarken": 0.15,
   "includeBackupCharts": false,
   "pairedMovementSampling": true,
   "scale": 600,

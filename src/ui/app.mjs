@@ -122,6 +122,7 @@ const displayFields = [
   ['clipboard-history-enabled', 'clipboardHistory', true],
   ['bar-width', 'barWidth', DEFAULT_SETTINGS.barWidth], ['bar-alpha', 'barAlpha', DEFAULT_SETTINGS.barAlpha], ['event-value-size', 'eventValueSize', 13], ['event-value-threshold', 'eventValueThreshold', 30], ['event-curve-threshold', 'eventCurveThreshold', 24], ['event-opacity', 'eventOpacity', 0.25], ['event-bar-width', 'eventBarWidth', DEFAULT_EDITOR_PREFERENCES.eventBarWidth], ['seamless-events', 'seamlessEvents', true],
   ['background-blur', 'backgroundBlur', 10.5], ['scroll-speed', 'scrollSpeed', 5], ['tips-enabled', 'tipsEnabled', true], ['success-notifications', 'successNotifications', true],
+  ['viewport-overflow', 'viewportOverflow', DEFAULT_EDITOR_PREFERENCES.viewportOverflow], ['overflow-blur', 'overflowBlur', DEFAULT_EDITOR_PREFERENCES.overflowBlur], ['overflow-darken', 'overflowDarken', DEFAULT_EDITOR_PREFERENCES.overflowDarken],
   ['line-numbers', 'lineNumbers', true], ['line-arrows', 'lineArrows', true], ['line-tint', 'lineTint', true], ['merge-line-numbers', 'mergeLineNumbers', true], ['pick-preview-lines', 'pickPreviewLines', true],
   ['note-source-hover', 'noteSourceHover', true],
   ['preserve-pitch', 'preservePitch', true], ['autoplay-view', 'autoplayView', true], ['highlight-notes', 'highlight', true],
@@ -477,7 +478,7 @@ const collaboration = new CollaborationPanel(element('#collaboration-panel'), ()
 element('#collaboration-tool').onclick = () => activatePane('collaboration');
 const playback = new EditorPlayback(audio, hitSounds, () => {
   timeline.origin = currentBeat();
-  for (const renderer of [preview, realtimePreview]) renderer.noisePreview.gpu?.reset();
+  for (const renderer of [preview, realtimePreview]) { renderer.noisePreview.gpu?.reset(); renderer.overflowNoisePreview?.gpu?.reset(); renderer.overflowRevision++; }
   preview.effectsSince = realtimePreview.effectsSince = chartSeconds();
   invalidate();
 });
@@ -962,7 +963,7 @@ function replaceChart(chart, name, nextAssets = new Map(), nextFolders = []) {
   autoSave.reset(performance.now());
   heldPreview = null; curveStart = null; curveEnd = null; curveAnchorMode = null; curveEditorOpen = false; loop = null; element('#loop-enabled').checked = false;
   assets = nextAssets;
-  for (const renderer of [preview, realtimePreview]) renderer.noisePreview.gpu?.clearSkins();
+  for (const renderer of [preview, realtimePreview]) { renderer.noisePreview.gpu?.clearSkins(); renderer.overflowNoisePreview?.gpu?.clearSkins(); renderer.overflowRevision++; }
   assetFolders = new Set(nextFolders ?? []);
   assetDirty = false;
   chartName = name;
@@ -1919,7 +1920,7 @@ function applyDisplaySettings() {
   for (const renderer of [preview, realtimePreview]) for (const key of ['lineNumbers', 'lineArrows', 'lineTint', 'mergeLineNumbers', 'pickPreviewLines', 'pickPreviewNoiseAreas']) renderer[key] = editorPreferences[key] ?? true;
   for (const renderer of [preview, realtimePreview]) {
     renderer.noisePreview.seamless = editorPreferences.seamlessNoiseAreas ?? true;
-    if (renderer.noisePreview.forceSimple !== (editorPreferences.forceSimpleNoise ?? false)) renderer.noisePreview.gpu?.reset();
+    if (renderer.noisePreview.forceSimple !== (editorPreferences.forceSimpleNoise ?? false)) { renderer.noisePreview.gpu?.reset(); renderer.overflowNoisePreview?.gpu?.reset(); }
     renderer.noisePreview.forceSimple = editorPreferences.forceSimpleNoise ?? false;
     renderer.noisePreview.getAssets = () => assets;
     renderer.noisePreview.invalidate = invalidate;
@@ -1943,6 +1944,9 @@ function applyDisplaySettings() {
   element('#clipboard-history').hidden = !clipboardHistory.enabled;
   if (!clipboardHistory.enabled && activePaneName === 'clipboard') activatePane('chart');
   preview.backgroundBlur = realtimePreview.backgroundBlur = Number(element('#background-blur').value);
+  preview.viewportOverflow = realtimePreview.viewportOverflow = Boolean(element('#viewport-overflow').checked);
+  preview.overflowBlur = realtimePreview.overflowBlur = Number(element('#overflow-blur').value);
+  preview.overflowDarken = realtimePreview.overflowDarken = Number(element('#overflow-darken').value);
   preview.lineScale = realtimePreview.lineScale = Number(element('#default-line-thickness').value);
   timeline.highlight = preview.highlight = realtimePreview.highlight = element('#highlight-notes').checked;
   audio.setPreservePitch(element('#preserve-pitch').checked);

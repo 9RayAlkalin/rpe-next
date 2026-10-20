@@ -27,5 +27,5 @@ export function placementRange(first, second) {
 
 export function wheelSeconds(delta, duration, speed, rate, accelerated = false, burstSeconds = 0, alt = false) {
   const acceleration = accelerated ? 1 + 4 * (Math.min(4, Math.max(0, burstSeconds)) / 4) ** 3 : 1;
-  return -Math.sign(delta) * duration / 1000000 * speed * rate * (alt ? 500 : 100) * acceleration;
+  return -Math.sign(delta) * 120 / 1000000 * speed * rate * (alt ? 500 : 100) * acceleration;
 }

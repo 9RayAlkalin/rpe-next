@@ -15,6 +15,14 @@ export function createSettingsPanel() {
       input.dispatchEvent(new Event(input.type === 'number' ? id === 'fps-limit' ? 'input' : 'change' : input.type === 'range' || input.type === 'color' ? 'input' : 'change', { bubbles: true }));
     }
   };
+  const settingField = ([id, text, type, value, minimum, maximum, step]) => {
+    const label = document.createElement('label'); label.className = 'field'; label.append(text);
+    const input = document.createElement('input'); input.id = id; input.type = type; input.setAttribute('aria-label', text);
+    input.dataset.rpenField = id; label.dataset.rpenField = id;
+    if (type === 'checkbox') input.checked = value; else input.value = value;
+    if (minimum !== undefined) input.min = minimum; if (maximum !== undefined) input.max = maximum; if (step !== undefined) input.step = step;
+    label.append(input); return label;
+  };
   const group = (heading, fields, extraDefaults = []) => {
     const section = document.createElement('section'); section.className = 'settings-group';
     const headingRow = document.createElement('div'); headingRow.className = 'settings-group-heading';
@@ -23,14 +31,7 @@ export function createSettingsPanel() {
     reset.setAttribute('aria-label', `恢复“${heading}”默认设置`);
     reset.onclick = () => restore(heading, fields.map(([id, unused, type, value]) => [id, value]), extraDefaults);
     headingRow.append(title, reset); section.append(headingRow);
-    for (const [id, text, type, value, minimum, maximum, step] of fields) {
-      const label = document.createElement('label'); label.className = 'field'; label.append(text);
-      const input = document.createElement('input'); input.id = id; input.type = type; input.setAttribute('aria-label', text);
-      input.dataset.rpenField = id; label.dataset.rpenField = id;
-      if (type === 'checkbox') input.checked = value; else input.value = value;
-      if (minimum !== undefined) input.min = minimum; if (maximum !== undefined) input.max = maximum; if (step !== undefined) input.step = step;
-      label.append(input); section.append(label);
-    }
+    for (const definition of fields) section.append(settingField(definition));
     body.append(section);
   };
   group('帧率', [['fps-unlimited', '无上限', 'checkbox', false], ['fps-limit', '帧率上限（FPS，大于 10）', 'number', DEFAULT_SETTINGS.fpsLimit, 10, undefined, 'any']]);
@@ -39,8 +40,14 @@ export function createSettingsPanel() {
   const fpsHint = document.createElement('p'); fpsHint.className = 'hint'; fpsHint.textContent = '实时生效并保存在本机。无上限表示编辑器不额外限帧；实际帧率仍受屏幕刷新率、浏览器、系统节能及性能影响。底栏显示实际绘制帧率，静止时按需绘制。'; body.lastElementChild.append(fpsHint);
   group('显示与网格', [['note-size', '默认音符宽度', 'range', DEFAULT_SETTINGS.noteSize, 10, 500, 1], ['bar-width', '节拍线宽度', 'range', DEFAULT_SETTINGS.barWidth, 0.5, 10, 0.1], ['bar-alpha', '节拍线亮度', 'range', DEFAULT_SETTINGS.barAlpha, 0.1, 2, 0.05], ['judgement-offset', '底部判定线高度', 'range', DEFAULT_EDITOR_PREFERENCES.judgementOffset, 42, 240, 1], ['event-value-size', '事件数值字号', 'range', 13, 8, 28, 1], ['event-value-threshold', '事件数值最小宽度', 'range', 30, 10, 180, 1], ['draw-event-curves', '绘制事件曲线', 'checkbox', DEFAULT_SETTINGS.drawEventCurves], ['event-curve-threshold', '事件曲线最小宽度', 'range', 24, 8, 180, 1], ['event-opacity', '事件条不透明度', 'range', DEFAULT_EDITOR_PREFERENCES.eventOpacity, 0.05, 1, 0.05], ['event-bar-width', '事件条宽度比例', 'range', DEFAULT_EDITOR_PREFERENCES.eventBarWidth, 0.35, 1, 0.01], ['highlight-notes', '同时音符高亮', 'checkbox', DEFAULT_SETTINGS.highlight], ['seamless-events', '连续事件无接缝', 'checkbox', true], ['background-blur', '背景高斯模糊', 'range', 10.5, 0, 30, 0.5]]);
   group('窗口外预览', [['viewport-overflow', '显示可视窗口外内容', 'checkbox', DEFAULT_EDITOR_PREFERENCES.viewportOverflow], ['overflow-blur', '窗口外内容模糊', 'range', DEFAULT_EDITOR_PREFERENCES.overflowBlur, 0, 80, 1], ['overflow-darken', '窗口外内容变暗', 'range', DEFAULT_EDITOR_PREFERENCES.overflowDarken, 0, 1, 0.05]]);
-  group('音频与播放', [['volume', '音乐音量', 'range', DEFAULT_SETTINGS.volume, 0, 1, 0.01], ['hit-volume', '打击音效音量', 'range', DEFAULT_SETTINGS.hitVolume, 0, 1, 0.01], ['hit-enabled', '启用打击音效', 'checkbox', true], ['autoplay-view', '进入预览自动播放', 'checkbox', DEFAULT_SETTINGS.autoplayView], ['scroll-speed', '滚轮时间调整速度', 'range', DEFAULT_SETTINGS.scrollSpeed, 0.1, 100, 0.1], ['wheel-limit-audio-start', '滚轮调时不早于音频开头', 'checkbox', DEFAULT_SETTINGS.wheelStopAtAudioStart]], [['#preserve-pitch', true]]);
+  const delayFields = [['hit-tap-delay', 'Tap / Hold 延迟（ms）', 'number', DEFAULT_EDITOR_PREFERENCES.hitTapDelay, undefined, undefined, 'any'], ['hit-drag-delay', 'Drag 延迟（ms）', 'number', DEFAULT_EDITOR_PREFERENCES.hitDragDelay, undefined, undefined, 'any'], ['hit-flick-delay', 'Flick 延迟（ms）', 'number', DEFAULT_EDITOR_PREFERENCES.hitFlickDelay, undefined, undefined, 'any']];
+  group('音频与播放', [['volume', '音乐音量', 'range', DEFAULT_SETTINGS.volume, 0, 1, 0.01], ['hit-volume', '打击音效音量', 'range', DEFAULT_SETTINGS.hitVolume, 0, 1, 0.01], ['hit-enabled', '启用打击音效', 'checkbox', true], ['autoplay-view', '进入预览自动播放', 'checkbox', DEFAULT_SETTINGS.autoplayView], ['scroll-speed', '滚轮时间调整速度', 'range', DEFAULT_SETTINGS.scrollSpeed, 0.1, 100, 0.1], ['wheel-limit-audio-start', '滚轮调时不早于音频开头', 'checkbox', DEFAULT_SETTINGS.wheelStopAtAudioStart]], [['#preserve-pitch', true], ...delayFields.map(([id, unused, type, value]) => [id, value])]);
   const wheelHint = document.createElement('p'); wheelHint.className = 'hint'; wheelHint.textContent = '默认最多退到音频 0 秒；谱面延迟可能使此处为负拍数。关闭限制后可继续向前调时。'; body.lastElementChild.append(wheelHint);
+  const delays = document.createElement('details'); delays.id = 'hit-sound-delays';
+  const delaySummary = document.createElement('summary'); delaySummary.textContent = '打击音效播放延迟'; delays.append(delaySummary);
+  for (const definition of delayFields) delays.append(settingField(definition));
+  const delayHint = document.createElement('p'); delayHint.className = 'hint'; delayHint.textContent = '正值延后，负值提前，单位为毫秒；按谱面时间偏移，仅影响声音，打击特效保持原时刻。'; delays.append(delayHint);
+  body.lastElementChild.append(delays);
   group('实时预览判定线', [['line-numbers', '显示判定线编号', 'checkbox', true], ['line-arrows', '显示方向箭头', 'checkbox', true], ['line-tint', '当前判定线染色', 'checkbox', true], ['merge-line-numbers', '合并相近且同向的编号', 'checkbox', true], ['pick-preview-lines', '点击预览判定线切换编辑线', 'checkbox', true]]);
   group('提示与通知', [['tips-enabled', '显示右下角 Tips', 'checkbox', DEFAULT_EDITOR_PREFERENCES.tipsEnabled], ['success-notifications', '显示绿色完成通知', 'checkbox', true], ['note-source-hover', '悬停音符显示来源线', 'checkbox', true]]);
   group('噪域预览', [['pick-preview-noise-areas', '点击预览噪域进入编辑（优先于音符和判定线）', 'checkbox', true], ['seamless-noise-areas', '融合连贯噪域，隐藏内部接缝', 'checkbox', true], ['force-simple-noise', '忽略皮肤，使用简易渲染', 'checkbox', false]]);

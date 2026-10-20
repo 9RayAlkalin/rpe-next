@@ -187,9 +187,9 @@ tokens 是初始默认值，不是只能读取的常量。可在 `@root` 状态/
 | `offset-control` / `rate-control` / `pitch-control` | 延迟 / 倍速 / 保调标签及其控件 |
 | `view-buttons` / `multi-line-controls` | 视图按钮组 / 多线头栏按钮组 |
 | `time-progress` | 横向时间滑条及标记整体 |
-| `time-readouts` | 当前秒数与当前拍数的组合，可整体重排 |
+| `time-readouts` | 当前秒数、总时长与当前拍数的组合，可整体重排 |
 | `note-skin-settings` / `note-skins-open` / `note-skin-manager` / `note-skin-gallery` | 音符皮肤设置入口区域 / 管理按钮 / 独立管理界面 / 皮肤卡片列表；管理界面保留图片预览本色，不经过 Canvas 色板换色 |
-| `clock` / `beat-display` / `bpm-display` | 当前秒数 / 当前拍数 / 当前 BPM 读数，可分别设置样式或隐藏 |
+| `clock` / `beat-display` / `bpm-display` | 当前秒数与总时长 / 当前拍数 / 当前 BPM 读数，可分别设置样式或隐藏 |
 | `note-properties` / `event-properties` / `line-properties` / `noise-properties` | 四类属性表单 |
 | `noise-layers` / `noise-list` / `line-list` / `multi-line-list` | 对应层/物件列表 |
 | `asset-tree` / `asset-details` | 素材树 / 素材详情 |
@@ -295,7 +295,9 @@ tool-select tool-tap tool-hold tool-flick tool-drag
 
 时间、线号、视图参数按上表的组合容器移动，保留标签与输入的关系，不拆出其内部单个 input。取样控件、画布和页面正文不在移动名单内。移动后原父级选择器不再适用，请使用组件别名或对应数据属性。目标栏的原始 grid/flex 会保留，作者应为新组合设置明确的布局并验证模式切换；编辑器不会凭空创建命令副本。折叠命令组应保证重要操作还有可发现的入口。
 
-`@clock` 保留原有秒数读数，`@beat-display` 另显示当前拍数（三位小数），不会替换用于定位的 `@beat-controls` 输入框。拍数依据当前编辑时间与 BPM 映射，普通编辑沿用当前线的 BPM 倍率，噪域编辑采用全局拍数。可用 `@time-readouts` 整体移动这两个读数，或分别用 styles/hide 调整；动态读数由应用更新，不应用 texts 写入固定文案。这些入口是 API 3 的兼容扩展，已有皮肤不需要提高协议版本。
+`@clock` 显示“当前时刻s/总时长s”，当前时刻沿用谱面秒数、总时长为音频长度，均保留两位小数；`@beat-display` 另显示当前拍数（两位小数），不会替换用于定位的 `@beat-controls` 输入框。拍数依据当前编辑时间与 BPM 映射，普通编辑沿用当前线的 BPM 倍率，噪域编辑采用全局拍数。可用 `@time-readouts` 整体移动这两个读数，或分别用 styles/hide 调整；动态读数由应用更新，不应用 texts 写入固定文案。这些入口是 API 3 的兼容扩展，已有皮肤不需要提高协议版本。
+
+当前秒数与总时长以“当前时刻s/总时长s”连续显示，作为整体与拍数读数分别占固定槽位并靠右对齐，位数变化不会改变相邻读数的位置；任一槽位不足时，全部读数按同一比例缩小并保留各自的右端位置。皮肤可调整 `@time-readouts` 的宽度与字体；请保留 `@clock`、`@beat-display` 内的数值节点，数值更新与自适应缩放由编辑器处理。时间滑条在自身容器中竖直居中，上方仍为时间标记留出空间。
 
 ### 4.4 hide：隐藏控件
 

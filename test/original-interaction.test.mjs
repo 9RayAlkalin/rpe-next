@@ -58,6 +58,20 @@ test('滚轮起点默认限制到音频零秒，延迟允许有限负拍，关�
   }
 });
 
+test('滚轮步长不随谱面长度变化，保留两分钟基准、倍速、Alt 和连续滚动加速', () => {
+  for (const duration of [0, 30, 120, 300, 1800]) {
+    const audio = { time: 10, duration, rate: 1, pause() {}, seek(seconds) { this.time = seconds; } };
+    const playback = new EditorPlayback(audio, { stop() {} }, () => {});
+    playback.wheel({ deltaY: -100 }, { scrollSpeed: 5 }, 0);
+    assert.equal(audio.time, 10.06);
+    for (const rate of [0.5, 1, 2]) for (const alt of [false, true]) for (const accelerated of [false, true]) {
+      assert.equal(wheelSeconds(-100, duration, 5, rate, accelerated, 2, alt), wheelSeconds(-100, 120, 5, rate, accelerated, 2, alt));
+    }
+  }
+  assert.ok(Math.abs(wheelSeconds(100, 120, 5, 1) + 0.06) < 1e-10);
+  assert.ok(Math.abs(wheelSeconds(-100, 120, 10, 1) - 0.12) < 1e-10);
+});
+
 test('第二次空格能取消仍在准备的播放，按键重复不会产生隐式恢复', async () => {
   let ready;
   const audio = { playing: false, pause() { this.playing = false; }, async play() { this.playing = true; } };

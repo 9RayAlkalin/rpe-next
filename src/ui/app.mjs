@@ -83,6 +83,7 @@ import { nativeStorage } from '../platform/native.mjs';
 import { DEFAULT_EDITOR_PREFERENCES, DEFAULT_SETTINGS } from '../core/default-settings.mjs';
 import { appendLineShortcutDigit } from '../core/line-switch.mjs';
 import { installNumericExpressionInputs } from './numeric-expression-input.mjs';
+import { TimeReadouts } from './time-readouts.mjs';
 
 try { await initializeLocalPreferences(); }
 catch (error) {
@@ -111,6 +112,7 @@ const displayFields = [
   ['paired-movement-sampling', 'pairedMovementSampling', true],
   ['note-size', 'noteSize', 200],
   ['wheel-limit-audio-start', 'wheelStopAtAudioStart', true],
+  ['hit-tap-delay', 'hitTapDelay', DEFAULT_EDITOR_PREFERENCES.hitTapDelay], ['hit-drag-delay', 'hitDragDelay', DEFAULT_EDITOR_PREFERENCES.hitDragDelay], ['hit-flick-delay', 'hitFlickDelay', DEFAULT_EDITOR_PREFERENCES.hitFlickDelay],
   ['draw-event-curves', 'drawEventCurves', true],
   ['pick-preview-noise-areas', 'pickPreviewNoiseAreas', true],
   ['seamless-noise-areas', 'seamlessNoiseAreas', true],
@@ -171,6 +173,7 @@ const realtimePreview = new Preview(element('#realtime-preview'));
 const lineInfoScene = new SceneRuntime();
 const timelineActivity = new TimelineActivity();
 const invalidate = () => { dirtyFrame = true; };
+const timeReadouts = new TimeReadouts(element('.time-readouts'), invalidate);
 preview.invalidate = realtimePreview.invalidate = invalidate;
 realtimePreview.applyShaders = false;
 realtimePreview.showHitEffects = false;
@@ -1775,8 +1778,7 @@ function frame(timestamp) {
     if (audio.playing && document.documentElement.dataset.rpenBeat !== String(skinBeat)) editorSkinSignal('beat');
     editorSkinState({ playing: audio.playing, beat: skinBeat, dirty: session.history.dirty || assetDirty, location: atHome ? 'home' : preview.visible ? 'preview' : 'editor' });
     element('#play').title = audio.playing ? '暂停' : '播放';
-    element('#clock').textContent = `${chartSeconds().toFixed(3)} s`;
-    element('#beat-display').textContent = `${(Math.abs(beat) < 0.0005 ? 0 : beat).toFixed(3)} 拍`;
+    timeReadouts.update(chartSeconds(), audio.duration, beat);
     element('#scrubber').value = audio.time;
     const tempoPoint = tempo.points[Math.max(0, upperBound(tempo.points, beat, point => point.beat) - 1)];
     const lineTimeFactor = noiseEditor.active || globalEvents.active ? 1 : session.line?.bpmfactor ?? 1;
@@ -1950,6 +1952,7 @@ function applyDisplaySettings() {
   preview.lineScale = realtimePreview.lineScale = Number(element('#default-line-thickness').value);
   timeline.highlight = preview.highlight = realtimePreview.highlight = element('#highlight-notes').checked;
   audio.setPreservePitch(element('#preserve-pitch').checked);
+  hitSounds.setDelays({ tap: Number(element('#hit-tap-delay').value), drag: Number(element('#hit-drag-delay').value), flick: Number(element('#hit-flick-delay').value) });
   rotateTip();
   invalidate();
 }

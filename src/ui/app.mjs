@@ -1716,7 +1716,7 @@ function frame(timestamp) {
     const beat = currentBeat();
     session.editSeconds = Math.max(0, chartSeconds());
     updateLineInfo();
-    if (audio.playing) timeline.origin = beat;
+    timeline.origin = beat;
     if (!preview.visible && !noiseEditor.active && !globalEvents.active && !noiseFitPanel.active && !noiseTrackingPanel.previewing) {
       timeline.draw(beat);
       multiEdit.drawTimeline();

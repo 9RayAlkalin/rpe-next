@@ -40,7 +40,7 @@ export class ProjectHome {
       const open = document.createElement('button'); open.className = 'project-open primary'; open.textContent = '打开谱面'; open.onclick = () => this.openProject(project.id).catch(this.reportError);
       const actions = document.createElement('div'); actions.className = 'project-actions';
       for (const [label, action] of [['名称 / 分组', () => this.edit(project)], [project.pinned ? '取消置顶' : '置顶', () => this.modify(project.id, source => ({ ...source, pinned: !source.pinned }))],
-        ['复制', () => this.modify(project.id, source => ({ ...source, id: crypto.randomUUID(), storageRevision: null, source: 'Next 项目副本', pinned: false, archived: false, chart: { ...source.chart, META: { ...source.chart.META, name: `${source.chart.META.name} 副本` } } }))],
+        ['复制', () => this.modify(project.id, source => ({ ...source, id: crypto.randomUUID(), storageRevision: null, vcsId: crypto.randomUUID(), source: 'Next 项目副本', pinned: false, archived: false, chart: { ...source.chart, META: { ...source.chart.META, name: `${source.chart.META.name} 副本` } } }))],
         [project.archived ? '恢复' : '归档', () => this.modify(project.id, source => ({ ...source, archived: !source.archived }))], ['删除', () => this.remove(project)]]) {
         const button = document.createElement('button'); button.textContent = label; button.onclick = () => Promise.resolve(action()).catch(this.reportError); actions.append(button);
       }

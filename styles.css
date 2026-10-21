@@ -223,6 +223,11 @@ small { font-size: 11px; color: #aaa; font-weight: 400; }
 .timeline-context-menu { position: fixed; z-index: 30; display: grid; min-width: 150px; padding: 4px; border: 1px solid #777; border-radius: 3px; background: #292929; box-shadow: 0 4px 16px #000b; }
 .timeline-context-menu button { width: 100%; padding: 6px 9px; border: 0; background: transparent; text-align: left; }
 .timeline-context-menu button:hover { background: #4b4636; }
+.selection-interval-panel { position: fixed; z-index: 31; width: 228px; max-width: calc(100vw - 8px); padding: 10px; border: 1px solid var(--line, #777); border-radius: 6px; background: var(--panel, #292929); color: var(--text, #eee); box-shadow: 0 4px 16px #0008; }
+.selection-interval-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.selection-interval-heading button { padding: 0 7px; font-size: 18px; }
+.selection-interval-panel .field { margin: 0; }
+.selection-interval-panel .hint { margin: 8px 0 0; }
 #realtime-preview { position: absolute; inset: 0; pointer-events: none; opacity: .1; }
 input:is([type=number],.numeric-expression-number) { padding-right: 18px !important; background-image: var(--rpen-number-step-image, url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='20' viewBox='0 0 12 20'%3E%3Cpath fill='%23aaa' stroke='%23555' stroke-width='.6' d='m6 3 4 5H2zm0 14-4-5h8z'/%3E%3C/svg%3E")) !important; background-size: 12px 20px !important; background-repeat: no-repeat !important; background-position: right 2px center !important; }
 input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }

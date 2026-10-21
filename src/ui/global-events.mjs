@@ -38,7 +38,7 @@ export class GlobalEventsEditor {
       }
       this.invalidate();
     });
-    this.timeline = new GlobalTimeline(document.createElement('canvas'), canvas, () => this.document.editor, () => {}, () => this.invalidate(), error => this.report(error));
+    this.timeline = new GlobalTimeline(document.createElement('canvas'), canvas, () => this.document.editor, () => {}, () => this.invalidate(), error => this.report(error), event => this.onContextMenu?.(event));
     this.timeline.owner = this; this.timeline.extended = true; this.timeline.hoverArea = 'events'; this.timeline.tool = 0;
     this.timeline.panEventColumns = delta => { this.canvas.parentElement.scrollLeft -= delta; };
     this.timeline.onWheel = event => this.wheel(event); this.timeline.onDragScroll = seconds => this.context.timeline.onDragScroll?.(seconds);
@@ -95,7 +95,7 @@ export class GlobalEventsEditor {
   }
   sync() {
     const source = this.context.timeline;
-    for (const key of ['origin', 'scale', 'division', 'judgementOffset', 'judgementColor', 'barWidth', 'barAlpha', 'eventBarWidth', 'eventOpacity', 'seamlessEvents', 'drawEventCurves', 'eventValueFontSize', 'eventCurveThreshold', 'eventValueThreshold', 'scrollSpeed']) this.timeline[key] = source[key];
+    for (const key of ['origin', 'scale', 'division', 'judgementOffset', 'judgementColor', 'barWidth', 'barAlpha', 'eventBarWidth', 'eventOpacity', 'seamlessEvents', 'drawEventCurves', 'eventValueFontSize', 'eventCurveThreshold', 'eventValueThreshold', 'scrollSpeed', 'selectionInterval']) this.timeline[key] = source[key];
     this.timeline.tempo = this.context.tempo;
     const columns = this.document.columns;
     if (this.labelColumns !== columns) {

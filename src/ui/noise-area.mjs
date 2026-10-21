@@ -1,7 +1,7 @@
 import { createNoiseArea, createNoiseEvent, noiseCenter, noiseHasAnchor, noiseRuntime, NOISE_TRACKS, withNoiseAreas, shiftNoiseArea } from '../core/noise-areas.mjs';
 import { samplingTarget, sampleEditingArea, noiseSampleHandle, applyNoiseSample, fitNoiseSampleView } from '../core/noise-sampling.mjs';
 import { beatValue, fromNumber, parseBeat, formatBeat } from '../core/beat.mjs';
-import { previewViewport, strokeIntersects } from '../core/editor-display.mjs';
+import { previewViewport, previewPositionScale, strokeIntersects } from '../core/editor-display.mjs';
 import { prepareCanvas } from './timeline.mjs';
 import { createEasingPicker, EASING_NAMES } from './easing-picker.mjs';
 import { NoiseAreaList } from './noise-list.mjs';
@@ -11,6 +11,7 @@ import { drawEventCurve, drawEventCurveBatch } from './event-curve.mjs';
 import { eventDisplayIndex, selectedEventGroups } from './event-display-index.mjs';
 import { evaluateEventNumber } from '../core/numeric-expression.mjs';
 import { numericExpressionSource, setNumericExpressionResolver } from './numeric-expression-input.mjs';
+import { intervalSelection, extendIntervalSelection } from '../core/selection-interval.mjs';
 
 function button(text, title, run) {
   const control = document.createElement('button'); control.type = 'button'; control.textContent = text; control.title = title; control.onclick = run; return control;
@@ -46,7 +47,7 @@ export class NoiseAreaEditor {
     this.sampleBar.append(hint('拖动绿色控制点 · 可连续取样，完成统一应用 · Esc 全部取消'), button('完成取样', '保留全部取样结果并返回时间轴', () => this.endSample(true)), button('取消', '放弃全部取样修改', () => this.endSample(false))); canvas.closest('.stage').append(this.sampleBar);
     for (const [name, handler] of [['pointerdown', event => this.down(event)], ['pointermove', event => this.move(event)], ['pointerup', event => this.up(event)], ['pointercancel', () => this.cancelGesture()]]) canvas.addEventListener(name, handler);
     canvas.addEventListener('wheel', event => { event.preventDefault(); event.stopPropagation(); if (!this.sampleMode) { this.wheel(event); this.cursor = this.point(event); this.updateDrag(); } }, { passive: false });
-    canvas.addEventListener('contextmenu', event => { event.preventDefault(); this.pending = null; this.invalidate(); });
+    canvas.addEventListener('contextmenu', event => { event.preventDefault(); this.pending = null; this.onContextMenu?.(event); this.invalidate(); });
     canvas.addEventListener('auxclick', event => event.preventDefault());
     this.overlay.addEventListener('pointerdown', event => this.sampleDown(event));
     this.overlay.addEventListener('pointermove', event => this.sampleMove(event));
@@ -286,10 +287,13 @@ export class NoiseAreaEditor {
     drag.moved ||= Math.hypot(this.cursor.x - drag.start.x, this.cursor.y - drag.start.y) > 4;
     if (drag.kind === 'stroke' && drag.moved) {
       drag.points.push(this.cursor);
+      const candidates = [];
       for (const rect of this.rects) if (Boolean(rect.type) === (drag.start.side === 'events') && strokeIntersects({ x: previous.x, y: this.y(previous.rawBeat) }, this.cursor, { left: rect.x, right: rect.x + rect.width, top: rect.y, bottom: rect.y + rect.height })) {
-        if ([...this.selection].some(key => key.startsWith('area:') !== !rect.type)) this.selection.clear();
-        this.selection.add(rect.type ? rect.type + ':' + rect.index : 'area:' + rect.index);
+        const entry = rect.type ? this.area()?.[rect.type]?.[rect.index] : this.areas()[rect.index];
+        candidates.push({ key: rect.type ? rect.type + ':' + rect.index : 'area:' + rect.index, group: rect.type ?? '', start: beatValue(rect.type ? entry.startTime : entry.appearTime) });
       }
+      if (candidates.length && [...this.selection].some(key => key.startsWith('area:') !== (drag.start.side === 'areas'))) this.selection.clear();
+      extendIntervalSelection(drag, candidates, this.selection, this.context.timeline.selectionInterval);
     }
     if (drag.kind === 'rectangle' || drag.kind === 'stroke' || !drag.moved) { this.invalidate(); return; }
     const delta = this.cursor.beat - drag.start.beat; const areas = structuredClone(drag.base.blockAreaList ?? []);
@@ -319,7 +323,12 @@ export class NoiseAreaEditor {
       const left = Math.min(drag.start.x, drag.current.x); const right = Math.max(drag.start.x, drag.current.x);
       const start = Math.min(drag.start.rawBeat, drag.current.rawBeat); const end = Math.max(drag.start.rawBeat, drag.current.rawBeat);
       this.selection = new Set([...drag.baseSelection].filter(key => key.startsWith('area:') === (drag.start.side === 'areas')));
-      for (const rect of this.selectionRects(drag.start.side)) if (rect.x <= right && rect.x + rect.width >= left && rect.start <= end && rect.end >= start) this.selection.add(rect.type ? rect.type + ':' + rect.index : 'area:' + rect.index);
+      const candidates = [];
+      for (const rect of this.selectionRects(drag.start.side)) if (rect.x <= right && rect.x + rect.width >= left && rect.start <= end && rect.end >= start) {
+        const key = rect.type ? rect.type + ':' + rect.index : 'area:' + rect.index;
+        candidates.push({ key, group: rect.type ?? '', start: rect.start, selected: this.selection.has(key) });
+      }
+      for (const entry of intervalSelection(candidates, this.context.timeline.selectionInterval)) this.selection.add(entry.key);
       }
       const first = [...this.selection][0]?.split(':');
       if (first) { if (first[0] === 'area') { this.selected = Number(first[1]); this.event = null; } else this.event = { type: first[0], index: Number(first[1]) }; this.activate('noise-properties'); }
@@ -439,7 +448,9 @@ export class NoiseAreaEditor {
     const rect = this.overlay.getBoundingClientRect(); const controlsBottom = this.sampleBar.getBoundingClientRect().bottom - rect.top;
     const handle = noiseSampleHandle(this.area(), this.context.tempo, this.sampleSeconds, this.sampleMode);
     for (const zoom of this.sampleZoom ?? []) {
-      if (this.context.sampleAutoFit !== false) zoom.divisor = fitNoiseSampleView(handle, rect.width, rect.height, zoom.renderer.aspectRatio ?? 1.5, zoom.divisor, controlsBottom);
+      const positionScale = previewPositionScale(zoom.renderer.aspectRatio ?? 1.5);
+      const position = { x: handle.x * positionScale.x, y: handle.y * positionScale.y };
+      if (this.context.sampleAutoFit !== false) zoom.divisor = fitNoiseSampleView(position, rect.width, rect.height, zoom.renderer.aspectRatio ?? 1.5, zoom.divisor, controlsBottom);
       zoom.renderer.viewDivisor = this.context.sampleAutoFit === false ? zoom.original : zoom.divisor;
     }
     const view = this.sampleView();
@@ -451,7 +462,8 @@ export class NoiseAreaEditor {
   sampleView() {
     const rect = this.overlay.getBoundingClientRect(); const renderer = this.context.previewVisible ? this.context.preview : this.context.realtimePreview;
     const viewport = previewViewport(rect.width, rect.height, renderer.aspectRatio ?? 1.5); const scale = viewport.scale / (renderer.viewDivisor ?? 1);
-    return { ...rect.toJSON(), viewport, scale, world: point => ({ x: (point.x - rect.width / 2) / scale, y: (rect.height / 2 - point.y) / scale }), screen: point => ({ x: rect.width / 2 + point.x * scale, y: rect.height / 2 - point.y * scale }) };
+    const positionScale = previewPositionScale(renderer.aspectRatio ?? 1.5);
+    return { ...rect.toJSON(), viewport, scale, world: point => ({ x: (point.x - rect.width / 2) / (scale * positionScale.x), y: (rect.height / 2 - point.y) / (scale * positionScale.y) }), screen: point => ({ x: rect.width / 2 + point.x * scale * positionScale.x, y: rect.height / 2 - point.y * scale * positionScale.y }) };
   }
   sampleDown(event) {
     if (!this.sampleMode || event.button !== 0) return; event.preventDefault(); event.stopPropagation();

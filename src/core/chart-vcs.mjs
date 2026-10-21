@@ -4,12 +4,16 @@ const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 const hashCache = new WeakMap();
 
+function setOwnData(target, key, value) {
+  Object.defineProperty(target, key, { value, enumerable: true, configurable: true, writable: true });
+}
+
 function sortValue(value) {
   if (Array.isArray(value)) return value.map(sortValue);
   if (value && typeof value === 'object') {
     const result = {};
     for (const key of Object.keys(value).sort()) {
-      if (value[key] !== undefined) result[key] = sortValue(value[key]);
+      if (value[key] !== undefined) setOwnData(result, key, sortValue(value[key]));
     }
     return result;
   }
@@ -426,19 +430,20 @@ function mergeObject(base, ours, theirs, path, conflicts) {
     const inBase = Object.hasOwn(base, key);
     const inOurs = Object.hasOwn(ours, key);
     const inTheirs = Object.hasOwn(theirs, key);
+    const baseValue = inBase ? base[key] : undefined;
     const childPath = [...path, key];
-    if (inOurs && inTheirs) result[key] = mergeValue(base[key], ours[key], theirs[key], childPath, conflicts);
+    if (inOurs && inTheirs) setOwnData(result, key, mergeValue(baseValue, ours[key], theirs[key], childPath, conflicts));
     else if (inOurs) {
-      if (!inBase) result[key] = cloneValue(ours[key]);
-      else if (!deepEqual(ours[key], base[key])) {
-        conflicts.push(mergeConflict(childPath, base[key], ours[key], undefined, true, false));
-        result[key] = cloneValue(ours[key]);
+      if (!inBase) setOwnData(result, key, cloneValue(ours[key]));
+      else if (!deepEqual(ours[key], baseValue)) {
+        conflicts.push(mergeConflict(childPath, baseValue, ours[key], undefined, true, false));
+        setOwnData(result, key, cloneValue(ours[key]));
       }
     } else if (inTheirs) {
-      if (!inBase) result[key] = cloneValue(theirs[key]);
-      else if (!deepEqual(theirs[key], base[key])) {
-        conflicts.push(mergeConflict(childPath, base[key], undefined, theirs[key], false, true));
-        result[key] = cloneValue(theirs[key]);
+      if (!inBase) setOwnData(result, key, cloneValue(theirs[key]));
+      else if (!deepEqual(theirs[key], baseValue)) {
+        conflicts.push(mergeConflict(childPath, baseValue, undefined, theirs[key], false, true));
+        setOwnData(result, key, cloneValue(theirs[key]));
       }
     }
   }
@@ -767,18 +772,18 @@ function setAtPath(root, path, value) {
   for (let index = 0; index < path.length - 1; index++) {
     const key = path[index];
     const next = path[index + 1];
-    if (parent[key] === undefined || parent[key] === null || typeof parent[key] !== 'object') {
-      parent[key] = typeof next === 'number' ? [] : {};
+    if (!Object.hasOwn(parent, key) || parent[key] === null || typeof parent[key] !== 'object') {
+      setOwnData(parent, key, typeof next === 'number' ? [] : {});
     }
     parent = parent[key];
   }
-  parent[path.at(-1)] = cloneValue(value);
+  setOwnData(parent, path.at(-1), cloneValue(value));
 }
 
 function getAtPath(root, path) {
   let parent = root;
   for (const key of path) {
-    if (parent === undefined || parent === null) return undefined;
+    if (parent === undefined || parent === null || !Object.hasOwn(parent, key)) return undefined;
     parent = parent[key];
   }
   return parent;

@@ -14,6 +14,7 @@ import { trajectoryEventValue } from '../core/curve-trajectory.mjs';
 import { editorSkinContext } from './editor-skin-canvas.mjs';
 import { drawEventCurve, drawEventCurveBatch } from './event-curve.mjs';
 import { eventDisplayIndex, selectedEventGroups } from './event-display-index.mjs';
+import { intervalSelection, extendIntervalSelection } from '../core/selection-interval.mjs';
 
 export const NOTE_COLORS = { 1: '#8acbff', 2: '#8acbff', 3: '#f596ac', 4: '#f1ce76' };
 const isHookedEvent = event => event?.inst === true || Number(event?.inst) === 1;
@@ -66,6 +67,7 @@ export class Timeline {
     this.scrollSpeed = 1;
     this.judgementOffset = 42;
     this.gridCount = 11;
+    this.selectionInterval = 1;
     for (const canvas of [notesCanvas, eventsCanvas]) {
       canvas.addEventListener('wheel', event => {
         event.preventDefault();
@@ -330,10 +332,12 @@ export class Timeline {
         this.drag.tracing = true;
         this.getSession().multiSelectionIntent = 'notes';
         this.drag.points.push(this.cursor);
+        const candidates = [];
         for (const entry of this.visible(this.cursorLineIndex)) if (strokeIntersects(previous, this.cursor, {
           left: this.noteHorizontal(entry.item.positionX, this.cursorLineIndex) - this.noteWidth(entry.item) / 2, right: this.noteHorizontal(entry.item.positionX, this.cursorLineIndex) + this.noteWidth(entry.item) / 2,
           top: this.vertical(entry.end) - 7, bottom: this.vertical(entry.start) + 7,
-        })) this.drag.remove ? this.getSession().selection.delete(entry.index) : this.getSession().selection.add(entry.index);
+        })) candidates.push({ key: entry.index, start: beatValue(entry.item.startTime) });
+        extendIntervalSelection(this.drag, candidates, this.getSession().selection, this.selectionInterval);
       }
     }
     const hover = !this.drag ? this.hit(this.cursor) : null;
@@ -421,6 +425,7 @@ export class Timeline {
       const [bottom, top] = this.rectangleTimes(drag);
       if (!drag.append) session.selection.clear();
       const lineIndices = session.multiLineActive && session.multiLineMode === 'notes' ? session.targetLineIndices : [session.lineIndex];
+      const candidates = [];
       for (const lineIndex of lineIndices) {
         this.refreshIndex(lineIndex);
         const noteIndex = this.noteIndexes.get(lineIndex)?.index;
@@ -429,10 +434,11 @@ export class Timeline {
           ? new Set(session.multiLineSelection?.get(lineIndex) ?? []) : session.selection;
         for (const entry of noteIndex.query(bottom, top)) {
           const horizontal = this.noteHorizontal(entry.item.positionX, lineIndex) + this.multiLineViewportOffset(this.notesCanvas.clientWidth, 'notes');
-          if (horizontal >= left && horizontal <= right) drag.remove ? selected.delete(entry.index) : selected.add(entry.index);
+          if (horizontal >= left && horizontal <= right) candidates.push({ key: entry.index, start: beatValue(entry.item.startTime), selected: drag.remove ? !selected.has(entry.index) : selected.has(entry.index), selection: selected });
         }
         if (session.multiLineActive && session.multiLineMode === 'notes') session.multiLineSelection?.set(lineIndex, selected);
       }
+      for (const entry of intervalSelection(candidates, this.selectionInterval)) drag.remove ? entry.selection.delete(entry.key) : entry.selection.add(entry.key);
       if (session.multiLineActive && session.multiLineMode === 'notes') session.selection = new Set(session.multiLineSelection?.get(session.lineIndex) ?? []);
       session.notify();
     } else if (['move', 'startTime', 'endTime'].includes(drag.kind) && (drag.scrolled || Math.hypot(drag.current.x - drag.start.x, drag.current.y - drag.start.y) > 4)) {

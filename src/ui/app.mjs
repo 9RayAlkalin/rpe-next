@@ -36,6 +36,7 @@ import { ClipboardHistory } from '../application/clipboard-history.mjs';
 import { renderClipboardHistory } from './clipboard-history.mjs';
 import { PasteGesture } from './paste-gesture.mjs';
 import { SelectionOverlay } from './selection-overlay.mjs';
+import { SelectionIntervalPanel } from './selection-interval.mjs';
 import { LineSwitcher } from './line-switcher.mjs';
 import { stepLine } from '../core/line-overview.mjs';
 import { applyNumberShortcut } from '../application/number-shortcuts.mjs';
@@ -105,6 +106,7 @@ for(const type of ['keydown','keyup','wheel','pointerdown','pointerup','mousedow
   if(!event.defaultPrevented&&['keydown','keyup'].includes(type))handleValueDragKey(event);
 },{capture:true,passive:false});
 const displayFields = [
+  ['selection-interval', 'selectionInterval', DEFAULT_EDITOR_PREFERENCES.selectionInterval],
   ['include-backup-charts', 'includeBackupCharts', false],
   ['text-selection-drag', 'textSelectionDrag', false],
   ['event-cut-density', 'cutDensity', 4],
@@ -185,6 +187,7 @@ const images = new ProjectImages(invalidate, message => status(message));
 const timeline = new Timeline(element('#notes'), element('#events'), () => session, editEvent, invalidate, error => reportError(error), openTimelineContextMenu);
 const noiseEditor = new NoiseAreaEditor(element('#noise-panel'), element('#noise-editor-canvas'), () => ({ session, tempo, timeline, preview, realtimePreview, previewVisible: preview.visible, seconds: chartSeconds, sampleAutoFit: element('#sample-auto-fit').checked }), {
   commit: (label, chart) => session.commit(label, chart), invalidate, notify, activate: activatePane,
+  onContextMenu: event => openTimelineContextMenu(event),
   pause: () => playback.pause(), seek: beat => seekBeat(beat), wheel: event => previewWheel(event),
   getAssets: () => assets,
   onAssets: entries => { for (const [name, bytes] of entries) assets.set(name, bytes); assetDirty = true; images.load(session.chart, assets, chartName); invalidate(); },
@@ -193,7 +196,11 @@ const globalEventRegistry = new GlobalEventRegistry();
 registerPlaceholderGlobalEvent(globalEventRegistry);
 const globalEvents = new GlobalEventsEditor(element('#global-events-panel'), element('#global-events-canvas'), globalEventRegistry,
   () => ({ session, tempo, timeline, previewVisible: preview.visible, seconds: () => chartSeconds(), duration: () => audio.duration }),
-  { activate: activatePane, invalidate, notify, seek: beat => seekBeat(beat), wheel: event => previewWheel(event) });
+  { activate: activatePane, invalidate, notify, seek: beat => seekBeat(beat), wheel: event => previewWheel(event), onContextMenu: event => openTimelineContextMenu(event) });
+const selectionIntervalPanel = new SelectionIntervalPanel(element('#selection-interval'), () => editorPreferences.selectionInterval ?? 1, value => {
+  editorPreferences.selectionInterval = value; timeline.selectionInterval = globalEvents.timeline.selectionInterval = value;
+  persistEditor(); invalidate();
+});
 for (const renderer of [preview, realtimePreview]) {
   renderer.noisePreview.hiddenLayers = noiseEditor.hiddenLayers;
   renderer.noisePreview.simpleLayers = noiseEditor.simpleLayers;
@@ -646,10 +653,13 @@ function renderTimelineMarkers() {
 }
 function openTimelineContextMenu(event, canvas = null, markerIndex = null) {
   const menu = element('#timeline-context-menu'); if (!menu) return;
+  selectionIntervalPanel.hide();
   const point = canvas ? timeline.point(event, canvas) : null;
   pendingTimelineMenu = { time: point ? timeline.timeAt(point.y) : null, markerIndex };
   element('#timeline-add-marker').hidden = !canvas;
   element('#timeline-delete-marker').hidden = markerIndex === null;
+  element('#timeline-selection-interval').hidden = markerIndex !== null;
+  element('#timeline-selection-interval').textContent = `间隔多选（${timeline.selectionInterval ?? 1}）…`;
   const selections = session.multiLineActive && session.multiLineMode === 'events'
     ? [...session.multiEventSelection].flatMap(([lineIndex, keys]) => [...keys].map(key => ({ lineIndex, key })))
     : [...session.eventSelection].map(key => ({ lineIndex: session.lineIndex, key }));
@@ -658,9 +668,10 @@ function openTimelineContextMenu(event, canvas = null, markerIndex = null) {
   const selected = type === 'moveXEvents' ? session.chart.judgeLineList[selection.lineIndex]?.eventLayers?.[timeline.layer]?.moveXEvents?.[Number(index)] : null;
   const split = element('#trajectory-context-split'); split.hidden = !selected?.trajectory || canvas !== timeline.eventsCanvas;
   split.onclick = () => { closeTimelineContextMenu(); trajectoryPanel.open(selected, selection.lineIndex, timeline.layer); trajectoryPanel.split(); };
-  menu.style.left = `${Math.max(4, Math.min(window.innerWidth - 190, event.clientX))}px`;
-  menu.style.top = `${Math.max(4, Math.min(window.innerHeight - 90, event.clientY))}px`;
   menu.hidden = false;
+  const bounds = menu.getBoundingClientRect();
+  menu.style.left = `${Math.max(4, Math.min(window.innerWidth - bounds.width - 4, event.clientX))}px`;
+  menu.style.top = `${Math.max(4, Math.min(window.innerHeight - bounds.height - 4, event.clientY))}px`;
 }
 function closeTimelineContextMenu() { const menu = element('#timeline-context-menu'); if (menu) menu.hidden = true; pendingTimelineMenu = null; }
 function addTimelineMarker() {
@@ -681,6 +692,9 @@ function deleteTimelineMarker() {
 window.addEventListener('pointerdown', event => { const menu = element('#timeline-context-menu'); if (menu && !menu.contains(event.target)) closeTimelineContextMenu(); }, true);
 element('#timeline-add-marker').addEventListener('click', addTimelineMarker);
 element('#timeline-delete-marker').addEventListener('click', deleteTimelineMarker);
+element('#timeline-selection-interval').addEventListener('click', () => {
+  const bounds = element('#timeline-context-menu').getBoundingClientRect(); closeTimelineContextMenu(); selectionIntervalPanel.open(bounds.left, bounds.top);
+});
 
 function persistEditor() {
   editorPreferences = { ...editorPreferences, scale: timeline.scale, division: timeline.division, gridCount: timeline.gridCount, snapX: timeline.snapX, judgementOffset: timeline.judgementOffset, multiLineWidth: timeline.multiLineWidth || undefined, multiLineEventWidth: timeline.multiLineEventWidth || undefined,
@@ -1987,6 +2001,8 @@ function applyDisplaySettings() {
   timeline.eventValueFontSize = Number(element('#event-value-size').value); timeline.eventValueThreshold = Number(element('#event-value-threshold').value); timeline.eventCurveThreshold = Number(element('#event-curve-threshold').value); timeline.eventOpacity = Number(element('#event-opacity').value); timeline.eventBarWidth = Number(element('#event-bar-width').value);
   timeline.seamlessEvents = element('#seamless-events').checked;
   timeline.drawEventCurves = element('#draw-event-curves').checked;
+  timeline.selectionInterval = globalEvents.timeline.selectionInterval = Number(element('#selection-interval').value);
+  selectionIntervalPanel.sync();
   session.cutDensity = Number(element('#event-cut-density').value);
   session.dragSensitivity = Number(element('#event-drag-sensitivity').value);
   clipboardHistory.enabled = element('#clipboard-history-enabled').checked;
@@ -2023,7 +2039,7 @@ document.addEventListener('dragstart', event => {
 }, true);
 element('#fps-limit').addEventListener('input', applyFpsLimit);
 element('#fps-unlimited').addEventListener('change', applyFpsLimit);
-for (const [id, key] of displayFields) element(`#${id}`).addEventListener(element(`#${id}`).type === 'number' ? 'change' : 'input', event => {
+for (const [id, key] of displayFields.filter(([, key]) => key !== 'selectionInterval')) element(`#${id}`).addEventListener(element(`#${id}`).type === 'number' ? 'change' : 'input', event => {
   const control = event.target;
   if (control.type === 'checkbox') editorPreferences[key] = control.checked;
   else if (control.type === 'color') editorPreferences[key] = control.value;

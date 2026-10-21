@@ -41,6 +41,10 @@ function equalBytes(left, right) {
   return true;
 }
 
+function setReference(collection, name, value) {
+  Object.defineProperty(collection, name, { value, enumerable: true, configurable: true, writable: true });
+}
+
 export class ChartRepository {
   constructor(store, repoId, { now = () => Date.now() } = {}) {
     this.store = store;
@@ -99,7 +103,8 @@ export class ChartRepository {
 
   resolveHead(repo) {
     if (repo?.head?.type === 'detached') return repo.head.commit ?? null;
-    return repo?.branches?.[repo?.head?.name] ?? null;
+    const name = repo?.head?.name;
+    return repo?.branches && Object.hasOwn(repo.branches, name) ? repo.branches[name] ?? null : null;
   }
 
   async ensureBlobBytes(id, bytes) {
@@ -215,7 +220,7 @@ export class ChartRepository {
     if (repo.head?.type === 'detached') repo.head = { type: 'detached', commit: commitId };
     else {
       const name = repo.head?.name || 'main';
-      repo.branches[name] = commitId;
+      setReference(repo.branches, name, commitId);
       repo.head = { type: 'branch', name };
     }
   }
@@ -284,7 +289,7 @@ export class ChartRepository {
     const branch = assertRefName(name, '分支');
     const repo = await this.read();
     if (Object.hasOwn(repo.branches, branch)) throw new Error(`分支“${branch}”已存在`);
-    repo.branches[branch] = at ?? this.resolveHead(repo);
+    setReference(repo.branches, branch, at ?? this.resolveHead(repo));
     await this.save(repo);
     return repo;
   }
@@ -303,7 +308,7 @@ export class ChartRepository {
     const repo = await this.read();
     if (!Object.hasOwn(repo.branches, name)) throw new Error('分支不存在');
     if (name !== target && Object.hasOwn(repo.branches, target)) throw new Error(`分支“${target}”已存在`);
-    repo.branches[target] = repo.branches[name];
+    setReference(repo.branches, target, repo.branches[name]);
     if (name !== target) delete repo.branches[name];
     if (repo.head?.type === 'branch' && repo.head.name === name) repo.head.name = target;
     await this.save(repo);
@@ -577,7 +582,7 @@ export class ChartRepository {
     if (Object.hasOwn(repo.tags, tag)) throw new Error(`标签“${tag}”已存在`);
     const target = commitId ?? this.resolveHead(repo);
     if (!target) throw new Error('没有可标记的提交');
-    repo.tags[tag] = { commit: target, message: String(message ?? '').trim(), tagger: normalizeAuthor(repo.config?.author), timestamp: this.now() };
+    setReference(repo.tags, tag, { commit: target, message: String(message ?? '').trim(), tagger: normalizeAuthor(repo.config?.author), timestamp: this.now() });
     await this.save(repo);
     return repo;
   }
@@ -809,14 +814,14 @@ export class ChartRepository {
     for (const [name, id] of Object.entries(bundle.repo?.branches ?? {})) {
       if (!id) continue;
       const target = mapped.get(id) ?? id;
-      if (repo.branches[name] === target) continue;
-      if (repo.branches[name] == null) {
-        repo.branches[name] = target;
+      if (Object.hasOwn(repo.branches, name) && repo.branches[name] === target) continue;
+      if (!Object.hasOwn(repo.branches, name) || repo.branches[name] == null) {
+        setReference(repo.branches, name, target);
         addedBranches.push(name);
         continue;
       }
       const next = uniqueName(repo.branches, name);
-      repo.branches[next] = target;
+      setReference(repo.branches, next, target);
       addedBranches.push(next);
     }
     for (const [name, tag] of Object.entries(bundle.repo?.tags ?? {})) {
@@ -824,7 +829,7 @@ export class ChartRepository {
       if (!id) continue;
       const target = mapped.get(id) ?? id;
       const next = uniqueName(repo.tags, name);
-      repo.tags[next] = { ...(typeof tag === 'object' ? tag : {}), commit: target };
+      setReference(repo.tags, next, { ...(typeof tag === 'object' ? tag : {}), commit: target });
       addedTags.push(next);
     }
     for (const entry of bundle.repo?.stash ?? []) {

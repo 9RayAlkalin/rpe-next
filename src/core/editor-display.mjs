@@ -26,6 +26,13 @@ export function previewPositionScale(ratio = 1.5) {
   return { x: Math.min(1, ratio / 1.5), y: Math.min(1, 1.5 / ratio) };
 }
 
+export function previewNoiseGeometry(sample, positionScale) {
+  if (positionScale.x === 1 && positionScale.y === 1) return sample;
+  const project = point => ({ x: point.x * positionScale.x, y: point.y * positionScale.y });
+  return { ...sample, points: sample.points.map(project), center: project(sample.center),
+    rotation: Math.atan2(Math.sin(sample.rotation) * positionScale.y, Math.cos(sample.rotation) * positionScale.x) };
+}
+
 export function previewNotePosition(position, line, positionScale) {
   // RPE leaves note-local distances unscaled on parented lines.
   const parent = Number(line.father === '' ? -1 : line.father ?? -1);

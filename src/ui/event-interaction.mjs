@@ -4,6 +4,7 @@ import { strokeIntersects } from '../core/editor-display.mjs';
 import { shaderEventLanes } from '../core/shader-events.mjs';
 import { captureSelection, editCapturedSelection, commitSelectionEdit } from '../application/batch-edit.mjs';
 import { eventDisplayIndex } from './event-display-index.mjs';
+import { intervalSelection, extendIntervalSelection } from '../core/selection-interval.mjs';
 
 export class EventInteraction {
   constructor(timeline, reportError) {
@@ -118,9 +119,12 @@ export class EventInteraction {
         this.drag.tracing = true;
         this.drag.points.push(point); const session = this.timeline.getSession();
         session.multiSelectionIntent = 'events';
+        const candidates = [];
         for (const rectangle of this.timeline.eventRects) if ((rectangle.lineIndex === undefined || rectangle.lineIndex === session.lineIndex) && strokeIntersects(previous, point, { left: rectangle.x, right: rectangle.x + rectangle.width, top: rectangle.y, bottom: rectangle.y + rectangle.height })) {
-          const key = eventKey(rectangle.type, rectangle.index); this.drag.remove ? session.eventSelection.delete(key) : session.eventSelection.add(key);
+          const event = eventListAt(session, rectangle.lineIndex ?? session.lineIndex, rectangle.type)?.[rectangle.index];
+          candidates.push({ key: eventKey(rectangle.type, rectangle.index), group: rectangle.type, start: beatValue(event?.startTime) });
         }
+        extendIntervalSelection(this.drag, candidates, session.eventSelection, this.timeline.selectionInterval);
       }
     }
     const hit = this.hit(point);
@@ -158,9 +162,8 @@ export class EventInteraction {
               const bounds = this.timeline.eventColumnBounds(channel, panelWidth);
               if (offset + bounds.x >= right || offset + bounds.x + bounds.width <= left) return;
               const display = eventDisplayIndex(this.timeline, eventListAt(session, lineIndex, type), session.chart);
-              for (const entry of display.index.query(bottom, top)) {
-                const key = eventKey(type, entry.index); drag.remove ? selected.delete(key) : selected.add(key);
-              }
+              const candidates = display.index.query(bottom, top).map(entry => ({ key: eventKey(type, entry.index), start: beatValue(entry.item.startTime), selected: drag.remove ? !selected.has(eventKey(type, entry.index)) : selected.has(eventKey(type, entry.index)) }));
+              for (const entry of intervalSelection(candidates, this.timeline.selectionInterval)) drag.remove ? selected.delete(entry.key) : selected.add(entry.key);
             });
             if (lineIndex === session.lineIndex) session.eventSelection = selected;
             if (session.multiEventSelection) session.multiEventSelection.set(lineIndex, selected);
@@ -171,6 +174,7 @@ export class EventInteraction {
           const bounds = this.timeline.eventColumnBounds(channel, this.canvas.clientWidth);
           if (bounds.x >= right || bounds.x + bounds.width <= left) return;
           const items = eventList(session, type); const lanes = type === 'paintEvents' ? shaderEventLanes(items) : null;
+          const candidates = [];
           items.forEach((item, index) => {
             if (beatValue(item.startTime) > top || beatValue(item.endTime) < bottom) return;
             if (lanes) {
@@ -178,8 +182,9 @@ export class EventInteraction {
               const horizontal = bounds.x + lane.lane * width;
               if (horizontal >= right || horizontal + Math.max(2, width - (lane.count > 1 ? 2 : 0)) <= left) return;
             }
-            const key = eventKey(type, index); drag.remove ? session.eventSelection.delete(key) : session.eventSelection.add(key);
+            const key = eventKey(type, index); candidates.push({ key, start: beatValue(item.startTime), selected: drag.remove ? !session.eventSelection.has(key) : session.eventSelection.has(key) });
           });
+          for (const entry of intervalSelection(candidates, this.timeline.selectionInterval)) drag.remove ? session.eventSelection.delete(entry.key) : session.eventSelection.add(entry.key);
         });
         session.notify();
       } else if (drag.kind === 'stroke') {

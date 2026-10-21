@@ -3,6 +3,7 @@ import { IntervalIndex } from '../core/interval-index.mjs';
 import { NoiseEdgeFilter } from './noise-edge-filter.mjs';
 import { noiseLayers, noiseLayerId } from '../core/noise-skin.mjs';
 import { NoiseSkinRenderer } from './noise-skin-renderer.mjs';
+import { previewNoiseGeometry } from '../core/editor-display.mjs';
 
 const rank = { disabled: 0, ready: 1, active: 2 };
 function polygon(points, width, height, scale) {
@@ -36,6 +37,7 @@ export class NoisePreview {
       this.lifetimes = new IntervalIndex(this.source, area => tempo.seconds(area.appearTime), area => tempo.seconds(area.disappearTime));
     }
     this.guides = options.sourceGuides ?? this.lifetimes.query(seconds, seconds).filter(entry => seconds < entry.end && !this.hiddenLayers?.has(noiseLayerId(entry.item))).map(entry => ({ area: entry.item, index: entry.index, ...noiseRuntime(entry.item, tempo).sample(seconds) }));
+    if (!options.sourceGuides && options.positionScale) this.guides = this.guides.map(entry => previewNoiseGeometry(entry, options.positionScale));
     if (!options.sourceGuides && this.transformGeometry) this.guides = this.guides.map(entry => this.transformGeometry(entry, { width, height, scale, viewport, seconds })).filter(Boolean);
     const margin = Math.max(2, scale * 5);
     let entries = this.guides.filter(entry => entry.scaleX !== 0 && entry.scaleY !== 0 &&

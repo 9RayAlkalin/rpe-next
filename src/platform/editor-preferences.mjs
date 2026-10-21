@@ -1,5 +1,6 @@
 import { localPreferences } from './local-preferences.mjs';
 import { validFpsLimit } from '../core/frame-timing.mjs';
+import { validSelectionInterval } from '../core/selection-interval.mjs';
 
 const ranges = { scale: [20, 2000], division: [1, 100], gridCount: [2, 100], noteSize: [10, 500], volume: [0, 1], hitVolume: [0, 1], realtimeAlpha: [0, 1], ratioWidth: [1, 100], ratioHeight: [1, 100], barWidth: [0.5, 10], barAlpha: [0.1, 2], judgementOffset: [42, 240], eventValueSize: [8, 28], eventValueThreshold: [10, 180], eventCurveThreshold: [8, 180], eventOpacity: [0.05, 1], eventBarWidth: [0.35, 1], multiLineWidth: [30, 2400], multiLineEventWidth: [30, 2400], scrollSpeed: [0.1, 100], autoSaveSeconds: [1, 3600], autoSaveLimit: [1, 100], dragSensitivity: [0.1, 8] };
 Object.assign(ranges, { cameraX: [-1000000, 1000000], viewDivisor: [0.1, 100], backgroundBlur: [0, 30], overflowBlur: [0, 80], overflowDarken: [0, 1], cutDensity: [0.1, 128] });
@@ -9,6 +10,7 @@ export function normalizeEditorPreferences(value) {
   const result = {};
   if (!value || typeof value !== 'object') return result;
   if (validFpsLimit(value.fpsLimit)) result.fpsLimit = value.fpsLimit;
+  if (validSelectionInterval(value.selectionInterval)) result.selectionInterval = value.selectionInterval;
   if (typeof value.textSelectionDrag === 'boolean') result.textSelectionDrag = value.textSelectionDrag;
   if (typeof value.judgementColor === 'string' && /^#[0-9a-f]{6}$/i.test(value.judgementColor)) result.judgementColor = value.judgementColor.toLowerCase();
   for (const key of ['hitTapDelay', 'hitDragDelay', 'hitFlickDelay']) if (Number.isFinite(value[key])) result[key] = value[key];

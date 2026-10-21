@@ -28,6 +28,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
 });
 
 export const DEFAULT_EDITOR_PREFERENCES = Object.freeze({
+  "selectionInterval": 1,
   "viewportOverflow": false,
   "overflowBlur": 25,
   "overflowDarken": 0.15,

@@ -104,7 +104,7 @@ export class Preview {
     if (this.showGameUI) this.drawUi(context, chart, tempo, seconds, selectedLine, { width, height, viewport, scale, divisor, states });
     this.drawGuides(context, scale, selectedLine);
     if (captureComplete) context.restore();
-    this.noisePreview.draw(context, chart, tempo, seconds, width, height, scale, this.selectedNoiseArea, viewport);
+    this.noisePreview.draw(context, chart, tempo, seconds, width, height, scale, this.selectedNoiseArea, viewport, { positionScale });
     if (captureComplete) {
       this.captureOverflowSource(overflowFrame, true); this.overflowCompleteSceneCaptured = true;
       context.save(); context.beginPath(); context.rect(viewport.left, viewport.top, viewport.width, viewport.height); context.clip();
@@ -170,7 +170,7 @@ export class Preview {
       if (this.showGameUI) this.drawUi(surface, chart, tempo, seconds, selectedLine, frame);
       const margin = Math.max(0, this.overflowBlur) * 3 + Math.max(8, frame.scale * 6);
       this.overflowNoisePreview.draw(surface, chart, tempo, seconds, frame.width, frame.height, frame.scale, this.selectedNoiseArea, viewport, {
-        sourceGuides: !this.noisePreview.transformGeometry ? this.noisePreview.guides : undefined, pixelRatio: ratio,
+        sourceGuides: !this.noisePreview.transformGeometry ? this.noisePreview.guides : undefined, positionScale: frame.positionScale, pixelRatio: ratio,
         excludeInside: { left: frame.viewport.left + margin, right: frame.viewport.left + frame.viewport.width - margin },
       });
       shaders(effects.filter(effect => effect.global), true);

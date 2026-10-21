@@ -1,7 +1,10 @@
 import { openDatabase, ensureStore } from './storage.mjs';
+import { nativeStorage, nativeReady, nativeWrite, nativeRead } from './native.mjs';
 
 const DATABASE = 'rpe-next-chart-vcs';
 const VERSION = 1;
+const NATIVE_KINDS = { repos: 'version-repos', commits: 'version-commits', trees: 'version-trees', blobs: 'version-blobs' };
+const NATIVE_MIGRATION_KEY = 'rpe-next-chart-vcs-native-migrated-v1';
 
 function versionDatabase() {
   return openDatabase(DATABASE, VERSION, (connection, transaction) => {
@@ -71,6 +74,107 @@ class IndexedVersionStore {
   }
 }
 
+function openLegacyVersionDatabase() {
+  if (typeof indexedDB === 'undefined') return Promise.resolve(null);
+  return new Promise((resolve, reject) => {
+    let missing = false;
+    const request = indexedDB.open(DATABASE);
+    request.onupgradeneeded = () => { missing = true; request.transaction.abort(); };
+    request.onsuccess = () => {
+      if (missing) { request.result.close(); resolve(null); }
+      else resolve(request.result);
+    };
+    request.onerror = () => missing ? resolve(null) : reject(request.error);
+    request.onblocked = () => reject(new Error('版本数据库正在被其他窗口使用'));
+  });
+}
+
+function readLegacyVersionData(database) {
+  const names = Object.keys(NATIVE_KINDS);
+  if (!names.every(name => database.objectStoreNames.contains(name))) return Promise.resolve(null);
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction(names, 'readonly'), result = {};
+    for (const name of names) {
+      const request = transaction.objectStore(name).getAll();
+      request.onsuccess = () => { result[name] = request.result ?? []; };
+    }
+    transaction.oncomplete = () => resolve(result);
+    transaction.onerror = () => reject(transaction.error);
+  });
+}
+
+function markNativeVersionMigration() {
+  try { globalThis.localStorage?.setItem(NATIVE_MIGRATION_KEY, '1'); } catch {}
+}
+
+async function migrateLegacyVersionData() {
+  if (!nativeStorage || typeof indexedDB === 'undefined') return;
+  try { if (globalThis.localStorage?.getItem(NATIVE_MIGRATION_KEY) === '1') return; } catch {}
+  const database = await openLegacyVersionDatabase();
+  if (!database) { markNativeVersionMigration(); return; }
+  try {
+    const data = await readLegacyVersionData(database);
+    if (!data) { markNativeVersionMigration(); return; }
+    for (const [kind, records] of Object.entries(data)) {
+      for (const record of records) {
+        if (record?.id) await nativeWrite(NATIVE_KINDS[kind], record.id, record, { migration: true });
+      }
+    }
+    markNativeVersionMigration();
+  } finally { database.close(); }
+}
+
+class NativeVersionStore {
+  ephemeral = false;
+
+  constructor() {
+    this.readyPromise = (async () => {
+      await nativeReady();
+      try { await migrateLegacyVersionData(); }
+      catch (error) { this.migrationError = error; }
+    })();
+  }
+
+  async ready() { return this.readyPromise; }
+
+  async get(kind, id) {
+    await this.ready();
+    return nativeRead(NATIVE_KINDS[kind], id);
+  }
+
+  async put(kind, record) {
+    await this.ready();
+    return nativeWrite(NATIVE_KINDS[kind], record.id, record);
+  }
+
+  async delete(kind, id) {
+    await this.ready();
+    return nativeStorage.call('remove', NATIVE_KINDS[kind], id);
+  }
+
+  async list(kind) {
+    await this.ready();
+    const nativeKind = NATIVE_KINDS[kind];
+    const summaries = await nativeStorage.call('list', nativeKind, false);
+    const records = [];
+    for (const summary of summaries) {
+      const record = await nativeRead(nativeKind, summary.data.id);
+      if (record) records.push(record);
+    }
+    return records;
+  }
+
+  async listCommits(repoId) {
+    return (await this.list('commits')).filter(commit => commit.repoId === repoId);
+  }
+
+  async clear() {
+    for (const kind of Object.keys(NATIVE_KINDS)) {
+      for (const record of await this.list(kind)) await this.delete(kind, record.id);
+    }
+  }
+}
+
 export function createMemoryVersionStore() {
   const data = { repos: new Map(), commits: new Map(), trees: new Map(), blobs: new Map() };
   const copy = record => record === undefined ? undefined : structuredClone(record);
@@ -90,6 +194,7 @@ let sharedStore;
 
 export function openVersionStore() {
   if (sharedStore) return sharedStore;
-  sharedStore = typeof indexedDB === 'undefined' ? createMemoryVersionStore() : new IndexedVersionStore();
+  if (nativeStorage) sharedStore = new NativeVersionStore();
+  else sharedStore = typeof indexedDB === 'undefined' ? createMemoryVersionStore() : new IndexedVersionStore();
   return sharedStore;
 }

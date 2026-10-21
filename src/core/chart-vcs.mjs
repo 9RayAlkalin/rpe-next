@@ -445,7 +445,6 @@ function mergeObject(base, ours, theirs, path, conflicts) {
 
 function arrayConfig(path) {
   const last = path.at(-1);
-  if (last === 'judgeLineList') return { keyOf: line => String(line?.Name ?? ''), sortByTime: false };
   if (last === 'BPMList') return { keyOf: entry => canonicalJson(entry?.startTime), sortByTime: true };
   if (last === 'notes') return { keyOf: note => `${note?.type}|${canonicalJson(note?.startTime)}|${note?.positionX}|${note?.above ?? 1}`, sortByTime: true };
   if (last === 'markers') return { keyOf: marker => String(marker?.time ?? ''), sortByTime: true };
@@ -470,6 +469,152 @@ function groupKeyed(items, keyOf) {
     groups.set(`${raw}#${occurrence}`, item);
   }
   return groups;
+}
+
+function lineName(line) {
+  return String(line?.Name ?? '');
+}
+
+function lineWithoutName(line) {
+  if (!line || typeof line !== 'object' || Array.isArray(line)) return line;
+  const copy = { ...line };
+  delete copy.Name;
+  return copy;
+}
+
+function matchLineIndices(base, branch) {
+  const used = new Set();
+  const matches = new Map();
+  const match = predicate => {
+    for (let branchIndex = 0; branchIndex < branch.length; branchIndex++) {
+      if (matches.has(branchIndex)) continue;
+      for (let baseIndex = 0; baseIndex < base.length; baseIndex++) {
+        if (used.has(baseIndex) || !predicate(base[baseIndex], branch[branchIndex])) continue;
+        used.add(baseIndex);
+        matches.set(branchIndex, baseIndex);
+        break;
+      }
+    }
+  };
+  match((left, right) => deepEqual(left, right));
+  match((left, right) => deepEqual(lineWithoutName(left), lineWithoutName(right)));
+  match((left, right) => lineName(left) === lineName(right));
+  return { matches, used };
+}
+
+function invertLineMatches(matches) {
+  const result = new Map();
+  for (const [branchIndex, baseIndex] of matches) result.set(baseIndex, branchIndex);
+  return result;
+}
+
+function chooseLineSource(merged, ourLine, theirLine, ourIndex, theirIndex) {
+  if (deepEqual(merged, ourLine)) return { branch: 'ours', index: ourIndex };
+  if (deepEqual(merged, theirLine)) return { branch: 'theirs', index: theirIndex };
+  if (deepEqual(merged?.father, ourLine?.father)) return { branch: 'ours', index: ourIndex };
+  if (deepEqual(merged?.father, theirLine?.father)) return { branch: 'theirs', index: theirIndex };
+  return { branch: 'ours', index: ourIndex };
+}
+
+function mergeJudgeLines(base, ours, theirs, path, conflicts) {
+  const ourMatch = matchLineIndices(base, ours);
+  const theirMatch = matchLineIndices(base, theirs);
+  const ourByBase = invertLineMatches(ourMatch.matches);
+  const theirByBase = invertLineMatches(theirMatch.matches);
+  const ourAddedIndices = ours.map((_, index) => index).filter(index => !ourMatch.matches.has(index));
+  const theirAddedIndices = theirs.map((_, index) => index).filter(index => !theirMatch.matches.has(index));
+  const addedMatch = matchLineIndices(
+    ourAddedIndices.map(index => ours[index]),
+    theirAddedIndices.map(index => theirs[index])
+  );
+  const addedByOur = invertLineMatches(addedMatch.matches);
+  const pairedTheir = new Set(addedByOur.values());
+  const entries = [];
+  const add = entry => {
+    entry.index = entries.length;
+    entries.push(entry);
+    return entry;
+  };
+
+  for (let baseIndex = 0; baseIndex < base.length; baseIndex++) {
+    const ourIndex = ourByBase.get(baseIndex);
+    const theirIndex = theirByBase.get(baseIndex);
+    const hasOurs = ourIndex !== undefined, hasTheirs = theirIndex !== undefined;
+    const baseLine = base[baseIndex];
+    if (hasOurs && hasTheirs) {
+      const ourLine = ours[ourIndex], theirLine = theirs[theirIndex];
+      const merged = mergeValue(baseLine, ourLine, theirLine, [...path, entries.length], conflicts);
+      add({ identity: `base:${baseIndex}`, line: merged, baseIndex, ourIndex, theirIndex, source: chooseLineSource(merged, ourLine, theirLine, ourIndex, theirIndex) });
+    } else if (hasOurs) {
+      const ourLine = ours[ourIndex];
+      if (!deepEqual(ourLine, baseLine)) {
+        conflicts.push(mergeConflict([...path, entries.length], baseLine, ourLine, undefined, true, false));
+        add({ identity: `base:${baseIndex}`, line: cloneValue(ourLine), baseIndex, ourIndex, source: { branch: 'ours', index: ourIndex } });
+      }
+    } else if (hasTheirs) {
+      const theirLine = theirs[theirIndex];
+      if (!deepEqual(theirLine, baseLine)) {
+        conflicts.push(mergeConflict([...path, entries.length], baseLine, undefined, theirLine, false, true));
+        add({ identity: `base:${baseIndex}`, line: cloneValue(theirLine), baseIndex, theirIndex, source: { branch: 'theirs', index: theirIndex } });
+      }
+    }
+  }
+
+  const ourAddedIdentity = new Map(), theirAddedIdentity = new Map();
+  for (let position = 0; position < ourAddedIndices.length; position++) {
+    const ourIndex = ourAddedIndices[position], paired = addedByOur.get(position);
+    if (paired !== undefined) {
+      const theirIndex = theirAddedIndices[paired], identity = `added:${ourIndex}`;
+      const ourLine = ours[ourIndex], theirLine = theirs[theirIndex];
+      const merged = deepEqual(ourLine, theirLine)
+        ? cloneValue(ourLine)
+        : mergeValue(undefined, ourLine, theirLine, [...path, entries.length], conflicts);
+      ourAddedIdentity.set(ourIndex, identity);
+      theirAddedIdentity.set(theirIndex, identity);
+      add({ identity, line: merged, ourIndex, theirIndex, source: chooseLineSource(merged, ourLine, theirLine, ourIndex, theirIndex) });
+    } else {
+      const identity = `ours:${ourIndex}`;
+      ourAddedIdentity.set(ourIndex, identity);
+      add({ identity, line: cloneValue(ours[ourIndex]), ourIndex, source: { branch: 'ours', index: ourIndex } });
+    }
+  }
+  for (let position = 0; position < theirAddedIndices.length; position++) {
+    if (pairedTheir.has(position)) continue;
+    const theirIndex = theirAddedIndices[position], identity = `theirs:${theirIndex}`;
+    theirAddedIdentity.set(theirIndex, identity);
+    add({ identity, line: cloneValue(theirs[theirIndex]), theirIndex, source: { branch: 'theirs', index: theirIndex } });
+  }
+
+  const identityOf = (branch, index) => {
+    if (branch === 'ours') {
+      const baseIndex = ourMatch.matches.get(index);
+      return baseIndex !== undefined ? `base:${baseIndex}` : ourAddedIdentity.get(index) ?? `ours:${index}`;
+    }
+    const baseIndex = theirMatch.matches.get(index);
+    return baseIndex !== undefined ? `base:${baseIndex}` : theirAddedIdentity.get(index) ?? `theirs:${index}`;
+  };
+  const resultIndex = new Map(entries.map(entry => [entry.identity, entry.index]));
+  for (const entry of entries) {
+    if (!entry.line || typeof entry.line !== 'object' || Array.isArray(entry.line)) continue;
+    let parentIndex = -1;
+    const source = entry.source;
+    const sourceLine = source?.branch === 'ours' ? ours[source.index] : theirs[source?.index];
+    const father = Number(sourceLine?.father);
+    if (father === -1) { entry.line.father = -1; continue; }
+    if (Number.isInteger(father) && father >= 0) {
+      const candidate = resultIndex.get(identityOf(source.branch, father));
+      if (candidate !== undefined && candidate !== entry.index) parentIndex = candidate;
+    }
+    if (parentIndex === -1 && entry.baseIndex !== undefined) {
+      const baseFather = Number(base[entry.baseIndex]?.father);
+      if (Number.isInteger(baseFather) && baseFather >= 0) {
+        const candidate = resultIndex.get(`base:${baseFather}`);
+        if (candidate !== undefined && candidate !== entry.index) parentIndex = candidate;
+      }
+    }
+    entry.line.father = parentIndex;
+  }
+  return entries.map(entry => entry.line);
 }
 
 function mergeKeyedArray(base, ours, theirs, keyOf, path, conflicts) {
@@ -500,6 +645,7 @@ function mergeKeyedArray(base, ours, theirs, keyOf, path, conflicts) {
 }
 
 function mergeArray(base, ours, theirs, path, conflicts) {
+  if (path.at(-1) === 'judgeLineList') return mergeJudgeLines(base, ours, theirs, path, conflicts);
   const config = arrayConfig(path);
   if (config) return mergeKeyedArray(base, ours, theirs, config.keyOf, path, conflicts);
   if (base.length === ours.length && base.length === theirs.length) {

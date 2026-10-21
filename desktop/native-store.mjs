@@ -12,7 +12,7 @@ const sha = value => createHash('sha256').update(value).digest('hex');
 const digest = async path => { const hash = createHash('sha256'); for await (const chunk of createReadStream(path)) hash.update(chunk); return hash.digest('hex'); };
 const hashPattern = /^[a-f0-9]{64}$/;
 const uuidPattern = /^[a-f0-9-]{36}$/;
-const kinds = new Set(['projects', 'drafts', 'editor-skins', 'note-skins', 'mods', 'preferences']);
+const kinds = new Set(['projects', 'drafts', 'editor-skins', 'note-skins', 'mods', 'preferences', 'version-repos', 'version-commits', 'version-trees', 'version-blobs']);
 const failure = (name, message, fields = {}) => Object.assign(new Error(message), { name, ...fields });
 const inside = (parent, child) => { const path = relative(parent, child); return path === '' || !isAbsolute(path) && path !== '..' && !path.startsWith('..' + (process.platform === 'win32' ? '\\' : '/')); };
 
@@ -37,7 +37,7 @@ export class NativeStore {
   async init() {
     try {
       await mkdir(this.root, { recursive: true }); this.root = await realpath(this.root);
-      for (const directory of ['projects', 'drafts', 'editor-skins', 'note-skins', 'mods', 'preferences', 'blobs', 'tmp', 'tombstones', 'migration']) {
+      for (const directory of [...kinds, 'blobs', 'tmp', 'tombstones', 'migration']) {
         const path = join(this.root, directory); await mkdir(path, { recursive: true });
         if ((await lstat(path)).isSymbolicLink()) throw failure('StorageIntegrityError', '谱面库子目录不能是符号链接');
       }

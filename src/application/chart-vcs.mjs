@@ -35,6 +35,12 @@ function dirtyWorkingTree(message = '工作区有未提交的更改，此操作�
   return error;
 }
 
+function equalBytes(left, right) {
+  if (!left || !right || left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index++) if (left[index] !== right[index]) return false;
+  return true;
+}
+
 export class ChartRepository {
   constructor(store, repoId, { now = () => Date.now() } = {}) {
     this.store = store;
@@ -722,17 +728,53 @@ export class ChartRepository {
     if (!bundle || bundle.format !== VCS_FORMAT) throw new Error('不是有效的谱面版本仓库包');
     if (Number(bundle.version) > VCS_VERSION) throw new Error(`仓库包版本 ${bundle.version} 高于当前支持的版本 ${VCS_VERSION}`);
     if (!Array.isArray(bundle.commits) || !Array.isArray(bundle.trees) || !Array.isArray(bundle.blobs)) throw new Error('仓库包缺少提交、树或对象数据');
-    if (bundle.commits.some(commit => !commit?.id || !commit.tree || !Array.isArray(commit.parents ?? []))) throw new Error('仓库包包含无效的提交记录');
-    if (bundle.trees.some(tree => !tree?.id || !tree.chart)) throw new Error('仓库包包含无效的树对象');
-    if (bundle.blobs.some(blob => !Array.isArray(blob) || blob.length !== 2)) throw new Error('仓库包包含无效的对象数据');
+    if (bundle.commits.some(commit => typeof commit?.id !== 'string' || typeof commit.tree !== 'string' || !Array.isArray(commit.parents ?? []))) throw new Error('仓库包包含无效的提交记录');
+    if (bundle.trees.some(tree => typeof tree?.id !== 'string')) throw new Error('仓库包包含无效的树对象');
+    if (bundle.blobs.some(blob => !Array.isArray(blob) || blob.length !== 2 || typeof blob[0] !== 'string' || typeof blob[1] !== 'string')) throw new Error('仓库包包含无效的对象数据');
+
+    const blobs = new Map();
+    for (const [id, text] of bundle.blobs) {
+      let bytes;
+      try { bytes = base64ToBytes(text); } catch { throw new Error(`仓库包对象无法解码：${id}`); }
+      if (await sha256Hex(bytes) !== id) throw new Error(`仓库包对象校验失败：${id}`);
+      if (blobs.has(id) && !equalBytes(blobs.get(id), bytes)) throw new Error(`仓库包对象重复且内容不一致：${id}`);
+      blobs.set(id, bytes);
+    }
+    const trees = new Map();
+    for (const tree of bundle.trees) {
+      if (!tree || typeof tree.chart !== 'string' || !Array.isArray(tree.assets) || !Array.isArray(tree.folders) || typeof tree.chartName !== 'string') throw new Error('仓库包包含无效的树对象');
+      const { id, ...body } = tree;
+      if (await sha256Hex(canonicalJson(body)) !== id) throw new Error(`仓库包树对象校验失败：${id}`);
+      if (trees.has(id)) throw new Error(`仓库包包含重复的树对象：${id}`);
+      trees.set(id, tree);
+    }
+    const sourceCommits = new Map();
+    for (const commit of bundle.commits) {
+      if (sourceCommits.has(commit.id)) throw new Error(`仓库包包含重复的提交：${commit.id}`);
+      sourceCommits.set(commit.id, commit);
+    }
+    for (const commit of bundle.commits) {
+      if (!trees.has(commit.tree) && !(await this.store.get('trees', commit.tree))) throw new Error(`仓库包提交缺少树对象：${commit.id}`);
+      for (const parent of commit.parents ?? []) if (!sourceCommits.has(parent)) throw new Error(`仓库包提交缺少父提交：${parent}`);
+    }
+    for (const tree of trees.values()) {
+      for (const id of [tree.chart, ...tree.assets.map(entry => entry?.blob)]) {
+        if (typeof id !== 'string' || (!blobs.has(id) && !(await this.store.get('blobs', id)))) throw new Error(`仓库包树缺少对象：${id ?? '未知'}`);
+      }
+    }
+
     const repo = await this.read();
-    for (const [id, text] of bundle.blobs ?? []) {
-      const bytes = base64ToBytes(text);
-      if (!(await this.store.get('blobs', id))) await this.store.put('blobs', { id, bytes });
+    for (const [id, bytes] of blobs) {
+      const existing = await this.store.get('blobs', id);
+      if (existing && !equalBytes(existing.bytes, bytes)) throw new Error(`版本对象与现有数据冲突：${id}`);
+      if (!existing) await this.store.put('blobs', { id, bytes });
       this.knownBlobs.add(id);
     }
-    for (const tree of bundle.trees ?? []) await this.store.put('trees', tree);
-    const sourceCommits = new Map((bundle.commits ?? []).map(commit => [commit.id, commit]));
+    for (const tree of trees.values()) {
+      const existing = await this.store.get('trees', tree.id);
+      if (existing && canonicalJson(existing) !== canonicalJson(tree)) throw new Error(`版本树对象与现有数据冲突：${tree.id}`);
+      if (!existing) await this.store.put('trees', tree);
+    }
     const mapped = new Map();
     const ordered = [];
     const visited = new Set();
@@ -751,7 +793,9 @@ export class ChartRepository {
       };
       const id = await sha256Hex(canonicalJson(payload));
       mapped.set(commit.id, id);
-      if (!(await this.store.get('commits', id))) await this.store.put('commits', { id, ...payload });
+      const existing = await this.store.get('commits', id);
+      if (existing && canonicalJson(existing) !== canonicalJson({ id, ...payload })) throw new Error(`版本提交与现有数据冲突：${id}`);
+      if (!existing) await this.store.put('commits', { id, ...payload });
     }
     const addedBranches = [], addedTags = [];
     const uniqueName = (collection, name) => {

@@ -21,7 +21,7 @@ export class StoragePanel {
     const title = document.createElement('h3'); title.textContent = '本地存储与外部备份';
     this.status = document.createElement('p'); this.status.id = 'storage-status'; this.status.setAttribute('role', 'status');
     const hint = document.createElement('p'); hint.className = 'hint'; hint.textContent = '谱面库与自动备份属于同一份站点数据。持久化可降低浏览器回收风险，无法抵御主动清除网站数据；请保留外部 PEZ 备份。不同浏览器或地址的谱面库相互独立。';
-    if (nativeStorage) hint.textContent = '桌面设置统一保存在当前谱面库的 preferences 目录，更新或移动程序后会自动沿用，无需复制程序文件夹。谱面库使用独立文件与去重素材保存，索引损坏可重建。恢复记录与回收站仍在库内，请另存独立文件夹备份或 PEZ。首次迁移保留旧数据库。';
+    if (nativeStorage) hint.textContent = '桌面设置统一保存在当前谱面库的 preferences 目录，更新或移动程序后会自动沿用，无需复制程序文件夹。谱面库使用独立文件与去重素材保存，索引损坏可重建。版本历史随谱面库保存，完整库备份与搬迁会一并包含。恢复记录与回收站仍在库内，请另存独立文件夹备份或 PEZ。首次迁移保留旧数据库。';
     const actions = document.createElement('div'); actions.className = 'storage-actions';
     const button = (label, id, run) => { const node = document.createElement('button'); node.type = 'button'; node.id = id; node.textContent = label; node.onclick = async () => { node.disabled = true; try { await run(); } catch (error) { reportError(error); } finally { node.disabled = false; } }; actions.append(node); return node; };
     this.persist = button('申请持久化保护', 'storage-persist', async () => { const result = await requestPersistence(); notify(result === true ? '已获得持久化存储保护，仍请保留外部备份' : result === false ? '浏览器未批准持久化，可稍后重试；请导出外部备份' : '当前环境不支持持久化申请，请保留外部备份', result === true ? 'success' : 'warning'); await this.refresh(); });

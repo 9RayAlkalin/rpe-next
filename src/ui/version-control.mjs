@@ -212,6 +212,10 @@ export class VersionControlPanel {
     }
     await this.run(async () => {
       await this.ensure();
+      if (!this.store?.ephemeral) {
+        try { await this.actions.persistRepoId?.(); }
+        catch (error) { this.notify(`版本库标识未能写入项目：${error.message}`, 'warning', 7000); }
+      }
       await this.refresh();
     });
   }

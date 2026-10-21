@@ -575,6 +575,11 @@ const storagePanel = new StoragePanel(settingsDialog, { reportError, notify, fil
   if (hasDocument && (session.history.dirty || assetDirty)) { notify('请先保存或放弃当前谱面的修改，再切换谱面库', 'warning'); return false; }
   return true;
 } });
+async function persistVersionRepoId() {
+  if (!libraryProject?.id || libraryProject.vcsId) return;
+  libraryProject = await storeProject({ ...libraryProject, vcsId: versionRepoId });
+  storagePanel.refresh().catch(() => {});
+}
 versionControl = new VersionControlPanel(element('#version-control-panel'), {
   getChart: () => session.chart,
   getAssets: () => assets,
@@ -587,6 +592,7 @@ versionControl = new VersionControlPanel(element('#version-control-panel'), {
 }, {
   notify, reportError,
   loadSnapshot: (snapshot, options) => loadVersionSnapshot(snapshot, options),
+  persistRepoId: persistVersionRepoId,
 });
 document.addEventListener('rpen-preference-error', event => reportError(event.detail));
 document.addEventListener('rpen-library-refresh', () => home.refresh().catch(reportError));
@@ -971,6 +977,7 @@ function replaceChart(chart, name, nextAssets = new Map(), nextFolders = [], opt
   hitSounds.stop(); hitSounds.onlyCurrentLine = false; element('#mute-current-line').setAttribute('aria-pressed', 'false'); element('#mute-current-line').classList.remove('active'); images.clear(); libraryProject = null;
   session.removeEventListener('change', renderSession);
   session = new EditorSession(chart);
+  if (options.dirty) session.history.markUnsaved();
   clipboardHistory.attach(session);
   lastSelectionSignature = '';
   activatePane('chart');
@@ -983,7 +990,7 @@ function replaceChart(chart, name, nextAssets = new Map(), nextFolders = [], opt
   assets = nextAssets;
   for (const renderer of [preview, realtimePreview]) renderer.noisePreview.gpu?.clearSkins();
   assetFolders = new Set(nextFolders ?? []);
-  assetDirty = false;
+  assetDirty = Boolean(options.dirty);
   chartName = name;
   resetEditClock(chart);
   hitSounds.setProject(chart, assets, name);
@@ -1029,7 +1036,7 @@ function loadVersionSnapshot(snapshot, { force = false } = {}) {
   const run = () => loadCandidate(
     { chart: snapshot.chart, name: snapshot.chartName ?? chartName, project },
     snapshot.assets,
-    { preserveRepoId: true, folders: snapshot.folders }
+    { preserveRepoId: true, folders: snapshot.folders, dirty: true }
   ).catch(reportError);
   if (force || !hasDocument || (!session.history.dirty && !assetDirty)) return run();
   return new Promise(resolve => {

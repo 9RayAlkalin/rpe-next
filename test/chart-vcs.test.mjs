@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createChart, createNote, parseChart, serializeChart } from '../src/core/chart.mjs';
-import { diffCharts, diffTrees, graphLayout, mergeCharts } from '../src/core/chart-vcs.mjs';
+import { bytesToBase64, diffCharts, diffTrees, graphLayout, mergeCharts } from '../src/core/chart-vcs.mjs';
 import { ChartRepository } from '../src/application/chart-vcs.mjs';
 import { createMemoryVersionStore } from '../src/platform/version-store.mjs';
 
@@ -49,6 +49,26 @@ test('三路合并按音符标识组合双方新增', () => {
   assert.equal(result.chart.judgeLineList[0].notes.length, 2);
   const beats = result.chart.judgeLineList[0].notes.map(note => note.startTime[0] + note.startTime[1] / note.startTime[2]);
   assert.deepEqual(beats, [...beats].sort((left, right) => left - right));
+});
+
+test('合并判定线删除与改名后重映射父线，避免自引用', () => {
+  const line = (name, father = -1) => {
+    const value = structuredClone(createChart().judgeLineList[0]);
+    value.Name = name; value.father = father; value.notes = [];
+    return value;
+  };
+  const base = createChart();
+  base.judgeLineList = [line('A'), line('B', 0), line('C', 1)];
+  const renamed = structuredClone(base);
+  renamed.judgeLineList[1].Name = 'B2';
+  const deleted = structuredClone(base);
+  deleted.judgeLineList = deleted.judgeLineList.slice(1);
+  const result = mergeCharts(base, deleted, renamed);
+  assert.deepEqual(result.conflicts, []);
+  assert.deepEqual(result.chart.judgeLineList.map(value => value.Name), ['B2', 'C']);
+  assert.equal(result.chart.judgeLineList[0].father, -1);
+  assert.equal(result.chart.judgeLineList[1].father, 0);
+  assert.ok(result.chart.judgeLineList.every((value, index) => value.father === -1 || value.father < index));
 });
 
 test('提交、状态与历史保持线性', async () => {
@@ -174,6 +194,32 @@ test('标签与仓库包导入导出', async () => {
   assert.ok(Object.hasOwn(imported.repo.tags, 'v1'));
   const checkedOut = await target.checkoutBranch('main', { snapshot: null });
   assert.equal(checkedOut.snapshot.chart.META.name, 'A');
+});
+
+test('导入仓库包校验树对象哈希，不覆盖已有共享对象', async () => {
+  const store = createMemoryVersionStore();
+  const source = makeRepo(store, 'source');
+  await initial(source, chartNamed('A'));
+  const bundle = await source.exportBundle();
+  const tree = bundle.trees[0], original = structuredClone(tree);
+  tree.chartName = 'tampered.json';
+  const target = makeRepo(store, 'target');
+  await target.init();
+  await assert.rejects(target.importBundle(bundle), /树对象校验失败/);
+  assert.deepEqual(await store.get('trees', original.id), original);
+  assert.equal((await source.headSnapshot()).chart.META.name, 'A');
+});
+
+test('导入仓库包校验对象哈希，不接受被替换的素材字节', async () => {
+  const store = createMemoryVersionStore();
+  const source = makeRepo(store, 'source');
+  await initial(source, chartNamed('A'));
+  const bundle = await source.exportBundle();
+  const [id] = bundle.blobs[0];
+  bundle.blobs[0] = [id, bytesToBase64(new TextEncoder().encode('tampered'))];
+  const target = makeRepo(store, 'target');
+  await target.init();
+  await assert.rejects(target.importBundle(bundle), /对象校验失败/);
 });
 
 test('谱面差异统计判定线、BPM、事件与其他数据', () => {

@@ -182,6 +182,7 @@ tokens 是初始默认值，不是只能读取的常量。可在 `@root` 状态/
 | `context-menu` | `.timeline-context-menu` |
 | `line-overview` | `.line-switcher`，Ctrl+滚轮线缩略图 |
 | `clipboard-history` | `#clipboard-results` |
+| `version-control-tool` / `version-control-panel` | 谱面版本控制入口按钮 / 右侧版本控制页面根节点 |
 | `root` | 文档根；可附加状态属性及伪类 |
 | `line-controls` / `beat-controls` | 线号组合 / 拍数输入组合 |
 | `offset-control` / `rate-control` / `pitch-control` | 延迟 / 倍速 / 保调标签及其控件 |
@@ -285,7 +286,7 @@ play rewind view-toggle
 undo redo copy cut paste mirror delete
 metadata bpm assets audio-analysis-tool noise-areas-tool
 curve-notes curve-trajectory text-lines-tool noise-fit-tool noise-tracking-tool
-multi-line-tool diagnose history-panel collaboration-tool
+multi-line-tool diagnose history-panel collaboration-tool version-control-tool
 seek notes-only game-ui reset-camera mute-current-line
 tools view-controls view-buttons line-controls beat-controls
 offset-control rate-control pitch-control time-readouts multi-line-controls

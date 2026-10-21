@@ -866,6 +866,7 @@
       "items": [
         "diagnose",
         "history-panel",
+        "version-control-tool",
         "collaboration-tool"
       ]
     }

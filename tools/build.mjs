@@ -12,6 +12,7 @@ for (const name of ['src/core', 'src/application', 'src/platform', 'src/ui', 'as
   if (pages && name === 'protocols') {
     await mkdir(join(output, name), { recursive: true });
     for (const protocol of ['EDITOR-SKIN', 'MOD', 'GLOBAL-EVENTS']) await cp(join(root, name, protocol + '-PROTOCOL.zh-CN.md'), join(output, name, protocol + '-PROTOCOL.zh-CN.md'));
+    await cp(join(root, name, 'CHART-VERSION-CONTROL.zh-CN.md'), join(output, name, 'CHART-VERSION-CONTROL.zh-CN.md'));
   } else await cp(join(root, name), join(output, name), { recursive: true });
 }
 await writeFile(join(output, '.nojekyll'), '');

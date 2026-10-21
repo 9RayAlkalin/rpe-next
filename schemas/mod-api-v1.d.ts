@@ -116,6 +116,7 @@ export interface Editor {
   trajectoryPanel: any; textLinesPanel: any; noiseFitPanel: any;
   noiseTrackingPanel: any; multiEdit: any; batchControls: any; collaboration: any;
   globalEvents: any; globalEventRegistry: any; openGlobalEvents(): void;
+  versionControl: any;
   chartSeconds(): number; offsetSeconds(): number; currentBeat(): number;
   invalidate(): void; render(): void;
   notify(message: string, level?: string): void;

@@ -35,6 +35,7 @@ export class History {
   }
 
   markSaved(document = this.document) { this.savedDocument = document; }
+  markUnsaved() { this.savedDocument = null; }
   commitAuxiliary(label, auxiliary) {
     this.undoStack.push({ label, before: this.document, after: this.document, auxiliary, auxiliaryOnly: true });
     if (this.undoStack.length > this.limit) this.undoStack.shift();

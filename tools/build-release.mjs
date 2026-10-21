@@ -17,7 +17,7 @@ if (!['win32', 'darwin', 'linux'].includes(platform) || !['x64', 'arm64'].includ
 const metadata = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
 const sourceCommit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
 const tracked = ['desktop', 'src/core', 'src/application', 'src/platform', 'src/ui', 'assets', 'index.html', 'styles.css', 'LICENSE', 'NOTICE',
-  'protocols/EDITOR-SKIN-PROTOCOL.zh-CN.md', 'protocols/MOD-PROTOCOL.zh-CN.md', 'protocols/GLOBAL-EVENTS-PROTOCOL.zh-CN.md', 'schemas',
+  'protocols/EDITOR-SKIN-PROTOCOL.zh-CN.md', 'protocols/MOD-PROTOCOL.zh-CN.md', 'protocols/GLOBAL-EVENTS-PROTOCOL.zh-CN.md', 'protocols/CHART-VERSION-CONTROL.zh-CN.md', 'schemas',
   'tools/smoke-mods.mjs', 'tools/smoke-native.mjs', 'tools/smoke-asset-library.mjs', 'tools/smoke-settings-renderer.js', 'tools/smoke-saving.mjs'];
 const serverFiles = ['collaboration-server/server.mjs', 'collaboration-server/asset-store.mjs', 'collaboration-server/manager.cjs',
   'collaboration-server/diagnostics.cjs', 'collaboration-server/preload.cjs', 'collaboration-server/manager.html',

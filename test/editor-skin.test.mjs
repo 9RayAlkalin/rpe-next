@@ -44,6 +44,9 @@ test('生成的机器可读目录与运行时约定一致', async () => {
   assert.ok(catalogue.panels.includes('noise-properties'));
   assert.equal(catalogue.aliases['beat-display'], '#beat-display'); assert.equal(catalogue.aliases.clock, '#clock');
   assert.ok(catalogue.movableCommands.includes('time-readouts'));
+  assert.equal(catalogue.aliases['version-control-tool'], '#version-control-tool');
+  assert.equal(catalogue.aliases['version-control-panel'], '#version-control-panel');
+  assert.ok(catalogue.movableCommands.includes('version-control-tool')); assert.ok(catalogue.panels.includes('version-control'));
   const schema = JSON.parse(await readFile(new URL('../schemas/editor-skin-v1.schema.json', import.meta.url)));
   assert.equal(schema.properties.version.const, 1);
 });

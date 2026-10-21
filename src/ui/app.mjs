@@ -16,6 +16,7 @@ import { directoryEntries, uploadedEntries, scanMigration } from '../platform/mi
 import { readProject, readPreferences, storePreferences, storeProject, readClipboardHistory, storeClipboardHistory, subscribeLibrary } from '../platform/library.mjs';
 import { storageFailure, requestPersistence } from '../platform/storage.mjs';
 import { StoragePanel, noteLibrarySave, noteExternalBackup } from './storage-panel.mjs';
+import { VersionControlPanel } from './version-control.mjs';
 import { migrationDialog } from './migration-dialog.mjs';
 import { LinePanel } from './line-panel.mjs';
 import { AssetLibraryPanel } from './asset-library.mjs';
@@ -145,6 +146,8 @@ let lastDraftDocument;
 let lastDraftAssets = [], lastDraftFolders = [];
 let preferences = migratePreferences();
 let libraryProject = null;
+let versionRepoId = crypto.randomUUID();
+let versionControl = null;
 let persistenceRequested = false;
 const manualSaves = new ManualSaveQueue(storeProject);
 let editorPreferences = { ...DEFAULT_EDITOR_PREFERENCES, ...readEditorPreferences() };
@@ -489,7 +492,7 @@ timeline.onDragScroll = seconds => playback.seek(audio.time + seconds);
 const autoSave = new AutoSaveClock(async () => {
   const current = session; const document = current.chart; const snapshot = { ...document }; delete snapshot.chartTime;
   const media = [...assets], folders = [...assetFolders];
-  await saveSnapshot(libraryProject?.id ?? recoveryId, chartName, snapshot, media, editorPreferences.autoSaveLimit ?? preferences.settings.autoSaveLimit, { lineIndex: current.lineIndex });
+  await saveSnapshot(libraryProject?.id ?? recoveryId, chartName, snapshot, media, editorPreferences.autoSaveLimit ?? preferences.settings.autoSaveLimit, { lineIndex: current.lineIndex, vcsId: versionRepoId });
   if (current === session) { lastDraftDocument = document; lastDraftAssets = media; lastDraftFolders = folders; status('自动备份已保存（包含音乐、曲绘与编辑位置）'); notify('自动备份已保存', 'success'); }
 }, error => { const message = `自动备份失败：${storageFailure(error)}，请导出 PEZ 保留当前修改`; status(message); notify(message, 'error', 7000); });
 timeline.onWheel = event => {
@@ -576,6 +579,27 @@ const storagePanel = new StoragePanel(settingsDialog, { reportError, notify, fil
   if (hasDocument && (session.history.dirty || assetDirty)) { notify('请先保存或放弃当前谱面的修改，再切换谱面库', 'warning'); return false; }
   return true;
 } });
+async function persistVersionRepoId() {
+  if (!libraryProject?.id || libraryProject.vcsId) return;
+  const current = session, repoId = versionRepoId, project = libraryProject;
+  const saved = await storeProject({ ...project, vcsId: repoId });
+  if (session === current && libraryProject?.id === project.id && versionRepoId === repoId) libraryProject = saved;
+  storagePanel.refresh().catch(() => {});
+}
+versionControl = new VersionControlPanel(element('#version-control-panel'), {
+  getChart: () => session.chart,
+  getAssets: () => assets,
+  getFolders: () => assetFolders,
+  getChartName: () => chartName,
+  getRepoId: () => versionRepoId,
+  isDirty: () => session.history.dirty || assetDirty,
+  isPersisted: () => Boolean(libraryProject?.id),
+  hasDocument: () => hasDocument && !atHome,
+}, {
+  notify, reportError,
+  loadSnapshot: (snapshot, options) => loadVersionSnapshot(snapshot, options),
+  persistRepoId: persistVersionRepoId,
+});
 document.addEventListener('rpen-preference-error', event => reportError(event.detail));
 document.addEventListener('rpen-library-refresh', () => home.refresh().catch(reportError));
 subscribeLibrary(change => {
@@ -682,6 +706,7 @@ function activatePane(name) {
   for (const panel of document.querySelectorAll('[data-panel]')) panel.hidden = panel.dataset.panel !== name;
   for (const button of document.querySelectorAll('[data-pane]')) button.classList.toggle('active', button.dataset.pane === name);
   if (globalEvents.active && ['global-events', 'global-event-properties'].includes(name)) globalEvents.render();
+  if (name === 'version-control') versionControl?.open().catch(reportError);
   invalidate();
 }
 for (const button of document.querySelectorAll('[data-pane]')) button.onclick = () => {
@@ -932,18 +957,20 @@ function renderSession() {
       if (session.focus === 'events' && event?.trajectory) { curveEditorOpen = false; trajectoryPanel.open(event, selected.lineIndex, timeline.layer); }
       else activatePane(session.focus === 'events' ? 'events' : 'notes');
     }
-    else if (!['multi-line', 'lines', 'assets', 'collaboration'].includes(activePaneName)) activatePane('chart');
+    else if (!['multi-line', 'lines', 'assets', 'collaboration', 'version-control'].includes(activePaneName)) activatePane('chart');
   }
   const limits = previewLimitations(session.chart);
   element('#compatibility').textContent = '已使用原 RPE 音符素材与打击音；支持封面、静态纹理、多线与控制曲线。尚需原版逐帧对照。' + (limits.length ? `需进一步验证：${limits.join('、')}。` : '');
   invalidate();
   globalEvents.syncChrome();
+  versionControl?.tick?.();
 }
 
 session.addEventListener('change', renderSession);
 
-function replaceChart(chart, name, nextAssets = new Map(), nextFolders = []) {
+function replaceChart(chart, name, nextAssets = new Map(), nextFolders = [], options = {}) {
   assertChart(chart);
+  if (!options.preserveRepoId) { versionRepoId = crypto.randomUUID(); versionControl?.detach(); }
   if (eventSampler.active) eventSampler.finish(false);
   noiseEditor.reset();
   globalEvents.reset();
@@ -956,6 +983,7 @@ function replaceChart(chart, name, nextAssets = new Map(), nextFolders = []) {
   hitSounds.stop(); hitSounds.onlyCurrentLine = false; element('#mute-current-line').setAttribute('aria-pressed', 'false'); element('#mute-current-line').classList.remove('active'); images.clear(); libraryProject = null;
   session.removeEventListener('change', renderSession);
   session = new EditorSession(chart);
+  if (options.dirty) session.history.markUnsaved();
   clipboardHistory.attach(session);
   lastSelectionSignature = '';
   activatePane('chart');
@@ -968,7 +996,7 @@ function replaceChart(chart, name, nextAssets = new Map(), nextFolders = []) {
   assets = nextAssets;
   for (const renderer of [preview, realtimePreview]) { renderer.noisePreview.gpu?.clearSkins(); renderer.overflowNoisePreview?.gpu?.clearSkins(); renderer.overflowRevision++; }
   assetFolders = new Set(nextFolders ?? []);
-  assetDirty = false;
+  assetDirty = Boolean(options.dirty);
   chartName = name;
   resetEditClock(chart);
   hitSounds.setProject(chart, assets, name);
@@ -991,10 +1019,11 @@ function guardReplace(action) {
   else action();
 }
 
-async function loadCandidate(candidate, nextAssets) {
+async function loadCandidate(candidate, nextAssets, options = {}) {
   attachExternalEffects([candidate], nextAssets);
-  replaceChart(candidate.chart, candidate.name, nextAssets, candidate.project?.assetFolders ?? []);
+  replaceChart(candidate.chart, candidate.name, nextAssets, options.folders ?? candidate.project?.assetFolders ?? [], options);
   libraryProject = candidate.project ?? null;
+  if (candidate.project?.vcsId) versionRepoId = candidate.project.vcsId;
   syncProjectFolderButton();
   images.load(candidate.chart, assets, chartName, candidate.info);
   const references = resourceReferences(candidate.chart, assets, chartName, candidate.info);
@@ -1006,6 +1035,26 @@ async function loadCandidate(candidate, nextAssets) {
     if (Number.isInteger(view.lineIndex) && session.chart.judgeLineList?.[view.lineIndex]) session.selectLine(view.lineIndex);
   }
   if (session.chart === candidate.chart && candidate.chart.rpeNextLegacySource?.format === 'phigros-v3') notify(`官谱转换完成：${candidate.chart.judgeLineList.length} 条判定线，${candidate.chart.blockAreaList?.length ?? 0} 个噪域`, 'success');
+}
+
+function loadVersionSnapshot(snapshot, { force = false } = {}) {
+  const project = libraryProject;
+  const run = () => loadCandidate(
+    { chart: snapshot.chart, name: snapshot.chartName ?? chartName, project },
+    snapshot.assets,
+    { preserveRepoId: true, folders: snapshot.folders, dirty: true }
+  );
+  if (force || !hasDocument || (!session.history.dirty && !assetDirty)) return run();
+  return new Promise((resolve, reject) => {
+    showDialog('切换谱面？', '当前谱面有未保存修改。继续会放弃本次修改；可取消并保存到谱面库或导出 PEZ。自动备份仅在设定间隔到达后生成。');
+    const modal = element('#modal');
+    const apply = element('#modal-apply');
+    let done = false;
+    apply.hidden = false;
+    apply.textContent = '继续';
+    modal.addEventListener('close', () => { if (!done) { done = true; resolve(); } }, { once: true });
+    apply.onclick = () => { done = true; modal.close(); run().then(resolve, reject); };
+  });
 }
 
 async function loadMusic(bytes, name, updateMetadata = true, recordHistory = true) {
@@ -1077,7 +1126,7 @@ function save() {
   return manualSaves.save(savingSession, () => {
     const document = session.chart; const snapshot = { ...document }; delete snapshot.chartTime;
     const project = { ...(libraryProject ?? { id: crypto.randomUUID(), source: 'Next 本地项目', imported: Date.now() }),
-      chart: snapshot, chartName, assets: [...assets], assetFolders: [...assetFolders], bytes: [...assets.values()].reduce((sum, bytes) => sum + bytes.length, 0), updated: Date.now(), viewState: { lineIndex: session.lineIndex } };
+      chart: snapshot, chartName, vcsId: versionRepoId, assets: [...assets], assetFolders: [...assetFolders], bytes: [...assets.values()].reduce((sum, bytes) => sum + bytes.length, 0), updated: Date.now(), viewState: { lineIndex: session.lineIndex } };
     status('正在后台保存，可继续编辑…');
     return { document, project };
   }, ({ document, project }) => {
@@ -1169,7 +1218,7 @@ listen('#recover', async () => {
       try {
         const draft = await readDraft(entry.id);
         if (!draft) throw new Error('此备份已被轮替，请重新打开备份列表');
-        await loadCandidate({ chart: draft.chart, name: draft.name, project: { viewState: draft.viewState } }, new Map(draft.assets ?? []));
+        await loadCandidate({ chart: draft.chart, name: draft.name, project: { viewState: draft.viewState, vcsId: draft.viewState?.vcsId } }, new Map(draft.assets ?? []));
         libraryProject = null; session.history.savedDocument = null; renderSession();
       } catch (error) { reportError(error); }
     }); });
@@ -1381,6 +1430,7 @@ function renderHistoryPanel() {
   }
 }
 listen('#history-panel', () => { activatePane('history'); renderHistoryPanel(); });
+listen('#version-control-tool', () => activatePane('version-control'));
 listen('#clear-clipboard', () => { if (globalEvents.active) { globalEvents.document.editor.eventClipboard = []; globalEvents.document.editor.clipboardVisible = false; invalidate(); return; } noiseEditor.clipboard = null; clipboardHistory.clearCurrent(session); timeline.clipboardMode = {}; invalidate(); });
 const clipboardButton = document.createElement('button'); clipboardButton.id = 'clipboard-history'; clipboardButton.textContent = '剪贴板历史'; clipboardButton.title = '长按 Ctrl+V';
 element('[data-panel="chart"] .action-grid').append(clipboardButton);
@@ -1987,7 +2037,7 @@ const modEditor={
   get session(){return session;},get chart(){return session.chart;},get tempo(){return tempo;},get assets(){return assets;},get preferences(){return preferences;},get editorPreferences(){return editorPreferences;},get chartName(){return chartName;},
   get hasDocument(){return hasDocument&&!atHome;},get home(){return atHome;},get activePane(){return activePaneName;},
   get dirty(){return session.history.dirty||assetDirty;},get libraryProject(){return libraryProject;},get loop(){return loop;},set loop(value){loop=value;},
-  audio,playback,preview,realtimePreview,timeline,skin,images,hitSounds,editorSkins,noteSkins,noiseEditor,eventSampler,trajectoryPanel,textLinesPanel,noiseFitPanel,noiseTrackingPanel,multiEdit,batchControls,collaboration,globalEvents,globalEventRegistry,openGlobalEvents,
+  audio,playback,preview,realtimePreview,timeline,skin,images,hitSounds,editorSkins,noteSkins,noiseEditor,eventSampler,trajectoryPanel,textLinesPanel,noiseFitPanel,noiseTrackingPanel,multiEdit,batchControls,collaboration,globalEvents,globalEventRegistry,openGlobalEvents,versionControl,
   chartSeconds,offsetSeconds,currentBeat,invalidate,render:renderSession,notify,save,activatePane,
   commit:(label,chart)=>session.commit(label,chart),replace:(chart,name=chartName)=>replaceChart(chart,name),
   seek:(seconds,{music=false,pause=true}={})=>{playback.seek(seconds+(music?0:offsetSeconds()),pause);invalidate();},

@@ -1,10 +1,12 @@
 import { mkdir, cp, readFile, writeFile, rm } from 'node:fs/promises';
+import { statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const output = join(root, 'dist');
 const pages = process.argv.includes('--pages');
+const sourceFile = source => { try { return statSync(source).isDirectory() || !/\.(?:mts|ts|map)$/.test(source); } catch { return true; } };
 await rm(output, { recursive: true, force: true });
 await mkdir(output, { recursive: true });
 for (const name of ['src/core', 'src/application', 'src/platform', 'src/ui', 'assets', 'index.html', 'styles.css', 'LICENSE', 'NOTICE', 'protocols', 'schemas']) {
@@ -13,7 +15,7 @@ for (const name of ['src/core', 'src/application', 'src/platform', 'src/ui', 'as
     await mkdir(join(output, name), { recursive: true });
     for (const protocol of ['EDITOR-SKIN', 'MOD', 'GLOBAL-EVENTS']) await cp(join(root, name, protocol + '-PROTOCOL.zh-CN.md'), join(output, name, protocol + '-PROTOCOL.zh-CN.md'));
     await cp(join(root, name, 'CHART-VERSION-CONTROL.zh-CN.md'), join(output, name, 'CHART-VERSION-CONTROL.zh-CN.md'));
-  } else await cp(join(root, name), join(output, name), { recursive: true });
+  } else await cp(join(root, name), join(output, name), { recursive: true, filter: name.startsWith('src/') ? sourceFile : undefined });
 }
 await writeFile(join(output, '.nojekyll'), '');
 if (!pages) {

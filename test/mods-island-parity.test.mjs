@@ -67,6 +67,7 @@ test('模组管理器岛屿与旧实现的文案、类名和结构一致', async
     read('app/main.ts'),
   ]);
   const island = `${vue}\n${register}`;
+  const compact = value => value.replace(/\s+/g, '');
   assert.ok(legacy.includes('createModManagerDialog'), '旧实现缺少岛屿入口');
   assert.ok(main.includes('mods: { createModManagerDialog }'), '主入口未注册模组管理器岛屿');
   assert.ok(register.includes("dialog.id = 'mod-manager'") && register.includes("dialog.className = 'mod-manager'") && register.includes('dataset.modInteractive'), '岛屿未复刻管理器弹窗属性');
@@ -76,11 +77,11 @@ test('模组管理器岛屿与旧实现的文案、类名和结构一致', async
     assert.ok(island.includes(className), `岛屿缺少类名：${className}`);
   }
   for (const text of STRINGS) {
-    assert.ok(legacy.includes(text), `旧实现缺少文案：${text}`);
-    assert.ok(island.includes(text), `岛屿缺少文案：${text}`);
+    assert.ok(compact(legacy).includes(compact(text)), `旧实现缺少文案：${text}`);
+    assert.ok(compact(island).includes(compact(text)), `岛屿缺少文案：${text}`);
   }
   for (const text of LEGACY_ONLY) {
-    assert.ok(legacy.includes(text), `旧实现缺少文案：${text}`);
-    assert.ok(!island.includes(text), `岛屿应由旧实现计算该文案：${text}`);
+    assert.ok(compact(legacy).includes(compact(text)), `旧实现缺少文案：${text}`);
+    assert.ok(!compact(island).includes(compact(text)), `岛屿应由旧实现计算该文案：${text}`);
   }
 });

@@ -1,11 +1,13 @@
 import { cp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import vue from '@vitejs/plugin-vue';
 import { defineConfig, type Plugin } from 'vitest/config';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 const pristine = ['src/core', 'src/application', 'src/platform', 'src/ui', 'assets', 'styles.css', 'LICENSE', 'NOTICE', 'protocols', 'schemas', 'start.cmd', 'README.md'];
+const sourceFile = (source: string) => { try { return statSync(source).isDirectory() || !/\.(?:mts|ts|map)$/.test(source); } catch { return true; } };
 
 const appScript = '<script type="module" src="./src/ui/app.mjs"></script>';
 
@@ -30,7 +32,7 @@ function pristineModules(): Plugin {
     apply: 'build',
     async closeBundle() {
       const dist = join(root, 'dist');
-      for (const name of pristine) await cp(join(root, name), join(dist, name), { recursive: true });
+      for (const name of pristine) await cp(join(root, name), join(dist, name), { recursive: true, filter: name.startsWith('src/') ? sourceFile : undefined });
       await mkdir(join(dist, 'tools'), { recursive: true });
       await cp(join(root, 'tools/serve.mjs'), join(dist, 'tools/serve.mjs'));
       const metadata = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));

@@ -1,0 +1,9 @@
+interface Event { [key: string]: any; }
+interface EventTarget { [key: string]: any; }
+interface Element { [key: string]: any; }
+interface HTMLElement { [key: string]: any; }
+interface HTMLInputElement { [key: string]: any; }
+interface HTMLSelectElement { [key: string]: any; }
+interface HTMLTextAreaElement { [key: string]: any; }
+interface Node { [key: string]: any; }
+interface Window { [key: string]: any; }

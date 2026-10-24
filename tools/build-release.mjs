@@ -38,6 +38,7 @@ await mkdir(stage);
 const sourceZip = join(work, 'source.zip');
 execFileSync('git', ['archive', '--format=zip', '-0', '--output=' + sourceZip, 'HEAD', '--', ...sourcePaths], { cwd: root });
 await extractReleaseZip(sourceZip, stage);
+await cp(join(root, 'src'), join(stage, 'src'), { recursive: true, filter: source => !/\.(?:mts|ts|map)$/.test(source) });
 await verifyReleaseSourceDirectory(root, sourceCommit, sourcePaths, stage);
 await rm(sourceZip);
 if (kind === 'server') {

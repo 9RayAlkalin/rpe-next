@@ -15,3 +15,9 @@ examples/editor-skins/daybreak/
 Thumbs.db
 *.zip
 *.pez
+
+src/**/*.mjs
+!src/core/vendor/*.mjs
+src/**/*.d.mts
+src/**/*.d.ts
+!src/ui/dom-compat.d.ts

@@ -3,9 +3,11 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { spawnSync } from 'node:child_process';
+import { statSync } from 'node:fs';
 
 if (process.platform !== 'win32' || process.arch !== 'x64') throw new Error('当前打包脚本需要在 Windows x64 上运行。');
 const root = fileURLToPath(new URL('../', import.meta.url));
+const sourceFile = source => { try { return statSync(source).isDirectory() || !/\.(?:mts|ts|map)$/.test(source); } catch { return true; } };
 const require = createRequire(import.meta.url);
 const runtime = dirname(require('electron'));
 const metadata = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
@@ -17,7 +19,7 @@ await rename(join(output, 'electron.exe'), join(output, 'RePhiEdit-Next.exe'));
 const application = join(output, 'resources', 'app');
 for (const name of ['desktop', 'src/core', 'src/application', 'src/platform', 'src/ui', 'assets', 'index.html', 'styles.css', 'LICENSE', 'NOTICE', 'protocols', 'schemas', 'tools/smoke-mods.mjs', 'tools/smoke-native.mjs', 'tools/smoke-asset-library.mjs', 'tools/smoke-settings-renderer.js', 'tools/smoke-saving.mjs']) {
   await mkdir(dirname(join(application, name)), { recursive: true });
-  await cp(join(root, name), join(application, name), { recursive: true });
+  await cp(join(root, name), join(application, name), { recursive: true, filter: name.startsWith('src/') ? sourceFile : undefined });
 }
 await writeFile(join(application, 'package.json'), JSON.stringify({
   name: metadata.name, version: metadata.version, author: metadata.author, license: metadata.license,

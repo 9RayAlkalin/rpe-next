@@ -32,6 +32,37 @@ test('仅音符视图按实际横向扩展倍率放大音符及坐标间距', ()
   assert.ok(Math.abs((timeline.horizontal(135) - timeline.horizontal(0)) / spacing - 1224 / 600) < 1e-10);
 });
 
+test('编辑区音符宽度按当前编辑区域宽度等比缩放，size 只改变宽度', () => {
+  const { timeline } = editor([]);
+  const base = createNote(1, 0, 0);
+  const wide = { ...base, size: 2 };
+  const normalWidth = timeline.noteWidth(base);
+  timeline.notesCanvas.clientWidth = 1200;
+  const resizedWidth = timeline.noteWidth(base);
+  assert.ok(Math.abs(resizedWidth / normalWidth - 2) < 1e-10);
+  assert.ok(Math.abs(timeline.noteWidth(wide) / resizedWidth - 2) < 1e-10);
+  timeline.noteScale = 200 / 175;
+  assert.ok(Math.abs(timeline.noteWidth(base) / 1200 - 200 / 1350) < 1e-10);
+  timeline.getSession().chart.judgeLineList.push(structuredClone(timeline.getSession().chart.judgeLineList[0]));
+  timeline.getSession().setMultiLineEnabled(true, 'notes');
+  timeline.getSession().addMultiLine(1);
+  timeline.getSession().multiLineMerge = false;
+  timeline.multiLineWidth = 420;
+  assert.ok(Math.abs(timeline.noteWidth(base) / 420 - 200 / 1350) < 1e-10);
+});
+
+test('编辑区皮肤音符的实际绘制宽高随分辨率等比变化，单音符 size 不改变高度', () => {
+  const { timeline } = editor([]), skin = new RpeSkin(() => {}), calls = [];
+  skin.images.set('Tap2', { naturalWidth: 200, naturalHeight: 20 });
+  const context = { drawImage(...args) { calls.push(args); } };
+  const paint = size => skin.head(context, 1, 0, 0, timeline.noteBaseWidth({ size }), false, undefined, 5 * timeline.renderNoteScale, 68 * timeline.renderNoteScale);
+  paint(1); timeline.notesCanvas.clientWidth *= 2; paint(1); paint(3);
+  assert.ok(Math.abs(calls[1][3] / calls[0][3] - 2) < 1e-10);
+  assert.ok(Math.abs(calls[1][4] / calls[0][4] - 2) < 1e-10);
+  assert.ok(Math.abs(calls[2][3] / calls[1][3] - 3) < 1e-10);
+  assert.equal(calls[2][4], calls[1][4]);
+});
+
 test('点击不吸附，拖拽不越界；界外可见音符可拾取拉回，不显示远处音符的边缘替身', () => {
   const { session, timeline } = editor([createNote(1, 2, -730)]);
   const start = pointer(timeline.horizontal(-730), timeline.vertical(2));

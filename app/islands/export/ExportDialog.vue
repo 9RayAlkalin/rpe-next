@@ -7,6 +7,7 @@ const props = defineProps<{
   assets: Map<string, Uint8Array>;
   chartName: string;
   identifier?: string;
+  includeBackupCharts?: boolean;
   onExport: RpenExportDialogPayload['onExport'];
   helpers: RpenExportHelpers;
 }>();
@@ -20,6 +21,7 @@ const formats: Array<[string, string]> = [
 
 const format = ref('next:pez');
 const compact = ref(true);
+const includeUnusedFiles = ref(false);
 const acknowledgement = ref(false);
 const removeNoise = ref(false);
 const removeGlobal = ref(false);
@@ -51,6 +53,7 @@ function applyExport() {
     if (compatibility === 'rpe' && hasNoiseAreas && !removeNoise.value) throw new Error('原 RPE 无法表示噪域，请改用 Next 格式，或勾选移除噪域');
     if (compatibility === 'rpe' && hasGlobalEvents && !removeGlobal.value) throw new Error('原 RPE 无法表示全局事件，请改用 Next 格式，或勾选移除全局事件');
     const result = props.helpers.createChartExport(props.chart, props.assets, props.chartName, {
+      includeUnusedFiles: includeUnusedFiles.value, includeBackupCharts: props.includeBackupCharts === true,
       compatibility, format: container, compact: compact.value, name: name.value, identifier: props.identifier,
       removeNoiseAreas: compatibility === 'rpe' && removeNoise.value,
       removeGlobalEvents: compatibility === 'rpe' && removeGlobal.value,
@@ -76,6 +79,8 @@ onMounted(() => {
 <template>
   <label class="field">导出格式<select v-model="format" aria-label="导出格式"><option v-for="[value, title] in formats" :key="value" :value="value">{{ title }}</option></select></label>
   <label class="field">压缩 JSON（仅去掉多余空格和换行，保留全部属性）<input v-model="compact" type="checkbox" aria-label="压缩 JSON（仅去掉多余空格和换行，保留全部属性）"></label>
+  <label class="field" :hidden="format.endsWith(':json')">包含未使用的文件和素材<input v-model="includeUnusedFiles" type="checkbox" aria-label="包含未使用的文件和素材"></label>
+  <p class="hint" :hidden="format.endsWith(':json')">默认排除其他谱面、未使用的素材、皮肤和贴图。自动保存及备份文件另遵循通用设置。</p>
   <div class="noise-export-warning">
     <template v-if="noiseIssues.length">
       <p>噪域检查：{{ noiseIssues.length }} 项。内部事件超出生命周期时仅限制显示，原始时间不会被裁剪。</p>

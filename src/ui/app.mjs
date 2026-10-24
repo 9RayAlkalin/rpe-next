@@ -16,6 +16,7 @@ import { directoryEntries, uploadedEntries, scanMigration } from '../platform/mi
 import { readProject, readPreferences, storePreferences, storeProject, readClipboardHistory, storeClipboardHistory, subscribeLibrary } from '../platform/library.mjs';
 import { storageFailure, requestPersistence } from '../platform/storage.mjs';
 import { mountStoragePanel, noteLibrarySave, noteExternalBackup } from './storage-panel.mjs';
+import { VersionControlPanel } from './version-control.mjs';
 import { migrationDialog } from './migration-dialog.mjs';
 import { LinePanel } from './line-panel.mjs';
 import { AssetLibraryPanel } from './asset-library.mjs';
@@ -27,13 +28,15 @@ import { ProjectImages } from '../platform/images.mjs';
 import { HitSounds } from '../platform/hitsounds.mjs';
 import { renderEventInspector } from './event-inspector.mjs';
 import { cancelValueDrag, handleValueDragKey } from './draggable-value.mjs';
-import { eventKey, eventList, selectEvent, selectAllEvents, deleteEvents, transformEvents } from '../application/event-commands.mjs';
+import { eventKey, eventList, selectedEventEntries, selectEvent, selectAllEvents, deleteEvents, transformEvents, toggleSingleEventLock } from '../application/event-commands.mjs';
+import { stickSelectedEventToNext } from '../application/event-tools.mjs';
 import { BATCH_ACTIONS, applyBatchAction, nudgeSelection, captureSelection } from '../application/batch-edit.mjs';
 import { copyObjects, cutObjects, pasteObjects, deleteObjects } from '../application/clipboard.mjs';
 import { ClipboardHistory } from '../application/clipboard-history.mjs';
 import { renderClipboardHistory } from './clipboard-history.mjs';
 import { PasteGesture } from './paste-gesture.mjs';
 import { SelectionOverlay } from './selection-overlay.mjs';
+import { SelectionIntervalPanel } from './selection-interval.mjs';
 import { LineSwitcher } from './line-switcher.mjs';
 import { stepLine } from '../core/line-overview.mjs';
 import { applyNumberShortcut } from '../application/number-shortcuts.mjs';
@@ -79,7 +82,10 @@ import { GlobalEventRegistry, registerPlaceholderGlobalEvent } from '../core/glo
 import { GlobalEventsEditor } from './global-events.mjs';
 import { initializeLocalPreferences, flushLocalPreferences } from '../platform/local-preferences.mjs';
 import { nativeStorage } from '../platform/native.mjs';
-import { DEFAULT_EDITOR_PREFERENCES } from '../core/default-settings.mjs';
+import { DEFAULT_EDITOR_PREFERENCES, DEFAULT_SETTINGS } from '../core/default-settings.mjs';
+import { appendLineShortcutDigit } from '../core/line-switch.mjs';
+import { installNumericExpressionInputs } from './numeric-expression-input.mjs';
+import { TimeReadouts } from './time-readouts.mjs';
 
 try { await initializeLocalPreferences(); }
 catch (error) {
@@ -100,11 +106,16 @@ for(const type of ['keydown','keyup','wheel','pointerdown','pointerup','mousedow
   if(!event.defaultPrevented&&['keydown','keyup'].includes(type))handleValueDragKey(event);
 },{capture:true,passive:false});
 const displayFields = [
+  ['selection-interval', 'selectionInterval', DEFAULT_EDITOR_PREFERENCES.selectionInterval],
+  ['include-backup-charts', 'includeBackupCharts', false],
   ['text-selection-drag', 'textSelectionDrag', false],
   ['event-cut-density', 'cutDensity', 4],
   ['event-drag-sensitivity', 'dragSensitivity', 1],
   ['sample-auto-fit', 'sampleAutoFit', true],
+  ['paired-movement-sampling', 'pairedMovementSampling', true],
+  ['note-size', 'noteSize', 200],
   ['wheel-limit-audio-start', 'wheelStopAtAudioStart', true],
+  ['hit-tap-delay', 'hitTapDelay', DEFAULT_EDITOR_PREFERENCES.hitTapDelay], ['hit-drag-delay', 'hitDragDelay', DEFAULT_EDITOR_PREFERENCES.hitDragDelay], ['hit-flick-delay', 'hitFlickDelay', DEFAULT_EDITOR_PREFERENCES.hitFlickDelay],
   ['draw-event-curves', 'drawEventCurves', true],
   ['pick-preview-noise-areas', 'pickPreviewNoiseAreas', true],
   ['seamless-noise-areas', 'seamlessNoiseAreas', true],
@@ -114,8 +125,9 @@ const displayFields = [
   ['default-line-thickness', 'lineScale', 1.5],
   ['line-switcher-enabled', 'lineSwitcher', true],
   ['clipboard-history-enabled', 'clipboardHistory', true],
-  ['bar-width', 'barWidth', 3], ['bar-alpha', 'barAlpha', 1], ['event-value-size', 'eventValueSize', 13], ['event-value-threshold', 'eventValueThreshold', 30], ['event-curve-threshold', 'eventCurveThreshold', 24], ['event-opacity', 'eventOpacity', 0.25], ['event-bar-width', 'eventBarWidth', 0.82], ['seamless-events', 'seamlessEvents', true],
+  ['bar-width', 'barWidth', DEFAULT_SETTINGS.barWidth], ['bar-alpha', 'barAlpha', DEFAULT_SETTINGS.barAlpha], ['event-value-size', 'eventValueSize', 13], ['event-value-threshold', 'eventValueThreshold', 30], ['event-curve-threshold', 'eventCurveThreshold', 24], ['event-opacity', 'eventOpacity', 0.25], ['event-bar-width', 'eventBarWidth', DEFAULT_EDITOR_PREFERENCES.eventBarWidth], ['seamless-events', 'seamlessEvents', true],
   ['background-blur', 'backgroundBlur', 10.5], ['scroll-speed', 'scrollSpeed', 5], ['tips-enabled', 'tipsEnabled', true], ['success-notifications', 'successNotifications', true],
+  ['viewport-overflow', 'viewportOverflow', DEFAULT_EDITOR_PREFERENCES.viewportOverflow], ['overflow-blur', 'overflowBlur', DEFAULT_EDITOR_PREFERENCES.overflowBlur], ['overflow-darken', 'overflowDarken', DEFAULT_EDITOR_PREFERENCES.overflowDarken],
   ['line-numbers', 'lineNumbers', true], ['line-arrows', 'lineArrows', true], ['line-tint', 'lineTint', true], ['merge-line-numbers', 'mergeLineNumbers', true], ['pick-preview-lines', 'pickPreviewLines', true],
   ['note-source-hover', 'noteSourceHover', true],
   ['preserve-pitch', 'preservePitch', true], ['autoplay-view', 'autoplayView', true], ['highlight-notes', 'highlight', true],
@@ -123,6 +135,7 @@ const displayFields = [
 ];
 const settingsDialog = createSettingsPanel();
 const settingsIsland = Boolean(globalThis.rpenIslands?.settings?.createSettingsPanel);
+installNumericExpressionInputs();
 let session = new EditorSession();
 let assets = new Map();
 let assetFolders = new Set();
@@ -136,9 +149,12 @@ let lastDraftDocument;
 let lastDraftAssets = [], lastDraftFolders = [];
 let preferences = migratePreferences();
 let libraryProject = null;
+let versionRepoId = crypto.randomUUID();
+let versionControl = null;
 let persistenceRequested = false;
 const manualSaves = new ManualSaveQueue(storeProject);
 let editorPreferences = { ...DEFAULT_EDITOR_PREFERENCES, ...readEditorPreferences() };
+const fileOptions = () => ({ includeBackupCharts: editorPreferences.includeBackupCharts === true });
 let atHome = true;
 let hasDocument = false;
 let previewReturnTime = 0;
@@ -163,6 +179,7 @@ const realtimePreview = new Preview(element('#realtime-preview'));
 const lineInfoScene = new SceneRuntime();
 const timelineActivity = new TimelineActivity();
 const invalidate = () => { dirtyFrame = true; };
+const timeReadouts = new TimeReadouts(element('.time-readouts'), invalidate);
 preview.invalidate = realtimePreview.invalidate = invalidate;
 realtimePreview.applyShaders = false;
 realtimePreview.showHitEffects = false;
@@ -171,6 +188,7 @@ const images = new ProjectImages(invalidate, message => status(message));
 const timeline = new Timeline(element('#notes'), element('#events'), () => session, editEvent, invalidate, error => reportError(error), openTimelineContextMenu);
 const noiseEditor = new NoiseAreaEditor(element('#noise-panel'), element('#noise-editor-canvas'), () => ({ session, tempo, timeline, preview, realtimePreview, previewVisible: preview.visible, seconds: chartSeconds, sampleAutoFit: element('#sample-auto-fit').checked }), {
   commit: (label, chart) => session.commit(label, chart), invalidate, notify, activate: activatePane,
+  onContextMenu: event => openTimelineContextMenu(event),
   pause: () => playback.pause(), seek: beat => seekBeat(beat), wheel: event => previewWheel(event),
   getAssets: () => assets,
   onAssets: entries => { for (const [name, bytes] of entries) assets.set(name, bytes); assetDirty = true; images.load(session.chart, assets, chartName); invalidate(); },
@@ -179,12 +197,16 @@ const globalEventRegistry = new GlobalEventRegistry();
 registerPlaceholderGlobalEvent(globalEventRegistry);
 const globalEvents = new GlobalEventsEditor(element('#global-events-panel'), element('#global-events-canvas'), globalEventRegistry,
   () => ({ session, tempo, timeline, previewVisible: preview.visible, seconds: () => chartSeconds(), duration: () => audio.duration }),
-  { activate: activatePane, invalidate, notify, seek: beat => seekBeat(beat), wheel: event => previewWheel(event) });
+  { activate: activatePane, invalidate, notify, seek: beat => seekBeat(beat), wheel: event => previewWheel(event), onContextMenu: event => openTimelineContextMenu(event) });
+const selectionIntervalPanel = new SelectionIntervalPanel(element('#selection-interval'), () => editorPreferences.selectionInterval ?? 1, value => {
+  editorPreferences.selectionInterval = value; timeline.selectionInterval = globalEvents.timeline.selectionInterval = value;
+  persistEditor(); invalidate();
+});
 for (const renderer of [preview, realtimePreview]) {
   renderer.noisePreview.hiddenLayers = noiseEditor.hiddenLayers;
   renderer.noisePreview.simpleLayers = noiseEditor.simpleLayers;
 }
-const eventSampler = new EventSampler(element('.stage'), () => ({ session, tempo, preview, realtimePreview, previewVisible: preview.visible, timeline, seconds: chartSeconds, playing: () => audio.playing, sampleAutoFit: element('#sample-auto-fit').checked }), { invalidate, pause: () => playback.pause(), notify });
+const eventSampler = new EventSampler(element('.stage'), () => ({ session, tempo, preview, realtimePreview, previewVisible: preview.visible, timeline, seconds: chartSeconds, playing: () => audio.playing, sampleAutoFit: element('#sample-auto-fit').checked, pairedMovementSampling: element('#paired-movement-sampling').checked }), { invalidate, pause: () => playback.pause(), notify });
 const audioAnalysis = new AudioAnalysis(element('#audio-analysis-overlay'), () => timeline, () => audio, () => persistEditor());
 let noteHoverTimer = null;
 let noteHoverKey = null;
@@ -393,7 +415,7 @@ const reportError = error => {
   const message = storageFailure(error); status(message); notify(message, 'error', 7000);
   const host = showDialog(error.name === 'ProjectConflictError' ? '保存冲突，已保留当前编辑' : '操作未完成', message);
   if (error.name === 'ProjectConflictError' && libraryProject?.id === error.projectId && hasDocument) {
-    for (const [label, run] of [['导出当前谱面 PEZ', () => showExportDialog(session.chart, assets, chartName, (_name, format) => { if (format === 'pez') noteExternalBackup(); }, libraryProject?.identifier)],
+    for (const [label, run] of [['导出当前谱面 PEZ', () => showExportDialog(session.chart, assets, chartName, (_name, format) => { if (format === 'pez') noteExternalBackup(); }, libraryProject?.identifier, fileOptions())],
       ['另存为新项目', async () => { libraryProject = null; session.history.savedDocument = null; await save(); }]]) {
       const button = document.createElement('button'); button.type = 'button'; button.textContent = label;
       button.onclick = async () => { element('#modal').close(); try { await run(); } catch (failure) { reportError(failure); } }; host.append(button);
@@ -470,7 +492,7 @@ const collaboration = new CollaborationPanel(element('#collaboration-panel'), ()
 element('#collaboration-tool').onclick = () => activatePane('collaboration');
 const playback = new EditorPlayback(audio, hitSounds, () => {
   timeline.origin = currentBeat();
-  for (const renderer of [preview, realtimePreview]) renderer.noisePreview.gpu?.reset();
+  for (const renderer of [preview, realtimePreview]) { renderer.noisePreview.gpu?.reset(); renderer.overflowNoisePreview?.gpu?.reset(); renderer.overflowRevision++; }
   preview.effectsSince = realtimePreview.effectsSince = chartSeconds();
   invalidate();
 });
@@ -478,7 +500,7 @@ timeline.onDragScroll = seconds => playback.seek(audio.time + seconds);
 const autoSave = new AutoSaveClock(async () => {
   const current = session; const document = current.chart; const snapshot = { ...document }; delete snapshot.chartTime;
   const media = [...assets], folders = [...assetFolders];
-  await saveSnapshot(libraryProject?.id ?? recoveryId, chartName, snapshot, media, editorPreferences.autoSaveLimit ?? preferences.settings.autoSaveLimit, { lineIndex: current.lineIndex });
+  await saveSnapshot(libraryProject?.id ?? recoveryId, chartName, snapshot, media, editorPreferences.autoSaveLimit ?? preferences.settings.autoSaveLimit, { lineIndex: current.lineIndex, vcsId: versionRepoId });
   if (current === session) { lastDraftDocument = document; lastDraftAssets = media; lastDraftFolders = folders; status('自动备份已保存（包含音乐、曲绘与编辑位置）'); notify('自动备份已保存', 'success'); }
 }, error => { const message = `自动备份失败：${storageFailure(error)}，请导出 PEZ 保留当前修改`; status(message); notify(message, 'error', 7000); });
 timeline.onWheel = event => {
@@ -561,10 +583,31 @@ const home = createHome(async id => {
     } else if (renamed) session.commit('更新项目名称', { ...session.chart, META: { ...session.chart.META, name: project.chart.META.name } });
   }
 });
-const storagePanel = mountStoragePanel(settingsDialog, { reportError, notify, canSwitchLibrary: () => {
+const storagePanel = mountStoragePanel(settingsDialog, { reportError, notify, fileOptions, canSwitchLibrary: () => {
   if (hasDocument && (session.history.dirty || assetDirty)) { notify('请先保存或放弃当前谱面的修改，再切换谱面库', 'warning'); return false; }
   return true;
 } });
+async function persistVersionRepoId() {
+  if (!libraryProject?.id || libraryProject.vcsId) return;
+  const current = session, repoId = versionRepoId, project = libraryProject;
+  const saved = await storeProject({ ...project, vcsId: repoId });
+  if (session === current && libraryProject?.id === project.id && versionRepoId === repoId) libraryProject = saved;
+  storagePanel.refresh().catch(() => {});
+}
+versionControl = new VersionControlPanel(element('#version-control-panel'), {
+  getChart: () => session.chart,
+  getAssets: () => assets,
+  getFolders: () => assetFolders,
+  getChartName: () => chartName,
+  getRepoId: () => versionRepoId,
+  isDirty: () => session.history.dirty || assetDirty,
+  isPersisted: () => Boolean(libraryProject?.id),
+  hasDocument: () => hasDocument && !atHome,
+}, {
+  notify, reportError,
+  loadSnapshot: (snapshot, options) => loadVersionSnapshot(snapshot, options),
+  persistRepoId: persistVersionRepoId,
+});
 document.addEventListener('rpen-preference-error', event => reportError(event.detail));
 document.addEventListener('rpen-library-refresh', () => home.refresh().catch(reportError));
 subscribeLibrary(change => {
@@ -611,10 +654,13 @@ function renderTimelineMarkers() {
 }
 function openTimelineContextMenu(event, canvas = null, markerIndex = null) {
   const menu = element('#timeline-context-menu'); if (!menu) return;
+  selectionIntervalPanel.hide();
   const point = canvas ? timeline.point(event, canvas) : null;
   pendingTimelineMenu = { time: point ? timeline.timeAt(point.y) : null, markerIndex };
   element('#timeline-add-marker').hidden = !canvas;
   element('#timeline-delete-marker').hidden = markerIndex === null;
+  element('#timeline-selection-interval').hidden = markerIndex !== null;
+  element('#timeline-selection-interval').textContent = `间隔多选（${timeline.selectionInterval ?? 1}）…`;
   const selections = session.multiLineActive && session.multiLineMode === 'events'
     ? [...session.multiEventSelection].flatMap(([lineIndex, keys]) => [...keys].map(key => ({ lineIndex, key })))
     : [...session.eventSelection].map(key => ({ lineIndex: session.lineIndex, key }));
@@ -623,9 +669,10 @@ function openTimelineContextMenu(event, canvas = null, markerIndex = null) {
   const selected = type === 'moveXEvents' ? session.chart.judgeLineList[selection.lineIndex]?.eventLayers?.[timeline.layer]?.moveXEvents?.[Number(index)] : null;
   const split = element('#trajectory-context-split'); split.hidden = !selected?.trajectory || canvas !== timeline.eventsCanvas;
   split.onclick = () => { closeTimelineContextMenu(); trajectoryPanel.open(selected, selection.lineIndex, timeline.layer); trajectoryPanel.split(); };
-  menu.style.left = `${Math.max(4, Math.min(window.innerWidth - 190, event.clientX))}px`;
-  menu.style.top = `${Math.max(4, Math.min(window.innerHeight - 90, event.clientY))}px`;
   menu.hidden = false;
+  const bounds = menu.getBoundingClientRect();
+  menu.style.left = `${Math.max(4, Math.min(window.innerWidth - bounds.width - 4, event.clientX))}px`;
+  menu.style.top = `${Math.max(4, Math.min(window.innerHeight - bounds.height - 4, event.clientY))}px`;
 }
 function closeTimelineContextMenu() { const menu = element('#timeline-context-menu'); if (menu) menu.hidden = true; pendingTimelineMenu = null; }
 function addTimelineMarker() {
@@ -646,6 +693,9 @@ function deleteTimelineMarker() {
 window.addEventListener('pointerdown', event => { const menu = element('#timeline-context-menu'); if (menu && !menu.contains(event.target)) closeTimelineContextMenu(); }, true);
 element('#timeline-add-marker').addEventListener('click', addTimelineMarker);
 element('#timeline-delete-marker').addEventListener('click', deleteTimelineMarker);
+element('#timeline-selection-interval').addEventListener('click', () => {
+  const bounds = element('#timeline-context-menu').getBoundingClientRect(); closeTimelineContextMenu(); selectionIntervalPanel.open(bounds.left, bounds.top);
+});
 
 function persistEditor() {
   editorPreferences = { ...editorPreferences, scale: timeline.scale, division: timeline.division, gridCount: timeline.gridCount, snapX: timeline.snapX, judgementOffset: timeline.judgementOffset, multiLineWidth: timeline.multiLineWidth || undefined, multiLineEventWidth: timeline.multiLineEventWidth || undefined,
@@ -671,6 +721,7 @@ function activatePane(name) {
   for (const panel of document.querySelectorAll('[data-panel]')) panel.hidden = panel.dataset.panel !== name;
   for (const button of document.querySelectorAll('[data-pane]')) button.classList.toggle('active', button.dataset.pane === name);
   if (globalEvents.active && ['global-events', 'global-event-properties'].includes(name)) globalEvents.render();
+  if (name === 'version-control') versionControl?.open().catch(reportError);
   invalidate();
 }
 for (const button of document.querySelectorAll('[data-pane]')) button.onclick = () => {
@@ -921,18 +972,20 @@ function renderSession() {
       if (session.focus === 'events' && event?.trajectory) { curveEditorOpen = false; trajectoryPanel.open(event, selected.lineIndex, timeline.layer); }
       else activatePane(session.focus === 'events' ? 'events' : 'notes');
     }
-    else if (!['multi-line', 'lines', 'assets', 'collaboration'].includes(activePaneName)) activatePane('chart');
+    else if (!['multi-line', 'lines', 'assets', 'collaboration', 'version-control'].includes(activePaneName)) activatePane('chart');
   }
   const limits = previewLimitations(session.chart);
   element('#compatibility').textContent = '已使用原 RPE 音符素材与打击音；支持封面、静态纹理、多线与控制曲线。尚需原版逐帧对照。' + (limits.length ? `需进一步验证：${limits.join('、')}。` : '');
   invalidate();
   globalEvents.syncChrome();
+  versionControl?.tick?.();
 }
 
 session.addEventListener('change', renderSession);
 
-function replaceChart(chart, name, nextAssets = new Map(), nextFolders = []) {
+function replaceChart(chart, name, nextAssets = new Map(), nextFolders = [], options = {}) {
   assertChart(chart);
+  if (!options.preserveRepoId) { versionRepoId = crypto.randomUUID(); versionControl?.detach(); }
   if (eventSampler.active) eventSampler.finish(false);
   noiseEditor.reset();
   globalEvents.reset();
@@ -945,6 +998,7 @@ function replaceChart(chart, name, nextAssets = new Map(), nextFolders = []) {
   hitSounds.stop(); hitSounds.onlyCurrentLine = false; element('#mute-current-line').setAttribute('aria-pressed', 'false'); element('#mute-current-line').classList.remove('active'); images.clear(); libraryProject = null;
   session.removeEventListener('change', renderSession);
   session = new EditorSession(chart);
+  if (options.dirty) session.history.markUnsaved();
   clipboardHistory.attach(session);
   lastSelectionSignature = '';
   activatePane('chart');
@@ -955,9 +1009,9 @@ function replaceChart(chart, name, nextAssets = new Map(), nextFolders = []) {
   autoSave.reset(performance.now());
   heldPreview = null; curveStart = null; curveEnd = null; curveAnchorMode = null; curveEditorOpen = false; loop = null; element('#loop-enabled').checked = false;
   assets = nextAssets;
-  for (const renderer of [preview, realtimePreview]) renderer.noisePreview.gpu?.clearSkins();
+  for (const renderer of [preview, realtimePreview]) { renderer.noisePreview.gpu?.clearSkins(); renderer.overflowNoisePreview?.gpu?.clearSkins(); renderer.overflowRevision++; }
   assetFolders = new Set(nextFolders ?? []);
-  assetDirty = false;
+  assetDirty = Boolean(options.dirty);
   chartName = name;
   resetEditClock(chart);
   hitSounds.setProject(chart, assets, name);
@@ -980,10 +1034,11 @@ function guardReplace(action) {
   else action();
 }
 
-async function loadCandidate(candidate, nextAssets) {
+async function loadCandidate(candidate, nextAssets, options = {}) {
   attachExternalEffects([candidate], nextAssets);
-  replaceChart(candidate.chart, candidate.name, nextAssets, candidate.project?.assetFolders ?? []);
+  replaceChart(candidate.chart, candidate.name, nextAssets, options.folders ?? candidate.project?.assetFolders ?? [], options);
   libraryProject = candidate.project ?? null;
+  if (candidate.project?.vcsId) versionRepoId = candidate.project.vcsId;
   syncProjectFolderButton();
   images.load(candidate.chart, assets, chartName, candidate.info);
   const references = resourceReferences(candidate.chart, assets, chartName, candidate.info);
@@ -995,6 +1050,26 @@ async function loadCandidate(candidate, nextAssets) {
     if (Number.isInteger(view.lineIndex) && session.chart.judgeLineList?.[view.lineIndex]) session.selectLine(view.lineIndex);
   }
   if (session.chart === candidate.chart && candidate.chart.rpeNextLegacySource?.format === 'phigros-v3') notify(`官谱转换完成：${candidate.chart.judgeLineList.length} 条判定线，${candidate.chart.blockAreaList?.length ?? 0} 个噪域`, 'success');
+}
+
+function loadVersionSnapshot(snapshot, { force = false } = {}) {
+  const project = libraryProject;
+  const run = () => loadCandidate(
+    { chart: snapshot.chart, name: snapshot.chartName ?? chartName, project },
+    snapshot.assets,
+    { preserveRepoId: true, folders: snapshot.folders, dirty: true }
+  );
+  if (force || !hasDocument || (!session.history.dirty && !assetDirty)) return run();
+  return new Promise((resolve, reject) => {
+    showDialog('切换谱面？', '当前谱面有未保存修改。继续会放弃本次修改；可取消并保存到谱面库或导出 PEZ。自动备份仅在设定间隔到达后生成。');
+    const modal = element('#modal');
+    const apply = element('#modal-apply');
+    let done = false;
+    apply.hidden = false;
+    apply.textContent = '继续';
+    modal.addEventListener('close', () => { if (!done) { done = true; resolve(); } }, { once: true });
+    apply.onclick = () => { done = true; modal.close(); run().then(resolve, reject); };
+  });
 }
 
 async function loadMusic(bytes, name, updateMetadata = true, recordHistory = true) {
@@ -1066,7 +1141,7 @@ function save() {
   return manualSaves.save(savingSession, () => {
     const document = session.chart; const snapshot = { ...document }; delete snapshot.chartTime;
     const project = { ...(libraryProject ?? { id: crypto.randomUUID(), source: 'Next 本地项目', imported: Date.now() }),
-      chart: snapshot, chartName, assets: [...assets], assetFolders: [...assetFolders], bytes: [...assets.values()].reduce((sum, bytes) => sum + bytes.length, 0), updated: Date.now(), viewState: { lineIndex: session.lineIndex } };
+      chart: snapshot, chartName, vcsId: versionRepoId, assets: [...assets], assetFolders: [...assetFolders], bytes: [...assets.values()].reduce((sum, bytes) => sum + bytes.length, 0), updated: Date.now(), viewState: { lineIndex: session.lineIndex } };
     status('正在后台保存，可继续编辑…');
     return { document, project };
   }, ({ document, project }) => {
@@ -1104,7 +1179,7 @@ listen('#resume-editor', () => setHome(false));
 listen('#open', () => { element('#file-input').click(); });
 element('#file-input').addEventListener('change', async event => {
   try {
-    const loaded = await openFiles(event.target.files, { confirmLargeArchive: info => new Promise(resolve => {
+    const loaded = await openFiles(event.target.files, { ...fileOptions(), confirmLargeArchive: info => new Promise(resolve => {
       const host = showDialog('确认导入大谱面包', `目录声明解压后 ${(info.declaredBytes / 1024 ** 2).toFixed(1)} MiB，共 ${info.count} 个文件。大体积或异常压缩倍率可能耗尽内存；只继续导入来源可信的谱面。`);
       const modal = host.closest('dialog'), apply = element('#modal-apply'); let decided = false;
       modal.addEventListener('close', () => { if (!decided) resolve(false); }, { once: true });
@@ -1121,7 +1196,7 @@ element('#file-input').addEventListener('change', async event => {
   finally { event.target.value = ''; }
 });
 listen('#save', () => save());
-listen('#export', () => { noiseEditor.flush(); showExportDialog(session.chart, assets, chartName, (name, format) => { status(`已发起下载：${name}`); if (format === 'pez') { noteExternalBackup(); storagePanel.refresh().catch(() => {}); } }, libraryProject?.identifier ?? libraryProject?.info?.Path); });
+listen('#export', () => { noiseEditor.flush(); showExportDialog(session.chart, assets, chartName, (name, format) => { status(`已发起下载：${name}`); if (format === 'pez') { noteExternalBackup(); storagePanel.refresh().catch(() => {}); } }, libraryProject?.identifier ?? libraryProject?.info?.Path, fileOptions()); });
 listen('#view-toggle', () => togglePreview());
 listen('#close-preview', () => togglePreview(false, true));
 listen('#background', () => element('#background-input').click());
@@ -1158,7 +1233,7 @@ listen('#recover', async () => {
       try {
         const draft = await readDraft(entry.id);
         if (!draft) throw new Error('此备份已被轮替，请重新打开备份列表');
-        await loadCandidate({ chart: draft.chart, name: draft.name, project: { viewState: draft.viewState } }, new Map(draft.assets ?? []));
+        await loadCandidate({ chart: draft.chart, name: draft.name, project: { viewState: draft.viewState, vcsId: draft.viewState?.vcsId } }, new Map(draft.assets ?? []));
         libraryProject = null; session.history.savedDocument = null; renderSession();
       } catch (error) { reportError(error); }
     }); });
@@ -1388,6 +1463,7 @@ function renderHistoryPanel() {
   }
 }
 listen('#history-panel', () => { activatePane('history'); renderHistoryPanel(); });
+listen('#version-control-tool', () => activatePane('version-control'));
 listen('#clear-clipboard', () => { if (globalEvents.active) { globalEvents.document.editor.eventClipboard = []; globalEvents.document.editor.clipboardVisible = false; invalidate(); return; } noiseEditor.clipboard = null; clipboardHistory.clearCurrent(session); timeline.clipboardMode = {}; invalidate(); });
 const clipboardButton = document.createElement('button'); clipboardButton.id = 'clipboard-history'; clipboardButton.textContent = '剪贴板历史'; clipboardButton.title = '长按 Ctrl+V';
 element('[data-panel="chart"] .action-grid').append(clipboardButton);
@@ -1555,6 +1631,7 @@ listen('#curve-cancel', closeCurvePanel);
 listen('#help', () => showDialog('Re:PhiEdit Next · 迁移预览版', HELP_TEXT));
 
 let playbackSpaceHeld = false;
+let lineSwitchDigits = 0;
 window.addEventListener('keydown', event => {
   if (mods?.runtime.locks.size) return;
   if (atHome || !hasDocument || !shortcutMatches(event, preferences.hotkeys.ShowLineInfo) || dialogOpen() || usesNativeTextShortcut(event)) return;
@@ -1577,6 +1654,22 @@ window.addEventListener('keyup', event => {
   event.preventDefault(); event.stopImmediatePropagation(); playbackSpaceHeld = false;
 }, true);
 window.addEventListener('blur', () => { playbackSpaceHeld = false; });
+function lineSwitchModifierMatches(event) {
+  const binding = String(preferences.hotkeys.SwitchLine ?? 'LEFTCTRL').toUpperCase();
+  const parts = binding.split(/[&+]/).filter(Boolean).map(part => part.replace(/^(LEFT|RIGHT)/, ''));
+  if (!parts.length || parts.some(part => !['CTRL', 'SHIFT', 'ALT'].includes(part))) return false;
+  const required = new Set(parts);
+  return Boolean(event.ctrlKey) === required.has('CTRL') && Boolean(event.shiftKey) === required.has('SHIFT') && Boolean(event.altKey) === required.has('ALT') && !event.metaKey;
+}
+window.addEventListener('keydown', event => {
+  if (mods?.runtime.locks.size || atHome || !hasDocument || preview.visible || dialogOpen() || usesNativeTextShortcut(event) || event.isComposing || !/^\d$/.test(event.key) || !lineSwitchModifierMatches(event)) return;
+  if (shortcutMatches(event, preferences.hotkeys.Paste) || shortcutMatches(event, preferences.hotkeys.PasteMirror)) return;
+  lineSwitchDigits = appendLineShortcutDigit(lineSwitchDigits, session.chart.judgeLineList?.length ?? 0, Number(event.key));
+  event.preventDefault(); event.stopImmediatePropagation();
+  selectOverviewLine(lineSwitchDigits);
+}, true);
+window.addEventListener('keyup', event => { if (!lineSwitchModifierMatches(event)) lineSwitchDigits = 0; }, true);
+window.addEventListener('blur', () => { lineSwitchDigits = 0; });
 window.addEventListener('keydown', async event => {
   if (mods?.runtime.locks.size) return;
   const target = event.target;
@@ -1603,8 +1696,9 @@ window.addEventListener('keydown', async event => {
   }
   let handled = true;
   try {
-    if (event.repeat && ['NumberMirror', 'NumberFill', 'Pause', 'AddHold', 'AddEvent', 'AddTap', 'StartView', 'EndView', 'JumpView', 'ReplayView', 'StartView_HOLD', 'JumpView_HOLD', 'ToggleMultiLine', 'SwitchMultiLineMode'].includes(action)) { event.preventDefault(); return; }
-    if (!preview.visible && action?.startsWith('Page')) nudgeSelection(session, { PageLeft: 'ArrowLeft', PageRight: 'ArrowRight', PageUp: 'ArrowUp', PageDown: 'ArrowDown' }[action], timeline.division, timeline.gridCount);
+    if (event.repeat && ['NumberMirror', 'NumberFill', 'Pause', 'AddHold', 'AddEvent', 'AddTap', 'StartView', 'EndView', 'JumpView', 'ReplayView', 'StartView_HOLD', 'JumpView_HOLD', 'ToggleMultiLine', 'SwitchMultiLineMode', 'SwitchLock', 'StickNext', 'TimeAttach'].includes(action)) { event.preventDefault(); return; }
+    if (action === 'TimeAttach') seekBeat(Math.round(currentBeat() * timeline.division) / timeline.division);
+    else if (!preview.visible && action?.startsWith('Page')) nudgeSelection(session, { PageLeft: 'ArrowLeft', PageRight: 'ArrowRight', PageUp: 'ArrowUp', PageDown: 'ArrowDown' }[action], timeline.division, timeline.gridCount);
     else if (timeline.eventInteraction.pending && /^[0-9]$/.test(event.key) && !event.ctrlKey && !event.altKey) timeline.eventInteraction.place(undefined, undefined, Number(event.key) || 10);
     else if (action === 'Save') { event.preventDefault(); await save(); }
     else if (action === 'Undo') travel('undo');
@@ -1638,6 +1732,12 @@ window.addEventListener('keydown', async event => {
     }
     else if (action === 'SwitchMultiLineMode' && session.multiLineActive) session.setMultiLineMode(session.multiLineMode === 'events' ? 'notes' : 'events');
     else if (action === 'CurveBegin' || action === 'CurveEnd') captureCurve(action === 'CurveEnd');
+    else if (action === 'SwitchLock') {
+      if (!noiseEditor.active && !globalEvents.active && session.focus === 'events') toggleSingleEventLock(session);
+    }
+    else if (action === 'StickNext') {
+      if (!noiseEditor.active && !globalEvents.active && session.focus === 'events' && selectedEventEntries(session).length === 1) stickSelectedEventToNext(session);
+    }
     else if (preview.visible && ['AddTap', 'AddDrag', 'AddFlick', 'AddHold', 'AddEvent'].includes(action)) handled = false;
     else if (area === 'events' && ['AddTap', 'AddEvent'].includes(action)) handled = timeline.eventInteraction.place(undefined, undefined, undefined, action === 'AddTap');
     else if (['AddTap', 'AddDrag', 'AddFlick', 'AddHold'].includes(action)) handled = timeline.addAtCursor({ AddTap: 1, AddDrag: 4, AddFlick: 3, AddHold: 2 }[action]);
@@ -1712,7 +1812,7 @@ function frame(timestamp) {
     const beat = currentBeat();
     session.editSeconds = Math.max(0, chartSeconds());
     updateLineInfo();
-    if (audio.playing) timeline.origin = beat;
+    timeline.origin = beat;
     if (!preview.visible && !noiseEditor.active && !globalEvents.active && !noiseFitPanel.active && !noiseTrackingPanel.previewing) {
       timeline.draw(beat);
       multiEdit.drawTimeline();
@@ -1774,8 +1874,7 @@ function frame(timestamp) {
     if (audio.playing && document.documentElement.dataset.rpenBeat !== String(skinBeat)) editorSkinSignal('beat');
     editorSkinState({ playing: audio.playing, beat: skinBeat, dirty: session.history.dirty || assetDirty, location: atHome ? 'home' : preview.visible ? 'preview' : 'editor' });
     element('#play').title = audio.playing ? '暂停' : '播放';
-    element('#clock').textContent = `${chartSeconds().toFixed(3)} s`;
-    element('#beat-display').textContent = `${(Math.abs(beat) < 0.0005 ? 0 : beat).toFixed(3)} 拍`;
+    timeReadouts.update(chartSeconds(), audio.duration, beat);
     element('#scrubber').value = audio.time;
     const tempoPoint = tempo.points[Math.max(0, upperBound(tempo.points, beat, point => point.beat) - 1)];
     const lineTimeFactor = noiseEditor.active || globalEvents.active ? 1 : session.line?.bpmfactor ?? 1;
@@ -1805,10 +1904,10 @@ function applyPreferences(next) {
   element('#volume').value = audio.volume;
   hitSounds.setVolume(editorPreferences.hitVolume ?? next.settings.hitVolume);
   element('#hit-volume').value = hitSounds.volume;
-  preview.noteSize = realtimePreview.noteSize = next.settings.noteSize;
+  preview.noteSize = realtimePreview.noteSize = editorPreferences.noteSize ?? next.settings.noteSize;
   preview.lineScale = realtimePreview.lineScale = editorPreferences.lineScale ?? next.settings.lineScale;
   preview.backgroundAlpha = realtimePreview.backgroundAlpha = next.settings.backgroundAlpha;
-  timeline.noteScale = next.settings.noteSize / 175;
+  timeline.noteScale = (editorPreferences.noteSize ?? next.settings.noteSize) / 175;
   timeline.gridCount = editorPreferences.gridCount ?? next.settings.gridCount;
   timeline.scale = editorPreferences.scale ?? 500;
   timeline.division = editorPreferences.division ?? 4;
@@ -1840,6 +1939,7 @@ function applyPreferences(next) {
 function applyMigratedPreferences(next) {
   editorPreferences = { ...editorPreferences, volume: next.settings.volume, hitVolume: next.settings.hitVolume, gridCount: next.settings.gridCount, realtimeAlpha: next.settings.realtimeAlpha,
     fpsLimit: next.settings.fpsLimit,
+    noteSize: next.settings.noteSize,
     lineScale: next.settings.lineScale,
     ratioWidth: next.settings.ratioWidth, ratioHeight: next.settings.ratioHeight, barWidth: next.settings.barWidth, barAlpha: next.settings.barAlpha,
     autoSave: next.settings.autoSave, autoSaveSeconds: next.settings.autoSaveSeconds, autoSaveLimit: next.settings.autoSaveLimit, autoplayView: next.settings.autoplayView, highlight: next.settings.highlight, showGameUI: next.settings.showGameUI };
@@ -1855,7 +1955,7 @@ listen('#migrate', async () => {
         const directory = await window.showDirectoryPicker({ mode: 'read' });
         status('正在扫描旧 RPE 目录…');
         const entries = await directoryEntries(directory);
-        migrationDialog(await scanMigration(entries, directory.name), applyMigratedPreferences);
+        migrationDialog(await scanMigration(entries, directory.name, fileOptions()), applyMigratedPreferences);
       } catch (error) { if (error.name !== 'AbortError') reportError(error); }
     };
     content.append(select);
@@ -1869,7 +1969,7 @@ element('#directory-input').addEventListener('change', async event => {
     status('正在扫描旧 RPE 目录…');
     const entries = uploadedEntries(event.target.files);
     const name = event.target.files[0].webkitRelativePath.split('/')[0];
-    migrationDialog(await scanMigration(entries, name), applyMigratedPreferences);
+    migrationDialog(await scanMigration(entries, name, fileOptions()), applyMigratedPreferences);
   } catch (error) { reportError(error); }
   finally { event.target.value = ''; }
 });
@@ -1912,11 +2012,13 @@ function applyDisplaySettings() {
   const ratioHeight = editorPreferences.ratioHeight ?? preferences.settings.ratioHeight;
   setRatioOptions(element('#preview-ratio'), ratioWidth, ratioHeight);
   preview.aspectRatio = realtimePreview.aspectRatio = ratioWidth / ratioHeight;
+  preview.noteSize = realtimePreview.noteSize = Number(element('#note-size').value);
+  timeline.noteScale = preview.noteSize / 175;
   applyViewControls({ ...editorPreferences, showGameUI: editorPreferences.showGameUI ?? preferences.settings.showGameUI }, timeline, [preview, realtimePreview]);
   for (const renderer of [preview, realtimePreview]) for (const key of ['lineNumbers', 'lineArrows', 'lineTint', 'mergeLineNumbers', 'pickPreviewLines', 'pickPreviewNoiseAreas']) renderer[key] = editorPreferences[key] ?? true;
   for (const renderer of [preview, realtimePreview]) {
     renderer.noisePreview.seamless = editorPreferences.seamlessNoiseAreas ?? true;
-    if (renderer.noisePreview.forceSimple !== (editorPreferences.forceSimpleNoise ?? false)) renderer.noisePreview.gpu?.reset();
+    if (renderer.noisePreview.forceSimple !== (editorPreferences.forceSimpleNoise ?? false)) { renderer.noisePreview.gpu?.reset(); renderer.overflowNoisePreview?.gpu?.reset(); }
     renderer.noisePreview.forceSimple = editorPreferences.forceSimpleNoise ?? false;
     renderer.noisePreview.getAssets = () => assets;
     renderer.noisePreview.invalidate = invalidate;
@@ -1931,6 +2033,8 @@ function applyDisplaySettings() {
   timeline.eventValueFontSize = Number(element('#event-value-size').value); timeline.eventValueThreshold = Number(element('#event-value-threshold').value); timeline.eventCurveThreshold = Number(element('#event-curve-threshold').value); timeline.eventOpacity = Number(element('#event-opacity').value); timeline.eventBarWidth = Number(element('#event-bar-width').value);
   timeline.seamlessEvents = element('#seamless-events').checked;
   timeline.drawEventCurves = element('#draw-event-curves').checked;
+  timeline.selectionInterval = globalEvents.timeline.selectionInterval = Number(element('#selection-interval').value);
+  selectionIntervalPanel.sync();
   session.cutDensity = Number(element('#event-cut-density').value);
   session.dragSensitivity = Number(element('#event-drag-sensitivity').value);
   clipboardHistory.enabled = element('#clipboard-history-enabled').checked;
@@ -1940,9 +2044,13 @@ function applyDisplaySettings() {
   element('#clipboard-history').hidden = !clipboardHistory.enabled;
   if (!clipboardHistory.enabled && activePaneName === 'clipboard') activatePane('chart');
   preview.backgroundBlur = realtimePreview.backgroundBlur = Number(element('#background-blur').value);
+  preview.viewportOverflow = realtimePreview.viewportOverflow = Boolean(element('#viewport-overflow').checked);
+  preview.overflowBlur = realtimePreview.overflowBlur = Number(element('#overflow-blur').value);
+  preview.overflowDarken = realtimePreview.overflowDarken = Number(element('#overflow-darken').value);
   preview.lineScale = realtimePreview.lineScale = Number(element('#default-line-thickness').value);
   timeline.highlight = preview.highlight = realtimePreview.highlight = element('#highlight-notes').checked;
   audio.setPreservePitch(element('#preserve-pitch').checked);
+  hitSounds.setDelays({ tap: Number(element('#hit-tap-delay').value), drag: Number(element('#hit-drag-delay').value), flick: Number(element('#hit-flick-delay').value) });
   rotateTip();
   invalidate();
 }
@@ -1973,6 +2081,7 @@ function setDisplayField(key, control) {
   applyDisplaySettings(); persistEditor();
 }
 for (const [id, key] of displayFields) {
+  if (key === 'selectionInterval') continue;
   const control = element(`#${id}`);
   if (settingsIsland && control.closest('#settings-modal')) continue;
   control.addEventListener(control.type === 'number' ? 'change' : 'input', event => setDisplayField(key, event.target));
@@ -1992,7 +2101,7 @@ const modEditor={
   get session(){return session;},get chart(){return session.chart;},get tempo(){return tempo;},get assets(){return assets;},get preferences(){return preferences;},get editorPreferences(){return editorPreferences;},get chartName(){return chartName;},
   get hasDocument(){return hasDocument&&!atHome;},get home(){return atHome;},get activePane(){return activePaneName;},
   get dirty(){return session.history.dirty||assetDirty;},get libraryProject(){return libraryProject;},get loop(){return loop;},set loop(value){loop=value;},
-  audio,playback,preview,realtimePreview,timeline,skin,images,hitSounds,editorSkins,noteSkins,noiseEditor,eventSampler,trajectoryPanel,textLinesPanel,noiseFitPanel,noiseTrackingPanel,multiEdit,batchControls,collaboration,globalEvents,globalEventRegistry,openGlobalEvents,
+  audio,playback,preview,realtimePreview,timeline,skin,images,hitSounds,editorSkins,noteSkins,noiseEditor,eventSampler,trajectoryPanel,textLinesPanel,noiseFitPanel,noiseTrackingPanel,multiEdit,batchControls,collaboration,globalEvents,globalEventRegistry,openGlobalEvents,versionControl,
   chartSeconds,offsetSeconds,currentBeat,invalidate,render:renderSession,notify,save,activatePane,
   commit:(label,chart)=>session.commit(label,chart),replace:(chart,name=chartName)=>replaceChart(chart,name),
   seek:(seconds,{music=false,pause=true}={})=>{playback.seek(seconds+(music?0:offsetSeconds()),pause);invalidate();},

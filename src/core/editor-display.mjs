@@ -16,6 +16,30 @@ export function previewViewport(width, height, ratio = 1.5) {
     left: (width - logicalWidth * scale) / 2, top: (height - logicalHeight * scale) / 2 };
 }
 
+export function overflowTextureSize(width, height, pixelRatio, blur, filterRadius = 8) {
+  const ratio = blur > 0 ? Math.min(pixelRatio, 1, filterRadius / Math.max(filterRadius, blur), Math.sqrt(480000 / Math.max(1, width * height))) : pixelRatio;
+  return { width: Math.max(1, Math.round(width * ratio)), height: Math.max(1, Math.round(height * ratio)) };
+}
+
+// Positions adapt to the visible frame; sprite dimensions and rotation stay uniform.
+export function previewPositionScale(ratio = 1.5) {
+  return { x: Math.min(1, ratio / 1.5), y: Math.min(1, 1.5 / ratio) };
+}
+
+export function previewNoiseGeometry(sample, positionScale) {
+  if (positionScale.x === 1 && positionScale.y === 1) return sample;
+  const project = point => ({ x: point.x * positionScale.x, y: point.y * positionScale.y });
+  return { ...sample, points: sample.points.map(project), center: project(sample.center),
+    rotation: Math.atan2(Math.sin(sample.rotation) * positionScale.y, Math.cos(sample.rotation) * positionScale.x) };
+}
+
+export function previewNotePosition(position, line, positionScale) {
+  // RPE leaves note-local distances unscaled on parented lines.
+  const parent = Number(line.father === '' ? -1 : line.father ?? -1);
+  if (Number.isInteger(parent) && parent >= 0 || positionScale.x === 1 && positionScale.y === 1) return position;
+  return { ...position, x: position.x * positionScale.x, y: position.y * positionScale.y, tail: position.tail * positionScale.y };
+}
+
 export function eventChains(events) {
   const groups = [];
   for (const entry of events.map((event, index) => ({ event, index })).sort((left, right) => beatValue(left.event.startTime) - beatValue(right.event.startTime))) {

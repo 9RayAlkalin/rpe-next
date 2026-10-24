@@ -28,12 +28,21 @@ export const DEFAULT_SETTINGS = Object.freeze({
 });
 
 export const DEFAULT_EDITOR_PREFERENCES = Object.freeze({
+  "selectionInterval": 1,
+  "viewportOverflow": false,
+  "overflowBlur": 25,
+  "overflowDarken": 0.15,
+  "includeBackupCharts": false,
+  "pairedMovementSampling": true,
   "scale": 600,
   "division": 4,
   "snapX": true,
   "judgementOffset": 92,
   "realtime": true,
   "hitEnabled": true,
+  "hitTapDelay": 0,
+  "hitDragDelay": 0,
+  "hitFlickDelay": 0,
   "allLines": true,
   "toolbarMode": "icons",
   "analysisEnabled": false,
@@ -42,7 +51,7 @@ export const DEFAULT_EDITOR_PREFERENCES = Object.freeze({
   "analysisWidth": 0.62,
   "notesOnly": false,
   "eventOpacity": 0.45,
-  "eventBarWidth": 0.73,
+  "eventBarWidth": 0.67,
   "dragSensitivity": 1,
   "tipsEnabled": false
 });

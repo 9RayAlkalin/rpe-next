@@ -1,7 +1,7 @@
 import { beatValue, formatBeat, fromNumber, parseBeat } from '../core/beat.mjs';
 import { NOISE_REVEALS } from '../core/noise-fit.mjs';
 import { noiseLayers } from '../core/noise-skin.mjs';
-import { previewViewport } from '../core/editor-display.mjs';
+import { previewViewport, previewPositionScale } from '../core/editor-display.mjs';
 import { fittedNoiseAreas, noiseFitChart } from '../application/noise-fit.mjs';
 import { beatInputControl } from './beat-input.mjs';
 import { createEasingPicker, EASING_NAMES } from './easing-picker.mjs';
@@ -300,10 +300,11 @@ export class NoiseFitPanel {
     if (!this.fit) return null;
     const rectangle = this.overlay.getBoundingClientRect(); const viewport = previewViewport(rectangle.width, rectangle.height, renderer.aspectRatio ?? 1.5);
     const scale = viewport.scale / (renderer.viewDivisor ?? 1); const width = this.options.width * scale; const height = width * this.fit.height / this.fit.width;
+    const positionScale = previewPositionScale(renderer.aspectRatio ?? 1.5);
     const angle = this.options.rotation * Math.PI / 180; const cosine = Math.cos(angle); const sine = Math.sin(angle);
-    const center = { x: rectangle.width / 2 + this.options.x * scale, y: rectangle.height / 2 - this.options.y * scale };
-    const point = (x, y) => ({ x: center.x + x * cosine - y * sine, y: center.y + x * sine + y * cosine });
-    return { scale, center, width, height, corners: [point(-width / 2, -height / 2), point(width / 2, -height / 2), point(width / 2, height / 2), point(-width / 2, height / 2)], resize: point(width / 2, height / 2), rotate: point(0, -height / 2 - 28) };
+    const center = { x: rectangle.width / 2 + this.options.x * scale * positionScale.x, y: rectangle.height / 2 - this.options.y * scale * positionScale.y };
+    const point = (x, y) => ({ x: center.x + (x * cosine - y * sine) * positionScale.x, y: center.y + (x * sine + y * cosine) * positionScale.y });
+    return { scale, positionScale, center, width, height, corners: [point(-width / 2, -height / 2), point(width / 2, -height / 2), point(width / 2, height / 2), point(-width / 2, height / 2)], resize: point(width / 2, height / 2), rotate: point(0, -height / 2 - 28) };
   }
 
   drawLayout(renderer) {
@@ -323,14 +324,16 @@ export class NoiseFitPanel {
     event.preventDefault(); event.stopPropagation(); const point = this.pointer(event); const layout = this.layout(this.renderer);
     const near = handle => Math.hypot(point.x - handle.x, point.y - handle.y) < 16;
     const kind = near(layout.resize) ? 'scale' : near(layout.rotate) ? 'rotate' : 'move';
-    this.drag = { kind, start: point, x: this.options.x, y: this.options.y, width: this.options.width, rotation: this.options.rotation, center: layout.center, scale: layout.scale, radius: Math.max(1, Math.hypot(point.x - layout.center.x, point.y - layout.center.y)), angle: Math.atan2(point.y - layout.center.y, point.x - layout.center.x) };
+    const relative = { x: (point.x - layout.center.x) / layout.positionScale.x, y: (point.y - layout.center.y) / layout.positionScale.y };
+    this.drag = { kind, start: point, x: this.options.x, y: this.options.y, width: this.options.width, rotation: this.options.rotation, center: layout.center, scale: layout.scale, positionScale: layout.positionScale, radius: Math.max(1, Math.hypot(relative.x, relative.y)), angle: Math.atan2(relative.y, relative.x) };
     this.overlay.setPointerCapture(event.pointerId);
   }
   move(event) {
     if (!this.drag) return; event.preventDefault(); const point = this.pointer(event); const drag = this.drag;
-    if (drag.kind === 'move') { this.options.x = Math.round((drag.x + (point.x - drag.start.x) / drag.scale) * 1000) / 1000; this.options.y = Math.round((drag.y - (point.y - drag.start.y) / drag.scale) * 1000) / 1000; }
-    else if (drag.kind === 'scale') this.options.width = limited(drag.width * Math.hypot(point.x - drag.center.x, point.y - drag.center.y) / drag.radius, 1, 20000);
-    else this.options.rotation = Math.round((drag.rotation + (Math.atan2(point.y - drag.center.y, point.x - drag.center.x) - drag.angle) * 180 / Math.PI) * 1000) / 1000;
+    const relative = { x: (point.x - drag.center.x) / drag.positionScale.x, y: (point.y - drag.center.y) / drag.positionScale.y };
+    if (drag.kind === 'move') { this.options.x = Math.round((drag.x + (point.x - drag.start.x) / (drag.scale * drag.positionScale.x)) * 1000) / 1000; this.options.y = Math.round((drag.y - (point.y - drag.start.y) / (drag.scale * drag.positionScale.y)) * 1000) / 1000; }
+    else if (drag.kind === 'scale') this.options.width = limited(drag.width * Math.hypot(relative.x, relative.y) / drag.radius, 1, 20000);
+    else this.options.rotation = Math.round((drag.rotation + (Math.atan2(relative.y, relative.x) - drag.angle) * 180 / Math.PI) * 1000) / 1000;
     this.syncControls(['x', 'y', 'width', 'rotation']);
     if (!this.dragFrame) this.dragFrame = requestAnimationFrame(() => { this.dragFrame = null; if (this.active) this.rebuild(); });
   }

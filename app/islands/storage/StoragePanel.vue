@@ -49,7 +49,7 @@ defineExpose({ refresh, setStatus });
   <section id="storage-settings">
     <h3>本地存储与外部备份</h3>
     <p id="storage-status" role="status">{{ status }}</p>
-    <p class="hint">{{ props.native ? '桌面设置统一保存在当前谱面库的 preferences 目录，更新或移动程序后会自动沿用，无需复制程序文件夹。谱面库使用独立文件与去重素材保存，索引损坏可重建。恢复记录与回收站仍在库内，请另存独立文件夹备份或 PEZ。首次迁移保留旧数据库。' : '谱面库与自动备份属于同一份站点数据。持久化可降低浏览器回收风险，无法抵御主动清除网站数据；请保留外部 PEZ 备份。不同浏览器或地址的谱面库相互独立。' }}</p>
+    <p class="hint">{{ props.native ? '桌面设置统一保存在当前谱面库的 preferences 目录，更新或移动程序后会自动沿用，无需复制程序文件夹。谱面库使用独立文件与去重素材保存，索引损坏可重建。版本历史随谱面库保存，完整库备份与搬迁会一并包含。恢复记录与回收站仍在库内，请另存独立文件夹备份或 PEZ。首次迁移保留旧数据库。' : '谱面库与自动备份属于同一份站点数据。持久化可降低浏览器回收风险，无法抵御主动清除网站数据；请保留外部 PEZ 备份。不同浏览器或地址的谱面库相互独立。' }}</p>
     <div class="storage-actions">
       <button type="button" id="storage-persist" :hidden="props.native" :disabled="persistDisabled || busy.persist" @click="run('persist', props.actions.persist)">申请持久化保护</button>
       <button type="button" id="storage-refresh" :disabled="busy.refresh" @click="run('refresh', props.actions.refreshUsage)">刷新用量</button>

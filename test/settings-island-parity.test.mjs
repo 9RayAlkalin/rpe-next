@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 
 const read = path => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
 const FIELD_ROW = /\['([a-z][a-z0-9-]*)', '[^']*', '(?:range|checkbox|number|color)'/g;
+const GROUP_ID = /^\s*id: '([a-z][a-z0-9-]*)'/gm;
 const ASSIGNED_ID = /\.id = '([a-z][a-z0-9-]*)'/g;
 const STATIC_ID = / id="([a-z][a-z0-9-]*)"/g;
 const collect = (text, pattern) => [...text.matchAll(pattern)].map(match => match[1]);
@@ -17,7 +18,7 @@ test('设置岛屿与旧面板的元素集合和偏好键一一对应', async ()
     read('src/ui/app.mjs'),
   ]);
   const legacyIds = new Set([...collect(legacy, FIELD_ROW), ...collect(legacy, ASSIGNED_ID)]);
-  const islandIds = new Set([...collect(islandFields, FIELD_ROW), ...collect(islandTemplate, STATIC_ID), ...collect(register, ASSIGNED_ID)]);
+  const islandIds = new Set([...collect(islandFields, FIELD_ROW), ...collect(islandFields, GROUP_ID), ...collect(islandTemplate, STATIC_ID), ...collect(register, ASSIGNED_ID)]);
   assert.deepEqual([...islandIds].sort(), [...legacyIds].sort(), '岛屿与旧面板的元素集合不一致');
 
   const islandKeys = new Map([...islandFields.slice(islandFields.indexOf('DISPLAY_KEYS')).matchAll(/'([a-z][a-z0-9-]+)': '([A-Za-z][A-Za-z0-9]*)'/g)].map(match => [match[1], match[2]]));

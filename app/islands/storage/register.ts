@@ -54,7 +54,7 @@ export function createStoragePanel(payload: RpenStorageCreatePayload): RpenStora
     },
     refreshUsage: () => refresh(),
     exportAll: async () => {
-      const result = await helpers.exportLibrary({ progress: (index, count, name) => setStatus(`正在打包外部备份 ${index}/${count}${name ? '：' + name : ''}`) });
+      const result = await helpers.exportLibrary({ ...helpers.fileOptions(), progress: (index, count, name) => setStatus(`正在打包外部备份 ${index}/${count}${name ? '：' + name : ''}`) });
       helpers.download(result.blob, `rpe-next-library-${new Date().toISOString().slice(0, 10)}.zip`);
       helpers.noteExternalBackup();
       helpers.notify(`已发起 ${result.count} 个项目的备份下载；请确认下载完成。恢复时解压 ZIP，分别打开其中的 PEZ。`, 'success', 7000);

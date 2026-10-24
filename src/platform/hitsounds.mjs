@@ -9,8 +9,10 @@ export function hitTimeline(chart, tempo, offsets = [0, 0], lineIndex = null) {
     : [chart.judgeLineList?.[lineIndex]].filter(Boolean);
   for (const line of lines) for (const note of line.notes ?? []) {
     if (note.isFake) continue;
-    entries.push({ time: tempo.seconds(note.startTime, line.bpmfactor ?? 1) + (chart.META.offset ?? 0) / 1000 + (note.type === 4 ? offsets[1] : offsets[0]),
-      sound: note.hitsound || note.hitSound || (note.type === 3 ? 'flick' : note.type === 4 ? 'drag' : 'tap') });
+    const kind = note.type === 3 ? 'flick' : note.type === 4 ? 'drag' : 'tap';
+    const offset = Array.isArray(offsets) ? offsets[kind === 'drag' ? 1 : kind === 'flick' && offsets.length > 2 ? 2 : 0] ?? 0 : offsets[kind] ?? 0;
+    entries.push({ time: tempo.seconds(note.startTime, line.bpmfactor ?? 1) + (chart.META.offset ?? 0) / 1000 + offset,
+      sound: note.hitsound || note.hitSound || kind });
   }
   return entries.sort((left, right) => left.time - right.time);
 }
@@ -22,6 +24,7 @@ export class HitSounds {
     this.maxBurst = 96;
     this.maxSameTime = 64;
     this.skinBuffers = new Map();
+    this.delays = { tap: 0, drag: 0, flick: 0 };
   }
 
   async prepare() {
@@ -47,6 +50,11 @@ export class HitSounds {
 
   setProject(chart, assets, chartName) { this.stop(); this.generation++; this.buffers.clear(); this.chart = chart; this.assets = assets; this.chartName = chartName; this.compiled = null; this.compiledLine = null; this.onlyCurrentLine = false; }
   setVolume(value) { this.volume = Math.max(0, Math.min(1, value)); if (this.gain) this.gain.gain.value = this.volume; }
+  setDelays(values) {
+    const next = Object.fromEntries(['tap', 'drag', 'flick'].map(kind => [kind, Number.isFinite(values?.[kind]) ? values[kind] : 0]));
+    if (Object.keys(next).every(kind => next[kind] === this.delays[kind])) return;
+    this.stop(); this.delays = next; this.compiled = null;
+  }
   setSoundPack(buffers = new Map()) { this.stop(); this.skinBuffers = new Map(buffers); }
   stop() { for (const source of this.sources) { source.stop(); source.disconnect(); } this.sources.clear(); this.revision = -1; }
 
@@ -54,7 +62,8 @@ export class HitSounds {
     if (!this.enabled || !this.transport.playing || this.transport.clockReady === false) { this.stop(); return; }
     const line = this.onlyCurrentLine ? currentLine : null;
     if (this.compiled !== chart || this.tempo !== tempo || this.compiledLine !== line) {
-      this.stop(); this.compiled = chart; this.tempo = tempo; this.compiledLine = line; this.entries = hitTimeline(chart, tempo, [0, 0], line);
+      this.stop(); this.compiled = chart; this.tempo = tempo; this.compiledLine = line;
+      this.entries = hitTimeline(chart, tempo, Object.fromEntries(Object.entries(this.delays).map(([kind, milliseconds]) => [kind, milliseconds / 1000])), line);
     }
     const time = this.transport.time; const context = this.transport.context;
     if (this.revision !== this.transport.playRevision) {

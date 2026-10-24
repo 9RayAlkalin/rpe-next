@@ -142,6 +142,7 @@ export function activate(api) {
 | `chart:parsed` | `{chart}`；内置解析完成后改写结果；自定义 `chart:parse` 短路时不触发 |
 | `chart:validate` | `{chart,handled:false}`；自行检查后设 `handled=true` 跳过内置 assertChart 检查 |
 | `chart:serialize` | `{chart,compact,text:null}`；可替换输入；`text!==null` 直接返回字符串并跳过内置校验和整形 |
+| `chart:export-assets` | `{chart,chartName,assets,required}`；PEZ 默认排除未使用文件，在依赖遍历前触发。`chart` 已经过兼容转换，`assets` 为待导出文件 Map，`required` 是需保留的包内路径 Set。模组可用 `required.add(path)` 声明自定义结构或序列化器使用的资源，其 JSON、着色器等依赖会继续追踪；勾选导出未使用文件时不需要筛选，也不触发此钩子。自动保存文件仍遵循通用设置 |
 | `preview:before` | `{chart,seconds,lineIndex}`；在预览/背景预览绘制前替换渲染数据、谱面秒数和当前线，不修改存档 |
 
 事件取样及属性拖动可以使用临时谱面和循环预览时间，因此预览钩子、`onPreview` 和渲染包装函数应使用回调传入的 `chart/seconds`；它们不一定等于已提交谱面和实际播放头。`onFrame` 的 `chartSeconds/musicSeconds` 仍表示实际播放时间。以上行为沿用 API 1。
@@ -211,7 +212,7 @@ export function activate(api) {
 | `save()` | 调用现有主动保存流程，返回 Promise；必须 await 并处理写入或版本冲突错误，详见下文 |
 | `addAsset(path,bytes)/removeAsset(path)` | 改素材、标未保存、刷新贴图缓存 |
 
-可直接访问实际对象：`audio/playback/preview/realtimePreview/timeline/skin/images/hitSounds/editorSkins/noteSkins/noiseEditor/eventSampler/trajectoryPanel/textLinesPanel/noiseFitPanel/noiseTrackingPanel/multiEdit/batchControls/collaboration`。它们不是只读快照或受限代理，可以包装方法、调整字段或替换底层行为；具体接口看同名源码。持久设置修改需调用相应的保存流程。
+可直接访问实际对象：`audio/playback/preview/realtimePreview/timeline/skin/images/hitSounds/editorSkins/noteSkins/noiseEditor/eventSampler/trajectoryPanel/textLinesPanel/noiseFitPanel/noiseTrackingPanel/multiEdit/batchControls/collaboration/versionControl`。它们不是只读快照或受限代理，可以包装方法、调整字段或替换底层行为；具体接口看同名源码。持久设置修改需调用相应的保存流程。
 
 `editor.raw` 提供更底层入口：实时 `session/chart/assets/tempo`、`renderSession/replaceChart/activatePane/togglePlayback/togglePreview/save/applyDisplaySettings/persistEditor/setHome`。`raw.chart=` 直接替换历史当前文档并通知，**不增加撤销记录**；`raw.tempo=` 更新时间轴 TempoMap。其他内部一致性由作者负责，优先使用普通 commit。可以通过任意 DOM/Web API、内部 ES 模块、类原型与这些入口继续扩展，宿主不限制为本节列出的功能。
 
@@ -224,6 +225,14 @@ export function activate(api) {
 桌面端的导入包位于所选谱面库的 `mods`，启用列表、参数和个人数据位于 `preferences`；固定的桌面配置记录库位置，因此同一用户更新或移动程序后自动沿用。切换到另一个库时使用那个库的包与设置，不能假定任意库共享个人数据。网页端、不同同源地址和桌面库相互独立。需要随作品分享的内容应放入有模组命名空间的谱面字段或全局事件，并说明停用及兼容导出策略。
 
 进阶模组可导入 `@rpen/platform/library.mjs`、`recovery.mjs`、`mods.mjs` 等业务接口。这些接口会按运行环境选择后端；不要直接操作固定名称的 IndexedDB、localStorage 键、SQLite 或原生版本文件，否则桌面数据可能不生效，也可能绕过冲突检测、素材引用和恢复逻辑。`libraryProject.id`、`storageRevision` 和素材哈希都是存储标识，不是目录名或可访问的文件路径。桌面“打开谱面所在文件夹”通过主进程解析已保存项目，未提供通用文件系统权限。
+
+### 6.2. 谱面版本控制
+
+谱面版本历史与撤销栈、谱面库保存、自动恢复副本各自独立。完整行为及仓库包约定见[谱面版本控制说明](CHART-VERSION-CONTROL.zh-CN.md)。`editor.versionControl` 是当前版本控制面板实例，属于可包装的进阶实现接口，`await editor.versionControl.open()` 读取当前谱面的版本库；打开可见页面可用 `editor.activatePane('version-control')`。需要数据级操作时可导入 `@rpen/application/chart-vcs.mjs` 的 `ChartRepository` 与 `@rpen/platform/version-store.mjs` 的 `openVersionStore()`，不要绑定某一平台的存储目录或数据库名。这些内部方法不属于 API 1 的稳定方法契约，调用前应确认实例存在并 await 操作。
+
+快照记录当前谱面 JSON、素材和素材文件夹，保留模组命名空间与全局事件来源信息；快照存储使用保留数值的原始 JSON，不调用导出专用的 `chart:serialize` 钩子，读取时经过 `parseChart` 和现有解析、校验钩子。读取旧版本后会重新创建编辑会话，`editor:chart` / `editor:state` 会通知会话和谱面引用变化；模组应重新读取 `editor.session/chart/assets`，不要继续修改旧引用。恢复结果保持未保存，用户需要再保存到谱面库。模组个人设置、启用状态和模组安装包不属于谱面快照。
+
+合并对内置判定线父子关系和根级 shader 所属线进行身份映射，临时身份不写入谱面。未知模组字段按 JSON 三路合并；结构相同不代表自定义语义一定可合并，自定义线号引用、跨事件约束和外部数据不会自动获得语义重映射。模组可通过现有 `chart:validate` 校验合并结果，或包装版本库方法提供自定义合并；不应将格式转换仅放在 `chart:serialize` 中。模组全局事件仍须保留来源信息，停用模组不会删除历史中的扩展数据。本节为 API 1 的兼容补充，不改变现有钩子或升级 API 版本。
 
 ## 7. 事件与预览
 

@@ -78,6 +78,14 @@ test('手动保存推迟工作、复用未完成请求，保存期间编辑仍�
   history.undo(); assert.equal(history.dirty, false);
 });
 
+test('恢复版本快照后保持未保存状态，直到再次保存', () => {
+  const history = new History({ value: 1 });
+  history.markUnsaved();
+  assert.equal(history.dirty, true);
+  history.markSaved();
+  assert.equal(history.dirty, false);
+});
+
 test('后台写入失败保留脏状态且可重试，不同谱面互不阻塞', async () => {
   const scheduled = []; let fail = true;
   const queue = new ManualSaveQueue(async () => { if (fail) throw new Error('quota'); }, callback => scheduled.push(callback));

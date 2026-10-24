@@ -41,6 +41,7 @@ export interface RpenExportDialogPayload {
   assets: Map<string, Uint8Array>;
   chartName: string;
   identifier?: string;
+  includeBackupCharts?: boolean;
   onExport(name: string, container: string): void;
   helpers: RpenExportHelpers;
 }
@@ -246,6 +247,7 @@ export interface RpenStorageHelpers {
   showDialog(title: string, description: string): HTMLElement;
   noteExternalBackup(): void;
   readBackupTimestamps(): { last: number; first: number };
+  fileOptions(): { includeBackupCharts?: boolean };
   reload(): void;
 }
 

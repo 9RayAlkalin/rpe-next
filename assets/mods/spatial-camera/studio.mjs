@@ -80,7 +80,7 @@ export class CameraStudio {
   generate(){try{const v=this.values(),changes=transitionChanges(this.editor.globalEvents.document,v.start,v.end,v.first,v.last,v.easingType);this.editor.globalEvents.document.apply(changes,'生成三维摄像机过渡');this.controls.closeAssistant();this.editor.openGlobalEvents();this.api.notify('已生成摄像机过渡：7 列事件，可一步撤销');}catch(error){this.fail(error,true);}}
   dispose(){
     if(this.closed)return;this.closed=true;cancelAnimationFrame(this.pending);this.resize.disconnect();this.scene.dispose();this.releasePreview();
-    const r=this.preview;r.noisePreview.gpu?.clearSkins();for(const gl of [r.noisePreview.gpu?.gl,r.noisePreview.edgeFilter?.gl,r.shaderPipeline.gl])gl?.getExtension('WEBGL_lose_context')?.loseContext();r.backgroundFrame.clear();this.listeners.forEach(remove=>remove());
+    const r=this.preview;r.overflowLayer?.remove();r.noisePreview.gpu?.clearSkins();r.overflowNoisePreview?.gpu?.clearSkins();for(const gl of [r.noisePreview.gpu?.gl,r.noisePreview.edgeFilter?.gl,r.shaderPipeline.gl,r.overflowNoisePreview?.gpu?.gl,r.overflowNoisePreview?.edgeFilter?.gl,r.overflowShaderPipeline?.gl])gl?.getExtension('WEBGL_lose_context')?.loseContext();r.backgroundFrame.clear();this.listeners.forEach(remove=>remove());
     this.state.unlock();this.state.restoreView();this.controls.stage.closest('.editor').classList.remove('camera3d-adjusting');this.dialog.close();this.unmount();
   }
 }

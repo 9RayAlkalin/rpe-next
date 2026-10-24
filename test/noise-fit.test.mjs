@@ -8,6 +8,7 @@ import { createNoiseArea, noiseRuntime } from '../src/core/noise-areas.mjs';
 import { EditorSession } from '../src/application/session.mjs';
 import { TempoMap } from '../src/core/tempo.mjs';
 import { beatValue } from '../src/core/beat.mjs';
+import { NoiseFitPanel } from '../src/ui/noise-fit.mjs';
 
 const defaults = { first: 4, last: 8, duration: 6, width: 800, x: 100, y: -80, rotation: 0, layerId: 'default', reveal: 'left', easingType: 1 };
 function raster(rows) { return { mask: Uint8Array.from(rows.join(''), Number), width: rows[0].length, height: rows.length }; }
@@ -123,4 +124,44 @@ test('空图案、非法时间、激活范围与已删除的目标层不会写�
   const result = fit(['101']);
   for (const bad of [{ last: 1 }, { duration: 0 }, { activeStart: -1 }, { activeEnd: 7 }, { easingType: 30 }, { width: NaN }]) assert.throws(() => fittedNoiseAreas(result, { ...defaults, ...bad }));
   assert.throws(() => noiseFitChart(createChart(), fittedNoiseAreas(result, { ...defaults, layerId: 'deleted' })), /目标噪域层/);
+});
+
+function layoutPanel(ratio) {
+  const panel = Object.create(NoiseFitPanel.prototype);
+  panel.fit = fit(['11']); panel.options = { ...defaults, first: 0, last: 0, rotation: 37 };
+  panel.overlay = { getBoundingClientRect: () => ({ width: 960, height: 640, left: 0, top: 0 }), setPointerCapture() {} };
+  panel.renderer = { aspectRatio: ratio, viewDivisor: 1.3 }; panel.previewChart = {}; panel.dragFrame = 1; panel.syncControls = () => {};
+  return panel;
+}
+
+test('图案拟合的旋转布局轮廓随比例适配，与生成噪域的渲染坐标一致', () => {
+  const tempo = new TempoMap([{ startTime: [0, 0, 1], bpm: 120 }]);
+  for (const ratio of [1.5, 16 / 9, 4 / 3, 9 / 16]) {
+    const panel = layoutPanel(ratio), layout = panel.layout(panel.renderer);
+    const area = fittedNoiseAreas(panel.fit, panel.options)[0], sample = noiseRuntime(area, tempo).sample(0);
+    for (const point of sample.points) {
+      const horizontal = 480 + point.x * layout.scale * layout.positionScale.x, vertical = 320 - point.y * layout.scale * layout.positionScale.y;
+      assert.ok(layout.corners.some(corner => Math.hypot(corner.x - horizontal, corner.y - vertical) < 1e-7));
+    }
+  }
+});
+
+test('不同比例下图案布局拖动、旋转及缩放反算均保留原坐标单位', () => {
+  const pointer = point => ({ clientX: point.x, clientY: point.y, button: 0, pointerId: 1, preventDefault() {}, stopPropagation() {} });
+  for (const ratio of [16 / 9, 4 / 3, 9 / 16]) for (const kind of ['move', 'scale', 'rotate']) {
+    const panel = layoutPanel(ratio), layout = panel.layout(panel.renderer), original = { ...panel.options };
+    const start = kind === 'move' ? layout.center : kind === 'scale' ? layout.resize : layout.rotate;
+    panel.down(pointer(start)); assert.equal(panel.drag.kind, kind);
+    let target;
+    if (kind === 'move') target = { x: start.x + 100 * layout.scale * layout.positionScale.x, y: start.y - 70 * layout.scale * layout.positionScale.y };
+    else if (kind === 'scale') target = { x: layout.center.x + (start.x - layout.center.x) * 2, y: layout.center.y + (start.y - layout.center.y) * 2 };
+    else {
+      const horizontal = (start.x - layout.center.x) / layout.positionScale.x, vertical = (start.y - layout.center.y) / layout.positionScale.y, angle = Math.PI / 4;
+      target = { x: layout.center.x + (horizontal * Math.cos(angle) - vertical * Math.sin(angle)) * layout.positionScale.x, y: layout.center.y + (horizontal * Math.sin(angle) + vertical * Math.cos(angle)) * layout.positionScale.y };
+    }
+    panel.move(pointer(target));
+    if (kind === 'move') { assert.equal(panel.options.x, original.x + 100); assert.equal(panel.options.y, original.y + 70); }
+    else if (kind === 'scale') assert.ok(Math.abs(panel.options.width - original.width * 2) < 1e-7);
+    else assert.equal(panel.options.rotation, original.rotation + 45);
+  }
 });

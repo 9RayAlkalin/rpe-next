@@ -15,9 +15,9 @@ const bytes = value => Number.isFinite(value) ? `${(value / 1024 ** 2).toFixed(1
 
 const readBackupTimestamps = () => { let last = 0, first = 0; try { last = Number(localPreferences.getItem(BACKUP_KEY)) || 0; first = Number(localPreferences.getItem(FIRST_SAVE_KEY)) || 0; } catch {} return { last, first }; };
 
-export function mountStoragePanel(settings, { reportError, notify, canSwitchLibrary = () => true }) {
+export function mountStoragePanel(settings, { reportError, notify, fileOptions = () => ({}), canSwitchLibrary = () => true }) {
   const island = globalThis.rpenIslands?.storage?.createStoragePanel;
-  if (typeof island !== 'function') return new StoragePanel(settings, { reportError, notify, canSwitchLibrary });
+  if (typeof island !== 'function') return new StoragePanel(settings, { reportError, notify, fileOptions, canSwitchLibrary });
   const banner = document.createElement('p'); banner.id = 'storage-backup-reminder'; banner.className = 'hint'; banner.hidden = true;
   document.querySelector('#project-cards').before(banner);
   const mount = document.createElement('div');
@@ -32,7 +32,7 @@ export function mountStoragePanel(settings, { reportError, notify, canSwitchLibr
       nativeCall: (method, ...args) => nativeStorage.call(method, ...args),
       nativeList: (store, trashed = false) => nativeList(store, trashed),
       storageStatus, requestPersistence, exportLibrary, download, flushLocalPreferences, notify, showDialog,
-      listProjects, listDrafts, deleteDraft, noteExternalBackup, readBackupTimestamps,
+      listProjects, listDrafts, deleteDraft, noteExternalBackup, readBackupTimestamps, fileOptions,
       reload: () => location.reload(),
     },
   });
@@ -41,13 +41,14 @@ export function mountStoragePanel(settings, { reportError, notify, canSwitchLibr
 }
 
 export class StoragePanel {
-  constructor(settings, { reportError, notify, canSwitchLibrary = () => true }) {
+  constructor(settings, { reportError, notify, canSwitchLibrary = () => true, fileOptions = () => ({}) }) {
     this.reportError = reportError; this.notify = notify;
+    this.fileOptions = fileOptions;
     this.host = document.createElement('section'); this.host.id = 'storage-settings';
     const title = document.createElement('h3'); title.textContent = '本地存储与外部备份';
     this.status = document.createElement('p'); this.status.id = 'storage-status'; this.status.setAttribute('role', 'status');
     const hint = document.createElement('p'); hint.className = 'hint'; hint.textContent = '谱面库与自动备份属于同一份站点数据。持久化可降低浏览器回收风险，无法抵御主动清除网站数据；请保留外部 PEZ 备份。不同浏览器或地址的谱面库相互独立。';
-    if (nativeStorage) hint.textContent = '桌面设置统一保存在当前谱面库的 preferences 目录，更新或移动程序后会自动沿用，无需复制程序文件夹。谱面库使用独立文件与去重素材保存，索引损坏可重建。恢复记录与回收站仍在库内，请另存独立文件夹备份或 PEZ。首次迁移保留旧数据库。';
+    if (nativeStorage) hint.textContent = '桌面设置统一保存在当前谱面库的 preferences 目录，更新或移动程序后会自动沿用，无需复制程序文件夹。谱面库使用独立文件与去重素材保存，索引损坏可重建。版本历史随谱面库保存，完整库备份与搬迁会一并包含。恢复记录与回收站仍在库内，请另存独立文件夹备份或 PEZ。首次迁移保留旧数据库。';
     const actions = document.createElement('div'); actions.className = 'storage-actions';
     const button = (label, id, run) => { const node = document.createElement('button'); node.type = 'button'; node.id = id; node.textContent = label; node.onclick = async () => { node.disabled = true; try { await run(); } catch (error) { reportError(error); } finally { node.disabled = false; } }; actions.append(node); return node; };
     this.persist = button('申请持久化保护', 'storage-persist', async () => { const result = await requestPersistence(); notify(result === true ? '已获得持久化存储保护，仍请保留外部备份' : result === false ? '浏览器未批准持久化，可稍后重试；请导出外部备份' : '当前环境不支持持久化申请，请保留外部备份', result === true ? 'success' : 'warning'); await this.refresh(); });
@@ -135,7 +136,7 @@ export class StoragePanel {
     }
   }
   async exportAll() {
-    const result = await exportLibrary({ progress: (index, count, name) => { this.status.textContent = `正在打包外部备份 ${index}/${count}${name ? '：' + name : ''}`; } });
+    const result = await exportLibrary({ ...this.fileOptions(), progress: (index, count, name) => { this.status.textContent = `正在打包外部备份 ${index}/${count}${name ? '：' + name : ''}`; } });
     download(result.blob, `rpe-next-library-${new Date().toISOString().slice(0, 10)}.zip`);
     noteExternalBackup(); this.notify(`已发起 ${result.count} 个项目的备份下载；请确认下载完成。恢复时解压 ZIP，分别打开其中的 PEZ。`, 'success', 7000); await this.refresh();
   }

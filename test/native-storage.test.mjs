@@ -67,6 +67,25 @@ test('native trash restore, permanent deletion, retained references and independ
   assert.equal((await store.collect()).removed, 1);
   assert.equal((await readdir(join(root, 'backup', 'blobs'))).length, 1);
 }));
+test('native complete library backup includes chart version objects', () => fixture(async (store, root) => {
+  const repo = { id: 'repo', version: 1, head: { type: 'branch', name: 'main' }, branches: { main: 'commit' }, tags: {}, index: null, stash: [], reflog: [], merge: null, config: { author: { name: 'Tester', email: 'tester@example.com' } } };
+  const tree = { id: 'tree', chart: 'chart-blob', assets: [], folders: [], chartName: 'chart.json' };
+  const commit = { id: 'commit', repoId: 'repo', tree: 'tree', parents: [], author: { name: 'Tester', email: 'tester@example.com' }, timestamp: 1, message: '初始版本' };
+  const blob = { id: 'chart-blob', bytes: new TextEncoder().encode('{"META":{}}') };
+  await write(store, 'version-repos', repo);
+  await write(store, 'version-trees', tree);
+  await write(store, 'version-commits', commit);
+  await write(store, 'version-blobs', blob);
+  await store.copyTo(join(root, 'backup-version'));
+  const backup = await new NativeStore(join(root, 'backup-version')).init();
+  try {
+    assert.deepEqual((await backup.read('version-repos', 'repo')).data.branches, repo.branches);
+    assert.equal((await backup.read('version-commits', 'commit')).data.message, '初始版本');
+    const envelope = await backup.read('version-blobs', 'chart-blob'), reference = envelope.binaries[0];
+    assert.deepEqual([...await backup.blob(reference.hash, 0, blob.bytes.length)], [...blob.bytes]);
+  } finally { await backup.close(); }
+}));
+
 test('native migration is verified, resumable, never replaces newer native data', () => fixture(async store => {
   const data = project(); await write(store, 'projects', data, { migration: true });
   await store.markMigration('old/projects', 'projects', data.id);

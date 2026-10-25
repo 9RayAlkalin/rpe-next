@@ -58,7 +58,7 @@ export class ModRuntime {
       const modules=await this.prepareModules(record);state.modules=modules;scope.defer(()=>{modules.urls.forEach(URL.revokeObjectURL);modules.map.remove();this.moduleLoads.delete(modules.loadId);});
       const api=this.createApi(state);state.api=api;
       // CSP allows imported package modules; packages deliberately execute with the page's authority.
-      const module=await import(modules.prefix+record.manifest.entry);if(scope.closed)return;const activate=module.activate??module.default;if(typeof activate!=='function')throw Error('入口模块必须导出 activate(api) 或 default 函数');
+      const module=await import(/* @vite-ignore */modules.prefix+record.manifest.entry);if(scope.closed)return;const activate=module.activate??module.default;if(typeof activate!=='function')throw Error('入口模块必须导出 activate(api) 或 default 函数');
       const cleanup=await activate(api);if(typeof cleanup==='function')scope.defer(cleanup);else if(cleanup?.dispose)scope.defer(()=>cleanup.dispose());
       if(scope.closed)return;
       state.status='loaded';this.emit('mod:loaded',{id});this.changed();this.invalidate();return state;
@@ -130,7 +130,7 @@ export class ModRuntime {
       package:{files:()=>[...record.files.keys()],bytes:path=>record.files.get(modPath(path))?.slice()??null,
         text:path=>new TextDecoder('utf-8',{fatal:true}).decode(record.files.get(modPath(path))??new Uint8Array()),
         url:(path,type)=>{const bytes=record.files.get(modPath(path));if(!bytes)throw Error('模组素材不存在：'+path);const extension=path.split('.').at(-1).toLowerCase();const mime=type??({png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',svg:'image/svg+xml',webp:'image/webp',gif:'image/gif',ogg:'audio/ogg',wav:'audio/wav',mp3:'audio/mpeg',json:'application/json',css:'text/css',woff2:'font/woff2',ttf:'font/ttf'}[extension]??'application/octet-stream');const url=URL.createObjectURL(new Blob([bytes],{type:mime}));scope.defer(()=>URL.revokeObjectURL(url));return url;},
-        import:path=>import(state.modules.resolve('./'+modPath(path),'')),
+        import:path=>import(/* @vite-ignore */state.modules.resolve('./'+modPath(path),'')),
       },
       commands:{register:definition=>{if(typeof definition.id!=='string'||typeof definition.run!=='function')throw Error('命令缺少 id / run');const key=id+':'+definition.id;if(this.commands.has(key))throw Error('命令重复：'+key);const command={...definition,owner:id,run:scope.wrap(definition.run)};this.commands.set(key,command);this.changed();return scope.defer(()=>{this.commands.delete(key);this.changed();});}},
       globalEvents:{
@@ -145,7 +145,7 @@ export class ModRuntime {
         open:()=>this.editor.openGlobalEvents(),
       },
       lockEditing:options=>scope.defer(this.lock(id,options)),
-      importInternal:path=>import(new URL('src/'+modPath(path),this.baseUrl).href),
+      importInternal:path=>import(/* @vite-ignore */new URL('src/'+modPath(path),this.baseUrl).href),
     };return api;
   }
 }

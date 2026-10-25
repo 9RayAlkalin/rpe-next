@@ -47,6 +47,12 @@ function pristineModules(): Plugin {
 
 export default defineConfig({
   base: './',
+  resolve: {
+    alias: [
+      { find: '@rpen/api', replacement: fileURLToPath(new URL('src/ui/mod-api.mjs', import.meta.url)) },
+      { find: /^@rpen\/(core|application|platform|ui)\/(.+\.mjs)$/, replacement: fileURLToPath(new URL('src/$1/$2', import.meta.url)) },
+    ],
+  },
   build: {
     outDir: 'dist',
     target: 'esnext',

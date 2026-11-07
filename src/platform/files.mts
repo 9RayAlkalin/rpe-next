@@ -1,3 +1,5 @@
+import { bakeChartAnimationCurves } from '../application/animation-curve-export.mjs';
+import { chartHasAnimationCurves } from '../core/chart-animation-curves.mjs';
 import { serializeChart, stringifyPreservingNumbers, EVENT_TYPES, EXTENDED_TYPES } from '../core/chart.mjs';
 import { parseDocument } from '../core/formats.mjs';
 import { readZip, writeZip, crc32, inspectZip } from './archive.mjs';
@@ -11,6 +13,8 @@ import { integerChartAlpha } from '../core/alpha-values.mjs';
 import { chartExportStem, safeExportStem, DownloadNames } from '../core/export-filename.mjs';
 import { isBackupChartFile, isChartDocumentFile } from '../core/chart-backups.mjs';
 import { collectExportAssetPaths } from './export-assets.mjs';
+import { bezierExportMargin, clampExportBezierEvent } from '../core/bezier-compat.mjs';
+import { t } from '../i18n.mjs';
 
 export async function openFiles(fileList: any, { confirmLargeArchive, includeBackupCharts = false }: any = {}) {
   const files = [...fileList];
@@ -19,7 +23,7 @@ export async function openFiles(fileList: any, { confirmLargeArchive, includeBac
   if (files.length === 1 && /\.(pez|zip)$/i.test(files[0].name)) {
     const buffer = await files[0].arrayBuffer(), info = inspectZip(buffer);
     const large = info.declaredBytes > 1024 ** 3 || info.largestFile > 512 * 1024 ** 2 || info.count > 20000 || info.largestRatio > 500;
-    if (large && !await confirmLargeArchive?.(info)) throw Object.assign(new Error('谱面包解压后的体积、文件数或压缩倍率过大，已停止导入；确认来源可信后可再次打开并确认。'), { name: 'ArchiveLimitError' });
+    if (large && !await confirmLargeArchive?.(info)) throw Object.assign(new Error(t('files.s1fe13d6')), { name: 'ArchiveLimitError' });
     assets = await readZip(buffer, { maxFiles: large ? info.count : 20000, maxBytes: large ? info.declaredBytes : 1024 ** 3, maxFileBytes: large ? info.largestFile : 512 * 1024 ** 2,
       includeEntry: (name: any): boolean => includeBackupCharts || !isBackupChartFile(name) });
   }
@@ -31,10 +35,10 @@ export async function openFiles(fileList: any, { confirmLargeArchive, includeBac
     try { candidates.push({ name, chart: parseDocument(decodeLegacy(bytes)) }); }
     catch (error) { errors.push(`${name}: ${error.message}`); }
   }
-  if (!candidates.length) throw new Error(errors.join('\n') || '找不到可导入的谱面；自动保存及备份谱面默认忽略，可在设置的“导入与导出”中开启包含这些文件');
+  if (!candidates.length) throw new Error(errors.join('\n') || t('files.s347b063'));
   attachExternalEffects(candidates, assets);
   for (const candidate of candidates) if (candidate.chart.rpeNextLegacySource?.format === 'phigros-v3') {
-    const references = resourceReferences(candidate.chart, assets, candidate.name);
+    const references = resourceReferences(candidate.chart, assets, candidate.name, {}, { inferEmpty: true });
     candidate.chart.META = { ...candidate.chart.META, name: candidate.name.replaceAll('\\', '/').split('/').at(-1).replace(/\.json$/i, ''), ...references };
   }
   return { candidates, assets };
@@ -94,13 +98,14 @@ export function exportChart(chart, name) {
   download(new Blob([serializeChart(orderedExportChart(chart))], { type: 'application/json' }), chartExportStem(chart, name) + '.json');
 }
 
-function orderedExportChart(chart) {
+function orderedExportChart(chart, { clampBezier = false, bezierMargin }: any = {}) {
   chart = integerChartAlpha(chart);
+  const margin = clampBezier ? bezierExportMargin(bezierMargin) : 0;
   const startBeat = event => {
     const time = event?.startTime ?? event?.start;
     return Array.isArray(time) ? beatValue(time) : Number.isFinite(time) ? time : 0;
   };
-  const ordered = events => [...events].sort((left, right) => startBeat(left) - startBeat(right));
+  const ordered = events => [...events].sort((left, right) => startBeat(left) - startBeat(right)).map(event => clampBezier ? clampExportBezierEvent(event, margin) : event);
   const shader = event => {
     if (!event?.vars) return event;
     return { ...event, vars: Object.fromEntries(Object.entries(event.vars).map(([name, value]) => [name,
@@ -125,9 +130,9 @@ function orderedExportChart(chart) {
     ...(Array.isArray(chart.META?.effects) ? { META: { ...chart.META, effects: effects(chart.META.effects) } } : {}) };
 }
 
-export function legacyChart(chart, splitSettings = {}) {
-  if (chart.blockAreaList?.length) throw new Error('原 RPE 不支持噪域，请在导出窗口明确选择移除噪域后导出');
-  if (Object.values(chart.globalEvents?.types ?? {}).some((type: any) => Object.values(type.columns).some((column: any) => column.events.length))) throw new Error('原 RPE 不支持全局事件，请在导出窗口明确选择移除全局事件后导出');
+export function legacyChart(chart, splitSettings = {}, compatibility = {}) {
+  if (chart.blockAreaList?.length) throw new Error(t('files.s82aa779'));
+  if (Object.values(chart.globalEvents?.types ?? {}).some(type => Object.values((type as any).columns).some(column => (column as any).events.length))) throw new Error(t('files.s91b752c'));
   const next = structuredClone(chart);
   delete next.blockAreaList;
   delete next.noiseAreaOptions;
@@ -144,7 +149,9 @@ export function legacyChart(chart, splitSettings = {}) {
       for (const event of trajectories) for (const [type, fragments] of expandTrajectory(event, tempo, line.bpmfactor ?? 1, splitSettings)) layer[type] = [...(layer[type] ?? []), ...fragments].sort((left, right) => beatValue(left.startTime) - beatValue(right.startTime));
     }
   }
-  return orderedExportChart(next);
+  const hasCustomCurves = chartHasAnimationCurves(next);
+  if ((compatibility as any).bakeCustomEasing === false && hasCustomCurves) throw Error(t('animation-curve.bakeRequired'));
+  return orderedExportChart(hasCustomCurves ? bakeChartAnimationCurves(next, tempo, (compatibility as any).curveBake) : next, compatibility);
 }
 
 export function exportLegacyChart(chart, name) {
@@ -175,7 +182,7 @@ function primaryInfo(assets: any, chartName: any) {
   return matches.find(([name]) => name.toLowerCase() === 'info.txt') ?? (matches.length === 1 ? matches[0] : null);
 }
 
-export function resourceReferences(chart, assets, chartName, fallback = {}) {
+export function resourceReferences(chart, assets, chartName, fallback = {}, { inferEmpty = false } = {}) {
   const match = primaryInfo(assets, chartName);
   const info = match ? parseInfo(decodeLegacy(match[1])) : fallback;
   const normalizedChart = normalizePath(chartName);
@@ -187,14 +194,26 @@ export function resourceReferences(chart, assets, chartName, fallback = {}) {
     const infoDirectory = match[0].replaceAll('\\', '/').split('/').slice(0, -1).join('/');
     return normalizePath(infoDirectory) === directory ? value : (infoDirectory ? infoDirectory + '/' : '') + value;
   };
-  const infer = extensions => {
-    const candidates = [...assets.keys()].filter(name => extensions.test(name) && normalizePath(name).split('/').slice(0, -1).join('/') === directory);
+  let noteSounds;
+  const infer = (extensions, excludeSounds = false) => {
+    if (excludeSounds && !noteSounds) {
+      const references = new Set();
+      for (const line of chart.judgeLineList ?? []) for (const note of line.notes ?? []) for (const name of [note.hitsound, note.hitSound]) if (name) references.add(name);
+      noteSounds = new Set([...references].map(name => assetPath(assets, name, chartName)).filter(Boolean));
+    }
+    const candidates = [...assets.keys()].filter(name => extensions.test(name) && (!excludeSounds || !noteSounds.has(name)) && normalizePath(name).split('/').slice(0, -1).join('/') === directory);
     const sameStem = candidates.filter(name => normalizePath(name).split('/').at(-1).replace(/\.[^.]+$/, '') === stem);
     return sameStem.length === 1 ? sameStem[0] : candidates.length === 1 ? candidates[0] : '';
   };
-  const resolve = (names, extensions) => names.find(name => name && assetBytes(assets, name, chartName)) || infer(extensions) || names.find(Boolean) || '';
-  return { song: resolve([chart.META.song, infoReference('Song')], /\.(mp3|ogg|wav|flac|m4a|aac|opus|webm)$/i),
-    background: resolve([chart.META.background, infoReference('Picture')], /\.(png|jpe?g|webp|gif|bmp|avif)$/i) };
+  const resolve = (key, infoKey, extensions, excludeSounds = false) => {
+    const names = [chart.META[key], infoReference(infoKey)];
+    const explicit = names.find(name => name && assetBytes(assets, name, chartName)) || names.find(Boolean);
+    if (explicit) return explicit;
+    if (Object.hasOwn(info, infoKey) || !inferEmpty && Object.hasOwn(chart.META, key)) return '';
+    return infer(extensions, excludeSounds);
+  };
+  return { song: resolve('song', 'Song', /\.(mp3|ogg|wav|flac|m4a|aac|opus|webm)$/i, true),
+    background: resolve('background', 'Picture', /\.(png|jpe?g|webp|gif|bmp|avif)$/i) };
 }
 
 export function mediaType(name) {
@@ -243,12 +262,14 @@ export function packageEntries(chart: any, assets: any, chartName: any, options:
     const start = event => { const value = event?.startTime ?? event?.start; return Array.isArray(value) ? beatValue(value) : Number.isFinite(value) ? value : 0; };
     return start(left) - start(right);
   });
-  if (effects.length || Array.isArray(chart.effects)) {
-    const directory = outputName.replaceAll('\\', '/').split('/').slice(0, -1).join('/');
-    const path = directory ? `${directory}/extra.json` : 'extra.json';
-    const existing = [...output.keys()].find(name => normalizePath(name) === normalizePath(path));
+  const extraDirectory = outputName.replaceAll('\\', '/').split('/').slice(0, -1).join('/');
+  const extraPath = extraDirectory ? `${extraDirectory}/extra.json` : 'extra.json';
+  const existing = [...output.keys()].find(name => normalizePath(name) === normalizePath(extraPath));
+  const updateEffects = effects.length > 0 || Array.isArray(chart.effects);
+  if (updateEffects || existing) {
     const extra = existing ? JSON.parse(decodeLegacy(output.get(existing))) : {};
-    output.set(existing ?? path, new TextEncoder().encode(stringifyPreservingNumbers({ ...extra, effects }, options.compact === false ? 2 : 0)));
+    const bpm = [...chart.BPMList].sort((left, right) => beatValue(left.startTime) - beatValue(right.startTime)).map(entry => ({ time: [...entry.startTime], bpm: entry.bpm }));
+    output.set(existing ?? extraPath, new TextEncoder().encode(stringifyPreservingNumbers({ ...extra, bpm, ...(updateEffects ? { effects } : {}) }, options.compact === false ? 2 : 0)));
   }
   if (outputName !== chartName) {
     for (const [name, bytes] of matchingInfo(assets, chartName)) {
@@ -271,18 +292,20 @@ export function packageEntries(chart: any, assets: any, chartName: any, options:
   return output;
 }
 
-export function exportPackage(chart: any, assets: any, chartName: any) {
-  download(writeZip(packageEntries(chart, assets, chartName)), chartExportStem(chart, chartName) + '.pez');
+export async function exportPackage(chart, assets, chartName) {
+  const { prepareShaderExport } = await import('./shader-export.mjs');
+  const prepared = await prepareShaderExport(chart, assets, chartName);
+  download(writeZip(packageEntries(prepared.chart, prepared.assets, chartName)), chartExportStem(chart, chartName) + '.pez');
 }
 
 export function createChartExport(chart: any, assets: any, chartName: any, options: any = {}) {
   const { format = 'pez', compatibility = 'next', name, split = {} } = options;
-  if (!['json', 'pez'].includes(format) || !['next', 'rpe'].includes(compatibility)) throw new Error('导出格式无效');
+  if (!['json', 'pez'].includes(format) || !['next', 'rpe'].includes(compatibility)) throw new Error(t('files.sca076d2'));
   let source = compatibility === 'rpe' && options.removeNoiseAreas ? { ...chart, blockAreaList: [] } : chart;
   if (compatibility === 'rpe' && options.removeGlobalEvents) { source = { ...source }; delete source.globalEvents; }
-  const snapshot = compatibility === 'rpe' ? legacyChart(source, split) : orderedExportChart(chart);
+  const snapshot = compatibility === 'rpe' ? legacyChart(source, split, { clampBezier: options.clampBezier === true, bezierMargin: options.bezierMargin, bakeCustomEasing: options.bakeCustomEasing, curveBake: options.curveBake }) : orderedExportChart(chart);
   delete snapshot.chartTime;
-  if (name !== undefined && !String(name).trim()) throw new Error('请输入导出文件名');
+  if (name !== undefined && !String(name).trim()) throw new Error(t('files.sc04226c'));
   const stem = name === undefined ? chartExportStem(chart, chartName) : safeExportStem(name);
   const blob = format === 'pez' ? writeZip(packageEntries(snapshot, assets, chartName, options)) : new Blob([serializeChart(snapshot, { compact: options.compact !== false })], { type: 'application/json' });
   return { blob, name: stem + '.' + format };

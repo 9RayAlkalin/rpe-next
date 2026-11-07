@@ -1,18 +1,22 @@
 import { normalizeShortcutKey, parseShortcut } from './shortcut-spec.mjs';
 import { validFpsLimit } from './frame-timing.mjs';
 import { DEFAULT_SETTINGS } from './default-settings.mjs';
+import { t } from '../i18n.mjs';
 
 export const DEFAULT_HOTKEYS = {
   AddTap: 'Q', AddDrag: 'W', AddFlick: 'E', AddHold: 'R', AddEvent: 'R', Pause: 'SPACE', Save: 'LEFTCTRL&S',
   Undo: 'LEFTCTRL&Z', Redo: 'LEFTCTRL&Y', SelectAll: 'LEFTCTRL&A', Copy: 'LEFTCTRL&C',
   Shear: 'LEFTCTRL&X', Paste: 'LEFTCTRL&V', PasteMirror: 'LEFTCTRL&B',
-  SwitchLock: 'F', TimeAttach: 'LEFTCTRL&H', StickNext: 'G',
+  SwitchLock: 'F', TimeAttach: 'LEFTCTRL&H', StickNext: 'G', DragLong: 'Z',
   ClipboardHistory: 'LEFTCTRL&V', NumberMirror: 'A', NumberFill: 'S',
   KeepTimePaste: 'LEFTCTRL&LEFTSHIFT&V', KeepTimePasteMirror: 'LEFTCTRL&LEFTSHIFT&B',
   Delete: 'DELETE', QuickDelete: 'D', LastBeat: 'LEFTARROW', NextBeat: 'RIGHTARROW', Esc: 'ESCAPE',
   StartView: 'I', EndView: 'O', JumpView: 'P', ReplayView: 'LEFTBRACKET', StartView_HOLD: 'T', JumpView_HOLD: 'U',
   SwitchUI: 'LEFTALT&N', ResetCamera: 'LEFTCTRL&M', CurveBegin: 'LEFTCTRL&F', CurveEnd: 'LEFTCTRL&G',
-  ToggleMultiLine: 'J', SwitchMultiLineMode: 'K',
+  ToggleMultiLine: 'J', SwitchMultiLineMode: 'K', DirectPlacement: 'LEFTALT&D',
+  PerformanceMonitor: 'F10',
+  EditorRecording: 'LEFTCTRL&LEFTSHIFT&U',
+  KeyDisplay: 'LEFTCTRL&LEFTSHIFT&K',
   ShowLineInfo: 'TAB', PageLeft: 'LEFTARROW', PageRight: 'RIGHTARROW', PageUp: 'UPARROW', PageDown: 'DOWNARROW',
 };
 export const SUPPORTED_SETTINGS = ['CutRho', 'MusicVolume', 'maxHistorySize', 'AutoSave', 'AutoSaveGap', 'AutoSaveLimit', 'FpsLimit', 'showHotkey', 'SEVolume', 'NoteSize', 'LineScale', 'GridlineCount', 'ScrollSpeed', 'Alpha', 'RealTimeAlpha', 'ScrollAcc', 'ratioWidth', 'ratioHeight', 'BarWidth', 'BarAlpha', 'HighLight', 'autoplayT', 'showViewUI'];
@@ -28,7 +32,7 @@ export function parseHotkeys(text) {
 
 export function migratePreferences(settingsText = '{}', hotkeyText = '', uiText = '') {
   const originalSettings = JSON.parse(settingsText.replace(/^\uFEFF/, ''));
-  if (!originalSettings || typeof originalSettings !== 'object' || Array.isArray(originalSettings)) throw new Error('Settings.json 必须为对象');
+  if (!originalSettings || typeof originalSettings !== 'object' || Array.isArray(originalSettings)) throw new Error(t('preferences.s1f3f1ea'));
   const originalHotkeys = parseHotkeys(hotkeyText);
   const applied = Object.keys(originalSettings).filter(key => SUPPORTED_SETTINGS.includes(key));
   return { version: 1, originalSettings, originalHotkeys, originalUI: uiText,
@@ -41,6 +45,7 @@ export function migratePreferences(settingsText = '{}', hotkeyText = '', uiText 
       lineScale: finiteRange(originalSettings.LineScale, 0.1, 10, DEFAULT_SETTINGS.lineScale),
       gridCount: finiteRange(originalSettings.GridlineCount, 2, 100, DEFAULT_SETTINGS.gridCount),
       scrollSpeed: finiteRange(originalSettings.ScrollSpeed, 0.1, 100, DEFAULT_SETTINGS.scrollSpeed),
+      wheelInputMode: DEFAULT_SETTINGS.wheelInputMode,
       wheelStopAtAudioStart: true,
       drawEventCurves: true,
       backgroundAlpha: finiteRange(originalSettings.Alpha, 0, 255, DEFAULT_SETTINGS.backgroundAlpha * 255) / 255,

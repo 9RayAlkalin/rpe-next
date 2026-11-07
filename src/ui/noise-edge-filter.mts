@@ -34,15 +34,15 @@ void main() {
 
 export class NoiseEdgeFilter {
   [key: string]: any;
-  canvas: any;
-  color: any;
-  disabled: any;
-  gl: any;
-  maximumSize: any;
-  radius: any;
-  textureSize: any;
-  textures: any;
-  uploadCanvases: any;
+  declare canvas: any;
+  declare color: any;
+  declare disabled: any;
+  declare gl: any;
+  declare maximumSize: any;
+  declare radius: any;
+  declare textureSize: any;
+  declare textures: any;
+  declare uploadCanvases: any;
 
   constructor() { this.disabled = false; this.gl = null; this.uploadCanvases = []; this.textureSize = []; }
   ensure() {

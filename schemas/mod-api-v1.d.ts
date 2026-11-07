@@ -1,20 +1,28 @@
 /** RPEN mod API 1. Internal editor classes remain extensible and version-dependent. */
 export type Dispose = () => void;
 export type Beat = [number, number, number];
-export type Setting = {
-  label: string; description?: string;
+export type LocalizedText = string | Record<string, string>;
+export type SettingDefinition<Text = string> = {
+  label: Text; description?: Text;
 } & (
   | {type: 'boolean'; default: boolean}
   | {type: 'number'; default: number; min: number; max: number; step?: number}
   | {type: 'text' | 'color' | 'shortcut'; default: string}
-  | {type: 'select'; default: string; options: Record<string, string>}
+  | {type: 'select'; default: string; options: Record<string, Text>}
 );
+export type Setting = SettingDefinition;
 export interface ModManifest {
   protocol: 'rpen-mod'; api: 1; id: string; name: string;
   version: string; author: string; description: string; entry: string;
   dependencies?: string[]; conflicts?: string[]; settings?: Record<string, Setting>;
+  homepage?: string;
+  market?: {id: string; api: string; [key: string]: unknown};
   [extension: `x-${string}`]: unknown;
 }
+export type ModManifestSource = Omit<ModManifest, 'name' | 'author' | 'description' | 'settings'> & {
+  name: LocalizedText; author: LocalizedText; description: LocalizedText;
+  settings?: Record<string, SettingDefinition<LocalizedText>>;
+};
 export interface Frame {
   /** requestAnimationFrame timestamp in milliseconds. */
   timestamp: number;
@@ -36,9 +44,23 @@ export interface Command {
   run(): unknown;
 }
 export type GlobalEventSource = {kind: 'builtin' | 'mod'; id: string; name: string; author?: string; version?: string};
+/** Normalized time-monotone cubic animation curve, embedded with every event. */
+export interface AnimationCurveNode {
+  x: number; y: number; mode?: 'auto' | 'smooth' | 'corner' | 'linear' | 'hold';
+  in?: [number, number]; out?: [number, number];
+  [key: string]: unknown;
+}
+export interface AnimationCurve { version: 1; name?: string; nodes: AnimationCurveNode[]; [key: string]: unknown; }
+export interface CustomEventEasing {
+  curve: AnimationCurve;
+  /** Source time domain. Cropping retains the original output basis. */
+  domain?: [number, number]; sourceStart?: number | number[] | string | boolean; sourceEnd?: number | number[] | string | boolean;
+  [key: string]: unknown;
+}
 export interface GlobalEvent {
   startTime: Beat; endTime: Beat; start: any; end: any;
   easingType?: number; easingLeft?: number; easingRight?: number;
+  customEasing?: CustomEventEasing;
   bezier?: number | boolean; bezierPoints?: [number, number, number, number];
   inst?: number | boolean; linkgroup?: number;
   [key: string]: any;
@@ -111,9 +133,13 @@ export interface Editor {
   /** Backend-neutral record. id and storageRevision are opaque identifiers, not paths. */
   readonly libraryProject: any;
   loop: {start: number; end: number} | null;
-  audio: any; playback: any; preview: any; realtimePreview: any; timeline: any;
+  audio: any; audioSources: any; audioOnsets: any; audioAnalysis: any; playback: any; preview: any; realtimePreview: any; timeline: any;
   skin: any; images: any; hitSounds: any; editorSkins: any; noteSkins: any; noiseEditor: any; eventSampler: any;
+  /** Advanced floating panel; edits native line speed events using distance easing. */
+  speedCurve: { active: boolean; open(anchor?: { x: number; y: number }): boolean; close(): void; saveView(immediate?: boolean): void };
   trajectoryPanel: any; textLinesPanel: any; noiseFitPanel: any;
+  /** Lazily loaded spatial trajectory editor. Disabled views create no scene indexes. */
+  spatialTool: { readonly enabled: boolean; open(): Promise<void>; reset(): void };
   noiseTrackingPanel: any; multiEdit: any; batchControls: any; collaboration: any;
   globalEvents: any; globalEventRegistry: any; openGlobalEvents(): void;
   versionControl: any;
@@ -131,6 +157,8 @@ export interface Editor {
   setPreview(visible: boolean, options?: {stay?: boolean; autoplay?: boolean}): void;
   play(): Promise<void>; pause(): void;
   addAsset(path: string, bytes: Uint8Array): void; removeAsset(path: string): void;
+  /** After replacing shader resource bytes: marks assets dirty, refreshes diagnostics and shader caches without reloading images. */
+  shaderAssetsChanged(): void;
   /** Changes preview state temporarily; returned function restores view and pauses. */
   beginPreviewSession(): Dispose;
   raw: {
@@ -141,7 +169,15 @@ export interface Editor {
   };
 }
 export interface ModApi {
-  readonly version: 1; readonly id: string; readonly manifest: ModManifest;
+  agent: {
+    register(definition: {
+      name: string; description: string; access: 'read' | 'edit' | 'dangerous';
+      parameters: Record<string, unknown>;
+      prepare(args: any, context: {signal: AbortSignal}): Promise<AgentCommandPlan> | AgentCommandPlan;
+    }): Dispose;
+    list(): Array<{type: 'function'; function: {name: string; description: string; parameters: any}}>;
+  };
+  readonly version: 1; readonly id: string; readonly manifest: ModManifest; readonly manifestSource: ModManifestSource;
   readonly editor: Editor; readonly signal: AbortSignal;
   dispose(cleanup: () => unknown): Dispose;
   log(...values: unknown[]): void;
@@ -184,6 +220,11 @@ export interface ModApi {
   globalEvents: GlobalEventsApi;
   lockEditing(options?: {reason?: string; roots?: string[]}): Dispose;
   importInternal(path: string): Promise<any>;
+}
+export interface AgentCommandPlan {
+  summary?: string; details?: unknown; access?: 'read' | 'edit' | 'dangerous';
+  valid?(): boolean;
+  apply(context: {signal: AbortSignal}): unknown | Promise<unknown>;
 }
 export interface ModHost {
   apiVersion: 1; editor: Editor;

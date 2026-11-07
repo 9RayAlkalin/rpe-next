@@ -7,10 +7,10 @@ import { shaderEvents } from './shader-events.mjs';
 const trackIndex = events => new IntervalIndex(events, event => beatValue(event.startTime), event => beatValue(event.endTime));
 
 class LineActivity {
-  duration: any;
-  notes: any;
-  layers: any;
-  special: any;
+  declare duration: any;
+  declare notes: any;
+  declare layers: any;
+  declare special: any;
 
   constructor(line, tempo) {
     const factor = line.bpmfactor ?? 1;
@@ -31,12 +31,12 @@ class LineActivity {
 }
 
 export class TimelineActivity {
-  cache: any;
-  chart: any;
-  tempo: any;
-  densityCache: any;
-  duration: any;
-  lines: any;
+  declare cache: any;
+  declare chart: any;
+  declare tempo: any;
+  declare densityCache: any;
+  declare duration: any;
+  declare lines: any;
 
   constructor() { this.cache = new WeakMap(); }
 

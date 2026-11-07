@@ -2,6 +2,7 @@ import { mkdir, cp, readFile, writeFile, rm } from 'node:fs/promises';
 import { statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
+import { createAgentSourceBundle } from '../desktop/agent-source.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const output = join(root, 'dist');
@@ -9,15 +10,19 @@ const pages = process.argv.includes('--pages');
 const sourceFile = source => { try { return statSync(source).isDirectory() || !/\.(?:mts|ts|map)$/.test(source); } catch { return true; } };
 await rm(output, { recursive: true, force: true });
 await mkdir(output, { recursive: true });
-for (const name of ['src/core', 'src/application', 'src/platform', 'src/ui', 'assets', 'index.html', 'styles.css', 'LICENSE', 'NOTICE', 'protocols', 'schemas']) {
+for (const name of ['src/core', 'src/application', 'src/platform', 'src/ui', 'src/locales', 'src/i18n.mjs', 'assets', 'index.html', 'styles.css', 'LICENSE', 'NOTICE', 'protocols', 'schemas']) {
   await mkdir(join(output, name, '..'), { recursive: true });
   if (pages && name === 'protocols') {
     await mkdir(join(output, name), { recursive: true });
-    for (const protocol of ['EDITOR-SKIN', 'MOD', 'GLOBAL-EVENTS']) await cp(join(root, name, protocol + '-PROTOCOL.zh-CN.md'), join(output, name, protocol + '-PROTOCOL.zh-CN.md'));
+    await cp(join(root, name, 'ANIMATION-CURVES-PROTOCOL.zh-CN.md'), join(output, name, 'ANIMATION-CURVES-PROTOCOL.zh-CN.md'));
+    await cp(join(root, name, 'VIDEO-RENDER.zh-CN.md'), join(output, name, 'VIDEO-RENDER.zh-CN.md'));
+    for (const protocol of ['EDITOR-SKIN', 'MOD', 'GLOBAL-EVENTS', 'AI-AGENT']) await cp(join(root, name, protocol + '-PROTOCOL.zh-CN.md'), join(output, name, protocol + '-PROTOCOL.zh-CN.md'));
     await cp(join(root, name, 'CHART-VERSION-CONTROL.zh-CN.md'), join(output, name, 'CHART-VERSION-CONTROL.zh-CN.md'));
+    await cp(join(root, name, 'AUDIO-SEPARATION.zh-CN.md'), join(output, name, 'AUDIO-SEPARATION.zh-CN.md'));
   } else await cp(join(root, name), join(output, name), { recursive: true, filter: name.startsWith('src/') ? sourceFile : undefined });
 }
 await writeFile(join(output, '.nojekyll'), '');
+await writeFile(join(output, 'assets/agent-source.json'), JSON.stringify(await createAgentSourceBundle(root)));
 if (!pages) {
   for (const name of ['start.cmd', 'README.md']) await cp(join(root, name), join(output, name));
   await mkdir(join(output, 'tools'), { recursive: true });

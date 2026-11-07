@@ -4,8 +4,15 @@ export interface RpenSettingsBridge {
   commitFpsLimit(value: number): void;
 }
 
+export type RpenSettingsField = [id: string, label: string, type: string, value: string | number | boolean, min?: number, max?: number, step?: string | number, options?: Array<[string, string]>];
+
+export interface RpenSettingsGroupPayload {
+  host: HTMLElement;
+  fields: RpenSettingsField[];
+}
+
 export interface RpenSettingsIsland {
-  createSettingsPanel(): HTMLDialogElement;
+  createSettingsPanel(payload: RpenSettingsGroupPayload): void;
 }
 
 export interface RpenDialogHandles {
@@ -27,6 +34,8 @@ export interface RpenExportChart {
 }
 
 export interface RpenExportHelpers {
+  prepareShaderExport(chart: RpenExportChart, assets: Map<string, Uint8Array>, chartName: string): Promise<{ chart: RpenExportChart; assets: Map<string, Uint8Array> }>;
+  DEFAULT_BEZIER_EXPORT_MARGIN: number;
   createChartExport(chart: unknown, assets: unknown, chartName: string, options: Record<string, unknown>): { blob: Blob; name: string };
   download(blob: Blob, name: string): string;
   chartExportStem(chart: unknown, chartName: string): string;
@@ -172,6 +181,8 @@ export interface RpenDiagnoseHandles {
 }
 
 export interface RpenDiagnosePanelPayload {
+  t(key: string, parameters?: Record<string, unknown>): string;
+  diagnosticSubtype(issue: RpenDiagnoseIssue): string;
   host: HTMLElement;
   onLocate(issue: RpenDiagnoseIssue): void;
   onDelete(issue: RpenDiagnoseIssue): void;

@@ -4,9 +4,11 @@ import { statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import vue from '@vitejs/plugin-vue';
 import { defineConfig, type Plugin } from 'vitest/config';
+import { createRequire } from 'node:module';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
-const pristine = ['src/core', 'src/application', 'src/platform', 'src/ui', 'assets', 'styles.css', 'LICENSE', 'NOTICE', 'protocols', 'schemas', 'start.cmd', 'README.md'];
+const require = createRequire(import.meta.url);
+const pristine = ['src/core', 'src/application', 'src/platform', 'src/ui', 'src/locales', 'src/i18n.mjs', 'assets', 'styles.css', 'LICENSE', 'NOTICE', 'protocols', 'schemas', 'start.cmd', 'README.md'];
 const sourceFile = (source: string) => { try { return statSync(source).isDirectory() || !/\.(?:mts|ts|map)$/.test(source); } catch { return true; } };
 
 const appScript = '<script type="module" src="./src/ui/app.mjs"></script>';
@@ -39,6 +41,8 @@ function pristineModules(): Plugin {
       metadata.scripts = { start: 'node tools/serve.mjs --open', serve: 'node tools/serve.mjs' };
       await writeFile(join(dist, 'package.json'), JSON.stringify(metadata, null, 2) + '\n');
       await writeFile(join(dist, '.nojekyll'), '');
+      const { createAgentSourceBundle } = require('./desktop/agent-source.mjs');
+      await writeFile(join(dist, 'assets/agent-source.json'), JSON.stringify(await createAgentSourceBundle(root)));
       const html = await readFile(join(root, 'index.html'), 'utf8');
       await writeFile(join(dist, 'index.html'), injectShell(html, './assets/shell.js'));
     },

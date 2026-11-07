@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { spawnSync } from 'node:child_process';
 import { statSync } from 'node:fs';
+import { EDITOR_PACKAGE_SOURCES } from './package-sources.mjs';
 
 if (process.platform !== 'win32' || process.arch !== 'x64') throw new Error('当前打包脚本需要在 Windows x64 上运行。');
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -17,7 +18,7 @@ await mkdir(output, { recursive: true });
 await cp(runtime, output, { recursive: true, filter: path => !path.endsWith('default_app.asar') });
 await rename(join(output, 'electron.exe'), join(output, 'RePhiEdit-Next.exe'));
 const application = join(output, 'resources', 'app');
-for (const name of ['desktop', 'src/core', 'src/application', 'src/platform', 'src/ui', 'assets', 'index.html', 'styles.css', 'LICENSE', 'NOTICE', 'protocols', 'schemas', 'tools/smoke-mods.mjs', 'tools/smoke-native.mjs', 'tools/smoke-asset-library.mjs', 'tools/smoke-settings-renderer.js', 'tools/smoke-saving.mjs']) {
+for (const name of EDITOR_PACKAGE_SOURCES) {
   await mkdir(dirname(join(application, name)), { recursive: true });
   await cp(join(root, name), join(application, name), { recursive: true, filter: name.startsWith('src/') ? sourceFile : undefined });
 }
@@ -25,6 +26,7 @@ await writeFile(join(application, 'package.json'), JSON.stringify({
   name: metadata.name, version: metadata.version, author: metadata.author, license: metadata.license,
   description: metadata.description, main: 'desktop/main.cjs'
 }, null, 2) + '\n');
+await writeFile(join(application, 'build-info.json'), JSON.stringify({ version: metadata.version, kind: 'editor', platform: process.platform, arch: process.arch, electron: metadata.devDependencies.electron }, null, 2) + '\n');
 await writeFile(join(output, '使用说明.txt'), '\uFEFF' + [
   'Re:PhiEdit Next — Windows x64 桌面测试版',
   '作者：cmdysj。在原 Re:PhiEdit（RPE）基础上，使用 AI（GPT）重构。',
@@ -35,9 +37,16 @@ await writeFile(join(output, '使用说明.txt'), '\uFEFF' + [
   '音乐、曲绘等素材独立去重保存，设置、皮肤、模组及恢复记录随库保存。%APPDATA%\\rpe-next-desktop 保留运行配置、缓存和库位置。',
   '同一 Windows 用户更新或移动程序后自动继承设置和谱面库；不需要把设置复制进新版程序目录。',
   '谱面信息中的“打开谱面所在文件夹”可打开已保存项目的本地存档目录。',
+  '首次使用音频分析时，需自行选择运行环境、模型和缓存的存放位置，建议使用空间充足的非系统盘；已有运行环境保留原位。',
+  '音频分析中的“模型与缓存位置”可查看和迁移目录；“清理音频缓存”经确认后清理所有谱面的分析结果和下载、临时缓存，保留模型、环境、谱面和原音乐。',
   '旧桌面数据首次启动时自动复制并校验，旧数据库保留；中断后下次继续。',
   '删除项目进入回收站；设置中可恢复、永久删除、清理恢复记录及备份整个库到独立文件夹。',
   '桌面版与网页版谱面库独立；可导入 PEZ 或在谱面库迁移原 RPE 文件夹。',
+  '打开 JSON / PEZ → 超大谱 · 查看与编辑：选择 PEC 压缩包或 .rpenlarge 工程，再点击“进入编辑”。',
+  '超大谱单选默认处理一个重合音符，可在工具栏“超大谱工程”图标中调整数量；框选和 Ctrl+A 使用完整逻辑选择，不按绘制页截断。',
+  '进入编辑后可开启打击音效；数据加载就绪后自动续播，手动暂停可取消续播。',
+  '首次使用选择可写且至少有 2 GiB 可用空间的缓存位置，不限盘符；本模式保存与工程另存为均保留完整 .rpenlarge 工程，需保存到缓存目录之外；下次直接打开工程可复用索引，省去首次导入。',
+  '超大谱全谱检查、素材库编辑、联机、AI 和版本控制尚未接入完整磁盘文档。',
   '退出前请保存，建议定期导出 PEZ 备份。',
   '测试包未进行代码签名。仅限非商业用途，详见 resources/app/LICENSE 和 NOTICE。',
   '', `构建时间：${new Date().toISOString()}`

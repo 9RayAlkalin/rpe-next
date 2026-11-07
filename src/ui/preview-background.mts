@@ -1,8 +1,8 @@
 export class PreviewBackground {
   [key: string]: any;
-  canvas: any;
-  image: any;
-  key: any;
+  declare canvas: any;
+  declare image: any;
+  declare key: any;
 
   draw(context, image, width, height, scale, blur, ratio, animated = false) {
     const paint = target => {

@@ -1,38 +1,43 @@
 import { localPreferences } from '../platform/local-preferences.mjs';
-import { rewriteModModule,resolveModImport,modPath,modSettingValue } from '../core/mod-package.mjs';
+import { rewriteModModule,resolveModImport,modPath,modSettingValue,resolveModManifest } from '../core/mod-package.mjs';
 import { registerModHook,emitModHook } from '../core/mod-hooks.mjs';
 import { parseShortcut,formatShortcut } from '../core/shortcut-spec.mjs';
 import { shortcutKey,shortcutMatches } from '../core/preferences.mjs';
 import { isTextEntry } from './keyboard.mjs';
 import { cancelValueDrag } from './draggable-value.mjs';
+import { t } from '../i18n.mjs';
 
 export class ModScope {
+
+
   [key: string]: any;
-  cleanups: any;
-  closed: any;
-  controller: any;
-  onError: any;
+  declare cleanups: any;
+  declare closed: any;
+  declare controller: any;
+  declare onError: any;
 
   constructor(onError=console.error){this.cleanups=[];this.onError=onError;this.closed=false;this.controller=new AbortController();}
-  defer(dispose){if(typeof dispose!=='function')throw Error('清理回调必须是函数');const invoke=()=>{const result=dispose();if(result?.catch)result.catch(this.onError);};if(this.closed){invoke();return()=>{};}let active=true;const cleanup=()=>{if(!active)return;active=false;const index=this.cleanups.indexOf(cleanup);if(index>=0)this.cleanups.splice(index,1);invoke();};this.cleanups.push(cleanup);return cleanup;}
+  defer(dispose){if(typeof dispose!=='function')throw Error(t('mod-runtime.s9452ef4'));const invoke=()=>{const result=dispose();if(result?.catch)result.catch(this.onError);};if(this.closed){invoke();return()=>{};}let active=true;const cleanup=()=>{if(!active)return;active=false;const index=this.cleanups.indexOf(cleanup);if(index>=0)this.cleanups.splice(index,1);invoke();};this.cleanups.push(cleanup);return cleanup;}
   wrap(callback){return(...args)=>{if(this.closed)return;try{const result=callback(...args);if(result?.catch)result.catch(this.onError);return result;}catch(error){this.onError(error);}};}
   listen(target,type,callback,options){const wrapped=this.wrap(callback);target.addEventListener(type,wrapped,options);return this.defer(()=>target.removeEventListener(type,wrapped,options));}
   dispose(){if(this.closed)return;this.closed=true;this.controller.abort();for(const cleanup of this.cleanups.splice(0).reverse())try{cleanup();}catch(error){this.onError(error);}}
 }
 export class ModRuntime {
+
+
   [key: string]: any;
-  baseUrl: any;
-  commands: any;
-  editorState: any;
-  events: any;
-  frames: any;
-  inertNodes: any;
-  lastTime: any;
-  loaded: any;
-  locks: any;
-  moduleLoads: any;
-  overlays: any;
-  patchTargets: any;
+  declare baseUrl: any;
+  declare commands: any;
+  declare editorState: any;
+  declare events: any;
+  declare frames: any;
+  declare inertNodes: any;
+  declare lastTime: any;
+  declare loaded: any;
+  declare locks: any;
+  declare moduleLoads: any;
+  declare overlays: any;
+  declare patchTargets: any;
 
   constructor({editor,notify,invalidate,changed}){Object.assign(this,{editor,notify,invalidate,changed});this.loaded=new Map<any, any>();this.commands=new Map<any, any>();this.frames=new Set<any>();this.overlays=new Set<any>();this.events=new EventTarget();this.locks=new Map<any, any>();this.moduleLoads=new Map<any, any>();this.baseUrl=new URL('../../',import.meta.url).href;this.patchTargets=new WeakMap<any, any>();}
   async prepareModules(record){
@@ -43,13 +48,13 @@ export class ModRuntime {
         const url=URL.createObjectURL(new Blob([source],{type:'text/javascript'}));urls.push(url);imports[prefix+path]=url;
       }
       const map=document.createElement('script');map.type='importmap';map.textContent=JSON.stringify({imports});document.head.append(map);
-      const state={loadId,prefix,record,resolve,urls,map};this.moduleLoads.set(loadId,state);return state;
+      const state: any={loadId,prefix,record,resolve,urls,map};this.moduleLoads.set(loadId,state);return state;
     }catch(error){urls.forEach(URL.revokeObjectURL);throw error;}
   }
-  resolveModule(loadId,specifier,path){const load=this.moduleLoads.get(loadId);if(!load)throw Error('该模组已卸载');return load.resolve(specifier,path);}
+  resolveModule(loadId,specifier,path){const load=this.moduleLoads.get(loadId);if(!load)throw Error(t('mod-runtime.sef97df0'));return load.resolve(specifier,path);}
   load(record,settings,onSetting){
     const existing=this.loaded.get(record.manifest.id);if(existing)return existing.promise??Promise.resolve(existing);
-    const promise=this.activate(record,settings,onSetting);const state=this.loaded.get(record.manifest.id);if(state)state.promise=promise;return promise;
+    const promise=this.activate(record,settings,onSetting);const state: any=this.loaded.get(record.manifest.id);if(state)state.promise=promise;return promise;
   }
   async activate(record,settings,onSetting){
     const id=record.manifest.id;
@@ -58,17 +63,17 @@ export class ModRuntime {
       const modules=await this.prepareModules(record);state.modules=modules;scope.defer(()=>{modules.urls.forEach(URL.revokeObjectURL);modules.map.remove();this.moduleLoads.delete(modules.loadId);});
       const api=this.createApi(state);state.api=api;
       // CSP allows imported package modules; packages deliberately execute with the page's authority.
-      const module=await import(/* @vite-ignore */modules.prefix+record.manifest.entry);if(scope.closed)return;const activate=module.activate??module.default;if(typeof activate!=='function')throw Error('入口模块必须导出 activate(api) 或 default 函数');
+      const module=await import(modules.prefix+record.manifest.entry);if(scope.closed)return;const activate=module.activate??module.default;if(typeof activate!=='function')throw Error(t('mod-runtime.sb26e4e7'));
       const cleanup=await activate(api);if(typeof cleanup==='function')scope.defer(cleanup);else if(cleanup?.dispose)scope.defer(()=>cleanup.dispose());
       if(scope.closed)return;
       state.status='loaded';this.emit('mod:loaded',{id});this.changed();this.invalidate();return state;
     }catch(error){scope.dispose();if(this.loaded.get(id)===state)this.loaded.delete(id);this.changed();if(!state.cancelled)throw error;}
   }
-  async unload(id,reason='disabled'){const state=this.loaded.get(id);if(!state)return;state.cancelled=true;this.loaded.delete(id);state.scope.dispose();this.emit('mod:unloaded',{id,reason,error:state.lastError});this.changed();this.invalidate();}
-  failure(id,error){const state=this.loaded.get(id);if(state){state.errors++;state.lastError=error?.stack??String(error);if(state.errors===1)this.notify(`模组 ${id}：${error?.message??error}`,'error');if(state.errors>=5&&state.status==='loaded'){state.status='error';queueMicrotask(()=>this.unload(id,'error'));}}console.error('[mod '+id+']',error);this.changed();}
+  async unload(id,reason='disabled'){const state: any=this.loaded.get(id);if(!state)return;state.cancelled=true;this.loaded.delete(id);state.scope.dispose();this.emit('mod:unloaded',{id,reason,error:state.lastError});this.changed();this.invalidate();}
+  failure(id,error){const state: any=this.loaded.get(id);if(state){state.errors++;state.lastError=error?.stack??String(error);if(state.errors===1)this.notify(t('mod-runtime.s6cca735', { p0: id, p1: error?.message??error }),'error');if(state.errors>=5&&state.status==='loaded'){state.status='error';queueMicrotask(()=>this.unload(id,'error'));}}console.error('[mod '+id+']',error);this.changed();}
   emit(type,detail){this.events.dispatchEvent(new CustomEvent(type,{detail}));}
   tick(detail){
-    if(this.loaded.size){const editor=this.editor;const state={session:editor.session,chart:editor.chart,playing:detail.playing,home:editor.home,pane:editor.activePane,lineIndex:editor.session?.lineIndex,dirty:editor.dirty};const previous=this.editorState;
+    if(this.loaded.size){const editor=this.editor;const state: any={session:editor.session,chart:editor.chart,playing:detail.playing,home:editor.home,pane:editor.activePane,lineIndex:editor.session?.lineIndex,dirty:editor.dirty};const previous=this.editorState;
       if(!previous||Object.keys(state).some(key=>state[key]!==previous[key]))this.emit('editor:state',{...state,previous});
       if(!previous||state.chart!==previous.chart||state.session!==previous.session)this.emit('editor:chart',{chart:state.chart,session:state.session});this.editorState=state;
       if(detail.musicSeconds!==this.lastTime){this.lastTime=detail.musicSeconds;this.emit('editor:time',detail);}
@@ -79,7 +84,7 @@ export class ModRuntime {
   shortcut(event){
     if(event.isComposing||event.repeat||isTextEntry(event.target))return false;
     for(const command of [...this.commands.values()].reverse()){
-      const state=this.loaded.get(command.owner);const key=command.setting?state?.settings[command.setting]:command.shortcut;
+      const state: any=this.loaded.get(command.owner);const key=command.setting?state?.settings[command.setting]:command.shortcut;
       if(!key||!shortcutMatches(event,key)||document.querySelector('dialog[open]')&&!command.allowInDialog||this.locks.size&&!this.locks.has(command.owner))continue;
       cancelValueDrag();event.preventDefault();event.stopImmediatePropagation();command.run();return true;
     }return false;
@@ -106,14 +111,15 @@ export class ModRuntime {
     },{capture:true,passive:false});
   }
   patch(scope,target,key,wrapper){
-    if(!target||typeof wrapper!=='function')throw Error('patch 需要对象、属性名和包装函数');let props=this.patchTargets.get(target);if(!props){props=new Map<any, any>();this.patchTargets.set(target,props);}let stack=props.get(key);
+    if(!target||typeof wrapper!=='function')throw Error(t('mod-runtime.s4bf7cad'));let props=this.patchTargets.get(target);if(!props){props=new Map();this.patchTargets.set(target,props);}let stack=props.get(key);
     if(!stack){const original=target[key];stack={original,entries:[],had:Object.hasOwn(target,key),descriptor:Object.getOwnPropertyDescriptor(target,key)};props.set(key,stack);}
     const entry={wrapper};stack.entries.push(entry);const rebuild=()=>{let value=stack.original;for(const item of stack.entries)value=item.wrapper(value);Object.defineProperty(target,key,{configurable:true,enumerable:stack.descriptor?.enumerable??true,writable:true,value});};try{rebuild();}catch(error){stack.entries.pop();if(!stack.entries.length)props.delete(key);throw error;}
     return scope.defer(()=>{stack.entries=stack.entries.filter(item=>item!==entry);if(stack.entries.length)rebuild();else{if(stack.had)Object.defineProperty(target,key,stack.descriptor);else delete target[key];props.delete(key);}});
   }
   createApi(state){
     const {scope,id,record}=state;const storedKey='rpe-next-mod-data:'+id;
-    const api={version:1,id,manifest:record.manifest,editor:this.editor,signal:scope.controller.signal,dispose:fn=>scope.defer(fn),
+    const manifest=resolveModManifest(record.manifest);
+    const api={version:1,id,manifest,manifestSource:structuredClone(record.manifest),editor:this.editor,signal:scope.controller.signal,dispose:fn=>scope.defer(fn),
       log:(...args)=>console.log('[mod '+id+']',...args),notify:(message,level='success')=>this.notify(String(message),level),
       listen:(target,type,fn,options)=>scope.listen(target,type,fn,options),
       on:(type,fn)=>scope.listen(this.events,type,event=>fn(event.detail)),emit:(type,detail)=>this.emit('mod:'+id+':'+type,detail),
@@ -125,23 +131,31 @@ export class ModRuntime {
       interval:(fn,ms)=>{const timer=setInterval(scope.wrap(fn),ms);return scope.defer(()=>clearInterval(timer));},
       mount:(node,parent=document.body)=>{parent.append(node);scope.defer(()=>node.remove());return node;},
       style:css=>{const sheet=document.createElement('style');sheet.textContent=css;document.head.append(sheet);scope.defer(()=>sheet.remove());return sheet;},
-      settings:{get:key=>state.settings[key],set:async(key,value)=>{const definition=Object.hasOwn(record.manifest.settings,key)?record.manifest.settings[key]:null;if(!definition)throw Error('未知模组设置项：'+key);modSettingValue(definition,value,key);await state.onSetting(key,value);},onChange:fn=>scope.listen(this.events,'settings:'+id,event=>fn(event.detail))},
+      settings:{get:key=>state.settings[key],set:async(key,value)=>{const definition=Object.hasOwn(record.manifest.settings,key)?record.manifest.settings[key]:null;if(!definition)throw Error(t('mod-runtime.s40f23f5')+key);modSettingValue(definition,value,key);await state.onSetting(key,value);},onChange:fn=>scope.listen(this.events,'settings:'+id,event=>fn(event.detail))},
       storage:{read:(fallback={})=>{try{return JSON.parse(localPreferences.getItem(storedKey))??structuredClone(fallback);}catch{return structuredClone(fallback);}},write:value=>localPreferences.setItem(storedKey,JSON.stringify(value)),clear:()=>localPreferences.removeItem(storedKey)},
       package:{files:()=>[...record.files.keys()],bytes:path=>record.files.get(modPath(path))?.slice()??null,
         text:path=>new TextDecoder('utf-8',{fatal:true}).decode(record.files.get(modPath(path))??new Uint8Array()),
-        url:(path,type)=>{const bytes=record.files.get(modPath(path));if(!bytes)throw Error('模组素材不存在：'+path);const extension=path.split('.').at(-1).toLowerCase();const mime=type??({png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',svg:'image/svg+xml',webp:'image/webp',gif:'image/gif',ogg:'audio/ogg',wav:'audio/wav',mp3:'audio/mpeg',json:'application/json',css:'text/css',woff2:'font/woff2',ttf:'font/ttf'}[extension]??'application/octet-stream');const url=URL.createObjectURL(new Blob([bytes],{type:mime}));scope.defer(()=>URL.revokeObjectURL(url));return url;},
-        import:path=>import(/* @vite-ignore */state.modules.resolve('./'+modPath(path),'')),
+        url:(path,type)=>{const bytes=record.files.get(modPath(path));if(!bytes)throw Error(t('mod-runtime.s16b76fa')+path);const extension=path.split('.').at(-1).toLowerCase();const mime=type??({png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',svg:'image/svg+xml',webp:'image/webp',gif:'image/gif',ogg:'audio/ogg',wav:'audio/wav',mp3:'audio/mpeg',json:'application/json',css:'text/css',woff2:'font/woff2',ttf:'font/ttf'}[extension]??'application/octet-stream');const url=URL.createObjectURL(new Blob([bytes],{type:mime}));scope.defer(()=>URL.revokeObjectURL(url));return url;},
+        import:path=>import(state.modules.resolve('./'+modPath(path),'')),
       },
-      commands:{register:definition=>{if(typeof definition.id!=='string'||typeof definition.run!=='function')throw Error('命令缺少 id / run');const key=id+':'+definition.id;if(this.commands.has(key))throw Error('命令重复：'+key);const command={...definition,owner:id,run:scope.wrap(definition.run)};this.commands.set(key,command);this.changed();return scope.defer(()=>{this.commands.delete(key);this.changed();});}},
+      commands:{register:definition=>{if(typeof definition.id!=='string'||typeof definition.run!=='function')throw Error(t('mod-runtime.s983ca62'));const key=id+':'+definition.id;if(this.commands.has(key))throw Error(t('mod-runtime.s34c4b47')+key);const command={...definition,owner:id,run:scope.wrap(definition.run)};this.commands.set(key,command);this.changed();return scope.defer(()=>{this.commands.delete(key);this.changed();});}},
+      agent:{
+        register:definition=>{
+          if (!this.editor.agent) throw Error(t('mod-runtime.sf491b8c'));
+          const name = 'mod_' + id.replaceAll('-', '_').replaceAll('.', '_') + '_' + definition.name;
+          return scope.defer(this.editor.agent.commands.register({ ...definition, name }, id));
+        },
+        list:()=>this.editor.agent?.commands.tools() ?? [],
+      },
       globalEvents:{
         register:definition=>{
-          const wrap=definition=>Object.fromEntries(Object.entries<any>(definition).map(([key,value])=>[key,typeof value==='function'?(...args)=>{if(scope.closed)throw Error('该模组已停用');try{return value(...args);}catch(error){this.failure(id,error);throw error;}}:value]));
+          const wrap=definition=>Object.fromEntries(Object.entries(definition).map(([key,value])=>[key,typeof value==='function'?(...args)=>{if(scope.closed)throw Error(t('mod-runtime.sdaeeea1'));try{return value(...args);}catch(error){this.failure(id,error);throw error;}}:value]));
           return scope.defer(this.editor.globalEventRegistry.register({...wrap(definition),columns:definition.columns?.map(wrap)},
-            {kind:'mod',id,name:record.manifest.name,author:record.manifest.author,version:record.manifest.version}));
+            {kind:'mod',id,name:manifest.name,author:manifest.author,version:manifest.version}));
         },
         list:()=>this.editor.globalEvents.document.types.map(type=>({id:type.id,name:type.name,source:{...type.source},persistent:type.persistent,readonly:type.readonly,columns:type.columns.map(column=>({id:column.id,name:column.name,valueType:column.valueType}))})),
         read:(type,column)=>this.editor.globalEvents.document.read(type.includes('/')?type:id+'/'+type,column),
-        replace:(type,column,events,label='模组修改全局事件')=>{const key=type.includes('/')?type:id+'/'+type;if(!key.startsWith(id+'/'))throw Error('请仅使用此接口修改本模组的全局事件');return this.editor.globalEvents.document.apply([{type:key,column,events}],label);},
+        replace:(type,column,events,label=t('mod-runtime.s28fb7b2'))=>{const key=type.includes('/')?type:id+'/'+type;if(!key.startsWith(id+'/'))throw Error(t('mod-runtime.sbbd80a0'));return this.editor.globalEvents.document.apply([{type:key,column,events}],label);},
         open:()=>this.editor.openGlobalEvents(),
       },
       lockEditing:options=>scope.defer(this.lock(id,options)),

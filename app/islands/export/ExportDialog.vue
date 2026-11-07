@@ -28,6 +28,10 @@ const removeGlobal = ref(false);
 const name = ref('');
 const simplify = ref(props.helpers.DEFAULT_TRAJECTORY_SPLIT.simplify);
 const tolerance = ref(String(props.helpers.DEFAULT_TRAJECTORY_SPLIT.tolerance));
+const bake = ref(true);
+const clampBezier = ref(false);
+const margin = ref(String(props.helpers.DEFAULT_BEZIER_EXPORT_MARGIN));
+const exporting = ref(false);
 
 const noiseIssues = props.helpers.diagnoseNoiseAreas(props.chart.blockAreaList);
 const hasNoiseAreas = Boolean(props.chart.blockAreaList?.length);
@@ -45,14 +49,20 @@ function suggestName() {
 suggestName();
 watch(format, suggestName);
 
-function applyExport() {
+async function applyExport() {
+  if (exporting.value) return;
+  exporting.value = true;
+  const apply = document.querySelector<HTMLButtonElement>('#modal-apply');
+  if (apply) apply.disabled = true;
   const error = document.querySelector('#modal-error');
   try {
     const [compatibility, container] = format.value.split(':');
     if (noiseIssues.length && !acknowledgement.value) throw new Error('请先阅读并勾选确认噪域检查提示');
     if (compatibility === 'rpe' && hasNoiseAreas && !removeNoise.value) throw new Error('原 RPE 无法表示噪域，请改用 Next 格式，或勾选移除噪域');
     if (compatibility === 'rpe' && hasGlobalEvents && !removeGlobal.value) throw new Error('原 RPE 无法表示全局事件，请改用 Next 格式，或勾选移除全局事件');
-    const result = props.helpers.createChartExport(props.chart, props.assets, props.chartName, {
+    const prepared = container === 'pez' ? await props.helpers.prepareShaderExport(props.chart, props.assets, props.chartName) : { chart: props.chart, assets: props.assets };
+    const result = props.helpers.createChartExport(prepared.chart, prepared.assets, props.chartName, {
+      bakeCustomEasing: bake.value, clampBezier: compatibility === 'rpe' && clampBezier.value, bezierMargin: Number(margin.value),
       includeUnusedFiles: includeUnusedFiles.value, includeBackupCharts: props.includeBackupCharts === true,
       compatibility, format: container, compact: compact.value, name: name.value, identifier: props.identifier,
       removeNoiseAreas: compatibility === 'rpe' && removeNoise.value,
@@ -64,6 +74,9 @@ function applyExport() {
     props.onExport(filename, container);
   } catch (failure) {
     if (error) error.textContent = (failure as Error).message;
+  } finally {
+    exporting.value = false;
+    if (apply) apply.disabled = false;
   }
 }
 
@@ -93,8 +106,11 @@ onMounted(() => {
   <label class="field">文件名（不含扩展名）<input v-model="name" aria-label="文件名（不含扩展名）"></label>
   <fieldset :hidden="isNext">
     <legend>整体轨迹兼容转换</legend>
+    <label class="field"><input v-model="bake" type="checkbox">将自定义曲线烘焙为普通事件</label>
     <label class="field"><input v-model="simplify" type="checkbox" aria-label="以较少的缓动事件近似">以较少的缓动事件近似</label>
     <label class="field">拆分容忍度<input v-model="tolerance" type="number" min="0.001" max="10000" step="any" :disabled="!simplify" aria-label="拆分容忍度"></label>
     <p class="hint">相对原始等分碎事件的每轴最大误差：X/Y 为坐标单位，旋转为度。越小越精确；关闭优化则保留各轨迹设定的全部等分段。</p>
   </fieldset>
+  <label class="field" :hidden="isNext"><input v-model="clampBezier" type="checkbox">限制贝塞尔控制点以兼容原 RPE</label>
+  <label class="field" :hidden="isNext || !clampBezier">贝塞尔边界余量<input v-model="margin" type="number" min="0.001" max="0.25" step="0.001" :disabled="isNext || !clampBezier"></label>
 </template>

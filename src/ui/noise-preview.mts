@@ -1,11 +1,20 @@
 import { noiseRuntime, NOISE_AREA_COLORS } from '../core/noise-areas.mjs';
 import { IntervalIndex } from '../core/interval-index.mjs';
 import { NoiseEdgeFilter } from './noise-edge-filter.mjs';
-import { noiseLayers, noiseLayerId } from '../core/noise-skin.mjs';
+import { noiseRenderingLayers, noiseLayerId } from '../core/noise-skin.mjs';
 import { NoiseSkinRenderer } from './noise-skin-renderer.mjs';
 import { previewNoiseGeometry } from '../core/editor-display.mjs';
+import { ResourceCache } from '../core/resource-cache.mjs';
+import { t } from '../i18n.mjs';
 
 const rank: any = { disabled: 0, ready: 1, active: 2 };
+const guideFonts = new WeakMap();
+function guideFontState() {
+  const fonts = typeof document === 'undefined' ? null : document.fonts;
+  if (!fonts) return null;
+  if (!guideFonts.has(fonts)) { const state = { revision: 0 }; fonts.addEventListener('loadingdone', () => state.revision++); guideFonts.set(fonts, state); }
+  return guideFonts.get(fonts);
+}
 function polygon(points, width, height, scale) {
   const path = new Path2D();
   const winding = points.reduce((sum, point, index) => { const next = points[(index + 1) % points.length]; return sum + point.x * next.y - next.x * point.y; }, 0);
@@ -15,20 +24,36 @@ function polygon(points, width, height, scale) {
 }
 
 export class NoisePreview {
-  [key: string]: any;
-  edgeFilter: any;
-  gpu: any;
-  guides: any;
-  height: any;
-  hitEntries: any;
-  layers: any;
-  lifetimes: any;
-  pickCanvas: any;
-  source: any;
-  tempo: any;
-  width: any;
+  declare guideSprites: any;
+  declare guideFonts: any;
+  declare guideFontRevision: any;
+  declare forceSimple: any;
+  declare hiddenLayers: any;
+  declare simpleLayers: any;
+  declare transformGeometry: any;
+  declare invalidate: any;
+  declare report: any;
+  declare getAssets: any;
+  declare seamless: any;
+  declare guideMeasure: any;
 
-  constructor() { this.layers = new Map<any, any>(); this.edgeFilter = new NoiseEdgeFilter(); }
+  declare edgeFilter: any;
+  declare gpu: any;
+  declare guides: any;
+  declare height: any;
+  declare hitEntries: any;
+  declare layers: any;
+  declare lifetimes: any;
+  declare pickCanvas: any;
+  declare source: any;
+  declare tempo: any;
+  declare width: any;
+
+  constructor() {
+    this.layers = new Map(); this.edgeFilter = new NoiseEdgeFilter();
+    this.guideSprites = new ResourceCache({ maxEntries: 1024, maxBytes: 48 * 1024 ** 2 });
+    this.guideFonts = guideFontState(); this.guideFontRevision = this.guideFonts?.revision;
+  }
   usesSkin(layer) { return Boolean(layer.skin) && !this.forceSimple && !this.hiddenLayers?.has(layer.id) && !this.simpleLayers?.has(layer.id); }
   layer(name, width, height, ratio) {
     let canvas = this.layers.get(name);
@@ -42,9 +67,9 @@ export class NoisePreview {
     this.guides = []; this.hitEntries = []; this.width = width; this.height = height;
     if (!width || !height) return;
     const areas = chart.blockAreaList ?? [];
-    const definitions = noiseLayers(chart).filter(layer => !this.hiddenLayers?.has(layer.id));
-    this.gpu?.prune(new Set<any>(definitions.filter(layer => this.usesSkin(layer)).map(layer => layer.id)));
-    if (!definitions.length || !areas.length && !definitions.some(layer => this.usesSkin(layer))) return;
+    const definitions = noiseRenderingLayers(chart, !areas.length && options.sourceGuides?.length ? options.sourceGuides.map(entry => entry.area) : areas).filter(layer => !this.hiddenLayers?.has(layer.id));
+    this.gpu?.prune(new Set(definitions.filter(layer => this.usesSkin(layer)).map(layer => layer.id)));
+    if (!definitions.length) return;
     if (this.source !== areas || this.tempo !== tempo) {
       this.source = areas; this.tempo = tempo;
       this.lifetimes = new IntervalIndex(this.source, area => tempo.seconds(area.appearTime), area => tempo.seconds(area.disappearTime));
@@ -53,9 +78,21 @@ export class NoisePreview {
     if (!options.sourceGuides && options.positionScale) this.guides = this.guides.map(entry => previewNoiseGeometry(entry, options.positionScale));
     if (!options.sourceGuides && this.transformGeometry) this.guides = this.guides.map(entry => this.transformGeometry(entry, { width, height, scale, viewport, seconds })).filter(Boolean);
     const margin = Math.max(2, scale * 5);
-    let entries = this.guides.filter(entry => entry.scaleX !== 0 && entry.scaleY !== 0 &&
-      !entry.points.every(point => width / 2 + point.x * scale < -margin) && !entry.points.every(point => width / 2 + point.x * scale > width + margin) &&
-      !entry.points.every(point => height / 2 - point.y * scale < -margin) && !entry.points.every(point => height / 2 - point.y * scale > height + margin));
+    const skinBounds = new Map(); let assets;
+    for (const layer of definitions) if (this.usesSkin(layer)) {
+      this.gpu ??= new NoiseSkinRenderer(() => this.invalidate?.(), message => this.report?.(message));
+      assets ??= this.getAssets?.() ?? new Map();
+      const ratio = target.canvas.width / width;
+      const prepared = this.gpu.prepare?.(layer, assets, Math.max(1,Math.round(viewport.width*ratio)), Math.max(1,Math.round(viewport.height*ratio)));
+      const padding = prepared?.padding ?? [32,32];
+      skinBounds.set(layer.id, { skin: prepared?.skin, bounds: [viewport.left-padding[0]/ratio, viewport.top-padding[1]/ratio, viewport.left+viewport.width+padding[0]/ratio, viewport.top+viewport.height+padding[1]/ratio] });
+    }
+    let entries = this.guides.filter(entry => {
+      if (entry.scaleX === 0 || entry.scaleY === 0) return false;
+      const bounds = skinBounds.get(noiseLayerId(entry.area))?.bounds ?? [-margin,-margin,width+margin,height+margin];
+      return !entry.points.every(point => width/2+point.x*scale < bounds[0]) && !entry.points.every(point => width/2+point.x*scale > bounds[2]) &&
+        !entry.points.every(point => height/2-point.y*scale < bounds[1]) && !entry.points.every(point => height/2-point.y*scale > bounds[3]);
+    });
     const interior = options.excludeInside;
     if (interior && interior.right > interior.left && !definitions.some(layer => this.usesSkin(layer))) entries = entries.filter(entry => !entry.points.every(point => {
       const horizontal = width / 2 + point.x * scale;
@@ -68,9 +105,8 @@ export class NoisePreview {
     for (const definition of definitions) {
       const items = entries.filter(entry => noiseLayerId(entry.area) === definition.id);
       if (this.usesSkin(definition)) {
-        this.gpu ??= new NoiseSkinRenderer(() => this.invalidate?.(), message => this.report?.(message));
         const musicSeconds = seconds + Number(chart.META?.offset ?? 0) / 1000;
-        if (this.gpu.render(target, definition, this.getAssets?.() ?? new Map<any, any>(), items, musicSeconds, viewport, scale, width, height)) continue;
+        if (this.gpu.render(target, definition, assets, items, musicSeconds, viewport, scale, width, height, skinBounds.get(definition.id)?.skin)) continue;
       }
       if (!items.length) continue;
       const composite = this.layer('composite', width, height, ratio);
@@ -171,6 +207,27 @@ export class NoisePreview {
       return null;
     } finally { context.restore(); }
   }
+  guideSprite(text, font, color) {
+    if (this.guideFontRevision !== this.guideFonts?.revision) { this.guideSprites.clear(); this.guideFontRevision = this.guideFonts?.revision; }
+    const ratio = Math.max(2, globalThis.devicePixelRatio || 1);
+    const key = JSON.stringify([text, font, color, ratio]); const cached = this.guideSprites.get(key);
+    if (cached) return cached;
+    this.guideMeasure ??= document.createElement('canvas').getContext('2d');
+    const measure = this.guideMeasure; measure.font = font; measure.textAlign = 'center'; measure.textBaseline = 'bottom';
+    const metrics = text ? measure.measureText(text) : null;
+    const left = Math.floor(Math.min(-9, -(metrics?.actualBoundingBoxLeft ?? (metrics?.width ?? 0) / 2)) - 2);
+    const right = Math.ceil(Math.max(9, metrics?.actualBoundingBoxRight ?? (metrics?.width ?? 0) / 2) + 2);
+    const top = Math.floor(Math.min(-9, -10 - (metrics?.actualBoundingBoxAscent ?? parseFloat(font))) - 2);
+    const bottom = Math.ceil(Math.max(9, -10 + (metrics?.actualBoundingBoxDescent ?? 0)) + 2);
+    const width = Math.ceil((right - left) * ratio), height = Math.ceil((bottom - top) * ratio);
+    if (width > 4096 || height > 4096 || width * height * 4 > this.guideSprites.maxBytes / 4) return null;
+    const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height;
+    const context = canvas.getContext('2d'); context.setTransform(ratio, 0, 0, ratio, -left * ratio, -top * ratio);
+    context.strokeStyle = context.fillStyle = color; context.lineWidth = 1.5;
+    context.beginPath(); context.arc(0, 0, 3.5, 0, Math.PI * 2); context.moveTo(-8, 0); context.lineTo(8, 0); context.moveTo(0, -8); context.lineTo(0, 8); context.stroke();
+    if (text) { context.font = font; context.textAlign = 'center'; context.textBaseline = 'bottom'; context.fillText(text, 0, -10); }
+    return this.guideSprites.set(key, { canvas, left, top, width: canvas.width / ratio, height: canvas.height / ratio }, canvas.width * canvas.height * 4);
+  }
   drawGuides(context, scale, selected, showNames) {
     for (const entry of this.guides ?? []) {
       const focused = entry.index === selected;
@@ -178,9 +235,13 @@ export class NoisePreview {
       context.save();
       const horizontal = this.width / 2 + entry.center.x * scale; const vertical = this.height / 2 - entry.center.y * scale;
       context.translate(horizontal, vertical); context.rotate(entry.rotation);
+      if (typeof document !== 'undefined') {
+        const sprite = this.guideSprite(showNames ? entry.area.Name || t('noise-preview.s64fec24', { p0: entry.index }) : '', `${Math.max(11, 30 * scale)}px RPEGame, sans-serif`, focused ? '#ffe39a' : '#ffc9b5');
+        if (sprite) { context.imageSmoothingEnabled = true; context.drawImage(sprite.canvas, sprite.left, sprite.top, sprite.width, sprite.height); context.restore(); continue; }
+      }
       context.strokeStyle = focused ? '#ffe39a' : '#ffc9b5'; context.fillStyle = context.strokeStyle; context.lineWidth = 1.5;
       context.beginPath(); context.arc(0, 0, 3.5, 0, Math.PI * 2); context.moveTo(-8, 0); context.lineTo(8, 0); context.moveTo(0, -8); context.lineTo(0, 8); context.stroke();
-      if (showNames) { context.font = `${Math.max(11, 30 * scale)}px RPEGame, sans-serif`; context.textAlign = 'center'; context.textBaseline = 'bottom'; context.fillText(entry.area.Name || `噪域 ${entry.index}`, 0, -10); }
+      if (showNames) { context.font = `${Math.max(11, 30 * scale)}px RPEGame, sans-serif`; context.textAlign = 'center'; context.textBaseline = 'bottom'; context.fillText(entry.area.Name || t('noise-preview.s64fec24', { p0: entry.index }), 0, -10); }
       context.restore();
     }
   }

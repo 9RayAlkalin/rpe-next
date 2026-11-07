@@ -3,9 +3,9 @@ export function mediaErrorCode(error) {
 }
 
 export class MediaDiagnostics {
-  active: any;
-  emit: any;
-  sequence: any;
+  declare active: any;
+  declare emit: any;
+  declare sequence: any;
 
   constructor(emit: any = () => {}) { this.emit = emit; this.sequence = 0; this.active = new Map(); }
   snapshot() { return [...this.active.values()].map(entry => ({ ...entry, elapsedMs: Math.round(performance.now() - entry.started) })); }
@@ -14,7 +14,7 @@ export class MediaDiagnostics {
     this.active.set(operation, { operation, stage, ...details, started });
     const report = (state, extra = {}) => this.emit(`media-${stage}-${state}`, { operation, ...details, elapsedMs: Math.round(performance.now() - started), ...extra });
     report('start');
-    const timer = setInterval(() => report('waiting'), 10000); timer.unref?.();
+    const timer = setInterval(() => report('waiting'), 10000); (timer as any).unref?.();
     let ended = false;
     return (state = 'complete', extra = {}) => {
       if (ended) return;

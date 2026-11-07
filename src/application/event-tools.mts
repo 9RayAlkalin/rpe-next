@@ -1,9 +1,11 @@
+import { eventNumericValue } from '../core/event-easing.mjs';
 import { beatValue, fromNumber } from '../core/beat.mjs';
 import { easing, bezier } from '../core/easing.mjs';
 import { EVENT_TYPES } from '../core/chart.mjs';
 import { snapTime } from '../core/edit-grid.mjs';
 import { eventList, eventListAt, eventKey, selectedEvents, selectedEventEntries, chartWithEventLists, commitEventLists } from './event-commands.mjs';
 import { assertChart } from '../core/chart.mjs';
+import { t } from '../i18n.mjs';
 
 const cutTypes = new Set([...EVENT_TYPES, 'scaleXEvents', 'scaleYEvents', 'colorEvents']);
 export function canCutEvent(type, event) {
@@ -12,13 +14,13 @@ export function canCutEvent(type, event) {
 
 export function cutEventParts(type: any, event: any, { division = 4, density = 4, beat, tempo, factor = 1 }: any = {}) {
   if (!canCutEvent(type, event)) return null;
-  if (!Number.isFinite(density) || density <= 0 || !Number.isFinite(division) || division < 1) throw new Error('切割密度和横线细分必须大于零');
+  if (!Number.isFinite(density) || density <= 0 || !Number.isFinite(division) || division < 1) throw new Error(t('event-tools.sfcffc1a'));
   const subdivisions = Math.max(1, Math.trunc(division * density));
   const start = beatValue(event.startTime); const end = beatValue(event.endTime);
   const snapped = tempo ? beatValue(snapTime(tempo.seconds(beat ?? start, factor), division, tempo, factor)) : Math.round((beat ?? start) * division) / division;
   const anchor = snapped > start && snapped < end ? snapped : start;
   const count = Math.ceil((end - start) * subdivisions) + 1;
-  if (count > 100000) throw new Error('切割结果过多，请降低密度或分批切割');
+  if (count > 100000) throw new Error(t('event-tools.sdb5f35f'));
   const cuts = [start];
   const first = Math.floor((start - anchor) * subdivisions) + 1;
   for (let index = first; index <= Math.ceil((end - anchor) * subdivisions); index++) {
@@ -28,13 +30,13 @@ export function cutEventParts(type: any, event: any, { division = 4, density = 4
   }
   cuts.push(end);
   const sample = position => {
-    const progress = (position - start) / (end - start);
+    const progress = event.customEasing && tempo ? (tempo.seconds(position, factor) - tempo.seconds(event.startTime, factor)) / (tempo.seconds(event.endTime, factor) - tempo.seconds(event.startTime, factor)) : (position - start) / (end - start);
     const amount = event.bezier ? bezier(progress, event.bezierPoints) : easing(progress, event.easingType, event.easingLeft ?? 0, event.easingRight ?? 1);
-    if (Array.isArray(event.start)) return event.start.map((value, index) => Math.trunc(value + (event.end[index] - value) * amount));
-    const value = event.start + (event.end - event.start) * amount;
+    if (Array.isArray(event.start)) return event.customEasing ? eventNumericValue(event, progress).map(Math.trunc) : event.start.map((value, index) => Math.trunc(value + (event.end[index] - value) * amount));
+    const value = event.customEasing ? eventNumericValue(event, progress) : event.start + (event.end - event.start) * amount;
     return type === 'alphaEvents' ? Math.trunc(value) : value;
   };
-  return cuts.slice(0, -1).map((point, index) => ({ ...structuredClone(event), startTime: fromNumber(point), endTime: fromNumber(cuts[index + 1]),
+  return cuts.slice(0, -1).map((point, index) => ({ ...structuredClone(event), customEasing: undefined, startTime: fromNumber(point), endTime: fromNumber(cuts[index + 1]),
     start: sample(point), end: sample(cuts[index + 1]), easingType: 1, easingLeft: 0, easingRight: 1, bezier: 0, bezierPoints: [0, 0, 1, 1], linkgroup: 0, inst: 0 }));
 }
 
@@ -47,14 +49,14 @@ export function cutSelectedEvents(session, options = {}) {
       const parts = selected ? cutEventParts(type, event, options) : null;
       if (selected && !parts) skipped++;
       if (parts) { changed++; generated += parts.length; }
-      if (generated > 100000) throw new Error('切割结果过多，请降低密度或分批切割');
+      if (generated > 100000) throw new Error(t('event-tools.sdb5f35f'));
       for (const item of parts ?? [event]) events.push({ item, selected });
     });
     events.sort((left, right) => beatValue(left.item.startTime) - beatValue(right.item.startTime));
     events.forEach((entry, index) => { if (entry.selected) selection.add(eventKey(type, index)); });
     updates.set(type, events.map(entry => entry.item));
   }
-  if (changed) commitEventLists(session, '切割选中事件', updates, selection);
+  if (changed) commitEventLists(session, t('event-tools.s9fda3f9'), updates, selection);
   return { changed, generated, skipped };
 }
 
@@ -73,7 +75,7 @@ export function stickSelectedEvents(session) {
     });
     updates.set(type, events);
   }
-  if (changed) commitEventLists(session, '粘合选中事件', updates);
+  if (changed) commitEventLists(session, t('event-tools.s411a288'), updates);
   return { changed, skipped };
 }
 
@@ -92,6 +94,6 @@ export function stickSelectedEventToNext(session) {
   const chart = chartWithEventLists(session.chart, selected.lineIndex, session.eventLayer, new Map([[selected.type, updated]]));
   assertChart(chart);
   const beforeSelection = session.selectionState();
-  session.commit('向后粘合事件', chart, beforeSelection);
+  session.commit(t('event-tools.s3c9157f'), chart, beforeSelection);
   return true;
 }

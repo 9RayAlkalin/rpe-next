@@ -34,10 +34,10 @@ export function lineOverviewLayout(width, height) {
 }
 
 export class LineOverviewIndex {
-  notes: any;
-  events: any;
-  noteEnds: any;
-  eventEnds: any;
+  declare notes: any;
+  declare events: any;
+  declare noteEnds: any;
+  declare eventEnds: any;
 
   constructor(line, tempo, shaders = [], layer = undefined, extended = false) {
     const factor = line.bpmfactor ?? 1;

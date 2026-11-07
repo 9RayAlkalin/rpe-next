@@ -34,7 +34,7 @@ export function safeDownloadName(value) {
 // Download destinations are private to the browser. Avoid repeats within this
 // session; the browser also resolves names already present on disk.
 export class DownloadNames {
-  used: any;
+  declare used: any;
 
   constructor() { this.used = new Set(); }
   suggest(value) {

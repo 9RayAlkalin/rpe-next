@@ -7,6 +7,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   "lineScale": 1.5,
   "gridCount": 21,
   "scrollSpeed": 5,
+  "wheelInputMode": "mouse",
   "wheelStopAtAudioStart": true,
   "drawEventCurves": true,
   "backgroundAlpha": 0.23529411764705882,
@@ -28,16 +29,28 @@ export const DEFAULT_SETTINGS = Object.freeze({
 });
 
 export const DEFAULT_EDITOR_PREFERENCES = Object.freeze({
+  "editorRenderFps": 60,
+  "editorRenderAutoPlay": true,
+  "keyDisplay": false,
+  "overlappingLinePicker": true,
+  "directPlacement": false,
+  "placementOpacity": 0.5,
+  "noteSpacing": 1,
+  "notesOnlyNoteScale": 0.9,
   "selectionInterval": 1,
   "viewportOverflow": false,
   "overflowBlur": 25,
   "overflowDarken": 0.15,
   "includeBackupCharts": false,
   "pairedMovementSampling": true,
+  "rpeEventDrag": false,
+  "xyBinding": false,
   "scale": 600,
   "division": 4,
   "snapX": true,
   "judgementOffset": 92,
+  "judgementWidth": 5,
+  "judgementAlpha": 0.6,
   "realtime": true,
   "hitEnabled": true,
   "hitTapDelay": 0,
@@ -68,5 +81,5 @@ export const DEFAULT_APPEARANCE = Object.freeze({
       "parameters": {}
     }
   },
-  "noteSkin": "default"
+  "noteSkin": "builtin-sea-of-dreams"
 });

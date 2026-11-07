@@ -1,12 +1,12 @@
 import { beatValue } from '../core/beat.mjs';
 
 export class ClipboardHistory extends EventTarget {
-  activeId: any;
-  current: any;
-  enabled: any;
-  entries: any;
-  limit: any;
-  revision: any;
+  declare activeId: any;
+  declare current: any;
+  declare enabled: any;
+  declare entries: any;
+  declare limit: any;
+  declare revision: any;
 
   constructor(limit = 20) {
     super(); this.limit = limit; this.entries = []; this.enabled = true; this.revision = 0;

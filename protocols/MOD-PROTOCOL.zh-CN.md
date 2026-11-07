@@ -1,5 +1,9 @@
 # RPEN 模组协议与开发指南 · API 1
 
+AI命令扩展：`api.agent.register(definition)` 可将任意模组功能注册给内置Agent，`api.agent.list()` 查看工具结构，卸载自动注销；通用谱面工具也能读写模组字段。权限、只读prepare、变更计划、执行一致性和Provider扩展详见 [AI Agent协议](AI-AGENT-PROTOCOL.zh-CN.md)。此项为API1兼容扩展，不要求旧模组修改。
+
+模型请求按需携带工具定义，新增模组命令可通过 `agent_tools` 发现，注册接口和完整 `api.agent.list()` 不变。`api.editor.agentWorkspaceId` 是当前谱面的稳定本地 AI 工作区标识；`await api.editor.agent.ready` 等待对话恢复，`await api.editor.agent.flush()` 等待本地记录落盘。可信扩展可使用 `api.editor.agent.workspace` 管理该工作区文件；桌面端限制在独立目录，不授予任意磁盘或终端访问。对话及原始请求属于用户本地数据，模组不应未经用户要求上传或读取无关内容。
+
 本协议定义可执行的编辑器扩展。模组可以修改界面、交互、渲染、编辑语义、谱面数据、导入导出和存储流程，也可以实现独立工具或游戏。内置示例不构成能力白名单。编辑器皮肤和音符皮肤属于各自的数据协议；模组可以调用、扩展或替换它们的实现。
 
 机器可读清单见 `schemas/mod-v1.schema.json`，接口声明见 `schemas/mod-api-v1.d.ts`。API 1 从当前开发版本提供。`api.version` 是模组宿主接口版本，`mod.json.version` 是模组自己的版本，与谱面的 `RPEVersion` 相互独立。
@@ -13,6 +17,16 @@
 **模组与编辑器在同一个 JavaScript 页面运行，没有模组权限沙箱。** 它可以访问页面 DOM、当前编辑器存储中的谱面与设置，执行网络请求，调用宿主公开对象、导入内部模块和改写原型。网页端访问限于同源存储；桌面端也可通过编辑器的存储接口读取、修改或删除所选原生谱面库中的数据。启用意味着信任其全部代码。管理器的包大小、路径和语法检查用于诊断和防止意外资源耗尽，不是恶意代码隔离。
 
 网页仍受浏览器权限、同源策略、CORS、CSP 和文件选择授权约束。桌面版渲染进程没有 Node.js、任意磁盘读写或终端接口；模组不能借本协议突破这些边界。远程脚本可能被 CSP 拦截，依赖应打包进模组。网络请求也不因本协议获得额外跨域权限。模组不可假定 `eval`、`new Function`、Node.js `require` 或 npm 裸模块名能运行。
+
+### 1.1. 在线市场与安装计划
+
+内置“Nyamon 模组市场”由 NyamonZone 提供，使用 API 1 的普通模组能力，默认禁用。它增加目录、依赖安装、发布页和更新检查；[使用说明](../assets/mods/rpen-mod-market/README.zh-CN.md)记录网络范围、配置和恢复入口。市场服务协议由服务提供者维护，不属于宿主 API 1 的稳定方法契约。
+
+在线下载与文件导入遵循相同的风险确认规则：依赖和替换包也须分别审阅并主动勾选；整个计划校验与审阅完成前不得写入或停用原有包。默认不执行下载代码；若提供安装后恢复启用，必须单独选择并说明会运行新版本及受影响的依赖者。内置 ID 和市场自身不可由在线包覆盖。
+
+覆盖前应持久化旧包及参数备份，失败时按实际存储恢复，不能先删除旧包的最后一个副本。恢复未完成时保留备份、提供恢复及导出入口，并停止新安装；管理器不能把未恢复的旧版本显示为已经恢复。正常关闭窗口、切换服务及停用产生的 `AbortError` 应由模组处理为取消，其他异常继续遵循宿主错误规则。
+
+浏览、反馈和更新检查应说明联系的服务及提交的数据。更新检查默认限于当前市场来源，其他包由用户手动选择，提交范围为模组 ID、版本和内容哈希。修改服务配置必须取消旧任务、关闭旧连接及清除会话，提示与实际接收地址一致。
 
 ## 2. 包结构与清单
 
@@ -47,7 +61,11 @@ example/
 }
 ```
 
-必填项为 `protocol/api/id/name/version/author/description/entry`。`author`、`description` 可为空。`id` 和设置键以小写字母开头，只含小写字母、数字、`-`，最长 64 字符。`version` 用 `1.0.0` 形式，可有 `-beta.1` 或 `+build` 后缀。`entry` 为包内 `.mjs` 或 `.js` ES 模块，必须存在。未知清单字段保留但不自动执行，可用 `x-` 前缀保存扩展元数据。
+必填项为 `protocol/api/id/name/version/author/description/entry`。`author`、`description` 可为空。`name`、`author`、`description`，以及设置的 `label`、`description` 和 `select` 选项文本，都可以写成语言映射（`{ "zh-CN": "…", "en-US": "…" }`），管理器按当前界面语言显示；匹配顺序为完整语言标签、同语种、`zh-CN`、映射首项。`id` 和设置键以小写字母开头，只含小写字母、数字、`-`，最长 64 字符。`version` 必须是字符串，用 `1.0.0` 形式，可有 `-beta.1` 或 `+build` 后缀，不接受语言映射。`entry` 为包内 `.mjs` 或 `.js` ES 模块，必须存在。未知清单字段保留但不自动执行，可用 `x-` 前缀保存扩展元数据。
+
+为兼容 API 1，`api.manifest` 中的名称、作者、说明及设置文本始终是按装载时界面语言解析后的字符串，模组可继续拼接或调用字符串方法。`api.manifestSource` 提供保留语言映射的原始清单副本；类型分别见 `ModManifest` 与 `ModManifestSource`。二者均不改写包内 `mod.json` 或导出内容。界面切换语言后重载模组以重新解析。持久化全局事件的来源名称、作者和版本仍为字符串，类型 ID 和设置键不随语言变化。
+
+可选 `homepage` 表示项目主页。可选 `market` 为市场来源元数据：`{"id":"example-tool","api":"https://example.com/mods/api.php"}`；`id` 应与清单 ID 相同，`api` 是对应市场的 HTTP(S) API 地址。内置市场以完整规范化 API 地址匹配默认更新范围，其实际传输通道仍由市场设置指定。这是来源标记，不是签名或授权；缺少该字段的模组仍可正常导入、启用，也可由用户手动选择检查更新。字段不改变谱面格式或 API 版本。
 
 `dependencies`、`conflicts` 为其他模组 ID 的数组，不允许包含自身。依赖先装载，缺失、循环及双方任何一方声明的冲突会阻止装载。禁用依赖也会禁用依赖它的模组。没有依赖关系时按用户启用顺序装载；自动启动按保存的顺序处理。不支持依赖版本范围，作者应在激活时自行检查功能或版本。
 
@@ -101,6 +119,7 @@ export function activate(api) {
 | API | 行为 |
 |---|---|
 | `version/id/manifest/editor/signal` | 接口版本、模组 ID、清单、编辑器对象、中止信号 |
+| `manifestSource` | 保留多语言文本映射的原始清单副本 |
 | `dispose(fn)` | 注册额外清理 |
 | `listen(target,type,fn,options)` | 托管任意 DOM/EventTarget 监听 |
 | `on(type,fn)` | 监听宿主事件；回调直接接收 detail |
@@ -127,6 +146,8 @@ export function activate(api) {
 `lockEditing({reason,roots?})` 默认锁住编辑工具、原预览交互和面板，保留模组管理器。模组自己的可交互区域标记 `data-mod-interactive="true"` 可绕过输入拦截。它只锁人机编辑输入，不阻止其他模组、后台任务或联机操作；需要独占环境的工具应自行检查联机状态。`roots` 是要设 inert 的 CSS 选择器数组，替换默认列表；高级模组自行负责覆盖范围。代码层的强制语义禁止可使用提交钩子取消操作。
 
 模组命令接管、`input:before` 标记已处理或取得编辑锁时，会取消正在进行的属性名称拖动并释放指针锁定。普通拖动仅在松手时提交一次；预览草稿不触发提交钩子，最终提交仍经过 `session:before-commit`。草稿期间发生其他谱面提交、撤销或切换谱面时，旧草稿不会覆盖新状态。
+
+桌面本地语音输入在可编辑文本框中处理其按住说话键（默认 `TILDE`），先于普通编辑及模组输入钩子，避免录音键穿透；禁用、只读或 `inert` 控件不触发。Shadow DOM 中的标准文本框通过事件路径识别，设置 `data-dictation="off"` 可对特定输入框关闭此入口。识别结果从原选区插入并触发原生 `beforeinput/input`，不自动发送表单；数值框沿用原有数值更新逻辑，原输入内容发生变化时只提供候选结果。这是 API 1 的兼容补充，不授予模组新的麦克风权限。
 
 ## 5. 同步语义钩子
 
@@ -196,6 +217,8 @@ export function activate(api) {
 
 读取属性：`session/chart/tempo/assets/preferences/editorPreferences/chartName/hasDocument/home/activePane/dirty/libraryProject`。`loop` 可读写。`assets` 是路径到字节的 Map；通过 `addAsset/removeAsset` 修改可正确标记未保存。
 
+`editor.speedCurve` 是按需创建的调速曲线面板，`active` 标识是否展开，`close()` 取消未完成预览并关闭。它只修改目标线的 `speedEvents`，不修改音符 `speed`；拖拽作为单次事务进入撤销历史。“后段缓动”直接描述当前节点到下一同层节点的距离曲线（恒速为 1），切换时固定两端距离。默认判定锚点固定，真实速度节点可与其重合；模型保留 `judgment` 标记，`ref()` 优先返回真实事件引用，仅没有真实节点时返回 `edge: 'judgment'`。重合节点可修改拍数/后段缓动、拖出及删除，距离遵守判定约束；从一侧移入时保持另一侧速度，默认锚点不会被删除。末节点没有后段缓动。实现优先用原生单事件，否则每个区间最多用 64 段正时长速度事件拟合（距离误差容限 max(0.2, 两端距离差绝对值 × 0.0015)）。显式分界携带 `rpeNextSpeedCurveNode` / `rpeNextSpeedCurveEndNode`；`rpeNextDistanceCurve` 的版本 1 分组记录含 id、start/end、easing、count 和 native 形状签名，完整有效时隐藏内部拟合接点。外部改变原生事件后会重新识别。以上字段不改变事件求值或积分，未知字段保留规则适用。位置、尺寸、缩放、时间范围（相对判定拍）和吸附步长由本地偏好保存，不写入谱面。
+
 | 方法 | 用途 |
 |---|---|
 | `commit(label,chart)` | 按编辑器提交途径产生可撤销修改，传入新对象，不原地改旧历史 |
@@ -212,9 +235,31 @@ export function activate(api) {
 | `save()` | 调用现有主动保存流程，返回 Promise；必须 await 并处理写入或版本冲突错误，详见下文 |
 | `addAsset(path,bytes)/removeAsset(path)` | 改素材、标未保存、刷新贴图缓存 |
 
-可直接访问实际对象：`audio/playback/preview/realtimePreview/timeline/skin/images/hitSounds/editorSkins/noteSkins/noiseEditor/eventSampler/trajectoryPanel/textLinesPanel/noiseFitPanel/noiseTrackingPanel/multiEdit/batchControls/collaboration/versionControl`。它们不是只读快照或受限代理，可以包装方法、调整字段或替换底层行为；具体接口看同名源码。持久设置修改需调用相应的保存流程。
+可直接访问实际对象：`audio/audioSources/audioOnsets/audioAnalysis/playback/preview/realtimePreview/timeline/skin/images/hitSounds/editorSkins/noteSkins/noiseEditor/eventSampler/spatialTool/trajectoryPanel/textLinesPanel/noiseFitPanel/noiseTrackingPanel/multiEdit/batchControls/collaboration/versionControl`。它们不是只读快照或受限代理，可以包装方法、调整字段或替换底层行为；具体接口看同名源码。持久设置修改需调用相应的保存流程。`audioOnsets`管理采音算法、模型推理缓存与候选筛选，供原生界面和AI共用；调用`analyze(buffer, options, signal)`不修改谱面，模型环境需由用户配置，不能绕过其安装确认。
+
+几何投影扩展可在预览 renderer 上提供 `spatialMapping.project(point, seconds, frame, chart, tempo)` 与 `unproject(...)`。point 是完成比例适配和父线计算后的判定线世界 X/Y，输出仍为当前预览面中的同单位 X/Y；frame 包含 CSS 像素 width/height 和绘制 scale。返回 null 表示不可投影或不可反算，不能伪造零坐标。空间轨迹按各节点自身的秒数调用映射，编辑时先反算观察视图，再调用 unproject。内置摄像机已接入，停用模组时恢复原映射；纯像素 Shader 无需提供此接口。
+
+音频分析的 `audioSources.select(id或id数组)` 临时切换实际播放与默认分析音源，至少选择一项；`selectedIds` 返回勾选项，`resolveSelection()` 返回其混合。`audio.buffer` 始终保留原音乐，`audio.playbackBuffer` 是当前实际播放缓冲；两者不可混为保存或导出的素材。所有声部共用原音乐零点与谱面延迟，选择不进入谱面历史或设置，退出谱面恢复原音频。波形/频谱按各声部颜色分列显示，`audioOnsets` 默认分析当前混合。
 
 `editor.raw` 提供更底层入口：实时 `session/chart/assets/tempo`、`renderSession/replaceChart/activatePane/togglePlayback/togglePreview/save/applyDisplaySettings/persistEditor/setHome`。`raw.chart=` 直接替换历史当前文档并通知，**不增加撤销记录**；`raw.tempo=` 更新时间轴 TempoMap。其他内部一致性由作者负责，优先使用普通 commit。可以通过任意 DOM/Web API、内部 ES 模块、类原型与这些入口继续扩展，宿主不限制为本节列出的功能。
+
+多线表达式可包含 `all`、`@notes`、`@events`（不区分大小写），后两者按当前编辑时间视野筛选音符或当前层事件，包含跨屏 Hold 和 BPM 倍率；空格分隔词元取并集。这些词元不能作为组名。`editor.timeline.setMultiLineExpression(text)` 解析并设置表达式，之后启用多线即可动态刷新；`session.multiLineExpression` 保留表达式，`multiLineIndices` 是当前解析结果，可能为空，此时多线模式仍保持开启。手动改选线号会结束动态表达式；拖拽、框选或放置过程中保持列不变。`timeline.multiLineEventVisibility` 是按事件类型名索引的展示布尔值映射，未设置视为展示；仅影响多线事件模式，`timeline.eventTypes` 与 `eventColumnBounds()` 返回当前可见栏及坐标，隐藏栏不参与取样命中、框选和放置，不改动谱面数据。
+
+`editor.directPlacement` 是直接放置面板实例，属于进阶实现接口：`active` 表示是否展开，`open(lineIndex)` 在预览中展开当前线的音符编辑区，`close()` 关闭。它复用原 `editor.timeline` 与音符画布，通过 `timeline.noteView` 映射指针和绘制坐标，临时停用多线编辑，关闭后恢复；扩展交互应调用时间轴的 `point/noteHorizontal/notePositionAt/vertical`，不要直接用旋转后的 DOM 外接矩形换算。音符横坐标不限制在 −675～675。`beginPreviewSession()` 会先关闭直接放置和重合线列表。
+
+`editor.quickCurve` 与 `editor.noteTrackingPanel` 是进阶实现入口。单选音符长按中键进入曲线填充时，数字键和 Q/W/E/R/Esc 由临时交互消费，Shift+中键及短按仍保留框选；生成前只使用临时预览，不增加历史。音符追踪通过 `note_track` 命令或原生临时页面生成普通事件，默认使用当前线和当前事件层，不新增谱面字段。`timeline.noteSpacing` 为持久化横向间距比例，默认 1；扩展拖拽应调用 `horizontalScale/notePositionAt/noteHorizontal`，不要假设可见横坐标固定为 −675～675，也不要用此比例调整贴图大小。`timeline.notesOnlyNoteScale` 为单线仅音符视图的视觉缩放，默认 0.9；`referenceNoteScale` 保持坐标布局基准，实际音符宽高使用 `renderNoteScale`。
+
+右键默认值面板为 `editor.placementDefaultsPanel`。`editor.session.noteDefaults` 仅属于当前编辑会话，退出谱面时重置；`lineEventDefaults` 由编辑器偏好层跨谱面和重启保存。创建物件时可调用 `session.createNote(type, beat, positionX, endBeat?)`、`session.createLine(name?)` 使用这两组默认值，返回物件后仍须正常提交。默认值不写入谱面、不占用撤销历史，也不自动改动导入、复制或已有物件。底层 `core/chart.mjs` 的 `createNote/createLine` 继续返回固定的格式默认值，适合导入和明确控制属性的算法；两组构造入口不要混淆。`ensureLineCount(chart, count, lineEventDefaults?)` 的第三个参数可将同一套默认值用于批量新线。
+
+`editor.diagnostics` 提供后台谱面检查。`await diagnostics.waitBasic()` 等待当前版本的基础结果，`diagnostics.issues` 为基础与已完成深度结果的合并列表，`pending/running/progress/deepComplete` 表示状态；`change` 更新结果，`progress` 只更新进度。常规选择和播放循环不应调用同步整谱 `diagnose()`。`startDeep()` 仅在用户主动请求时调用，再次调用取消；谱面、素材、模组、目标或比例变化使深度结果失效。基础 Worker 使用结构共享的增量补丁，不传输音频/图片内容。
+
+`missingBaseline` 为自动警告，仅检查判定线第 0 层的五个基础事件轨道。轨道没有开始拍不晚于 0 的有效事件时产生一项结果；零拍前已经结束的事件和零拍瞬时标记也能提供初始值。结果通过 `line/layer=0/eventType/path/beat=0` 定位缺失的栏，没有物件 `index`、不可删除；上层事件和扩展轨道不补足第 0 层。检测与轨道常规校验共用遍历及缓存。
+
+全局事件校验读取注册列的 `valueType/min/max/overlap` 和模组来源，缺失模组与来源、版本变化会显示提示。深度检查还在独立 Worker 执行列的 `validate(event)`：应使用可独立执行、不依赖 DOM 或外部闭包的函数，可返回 `false`、错误字符串或抛出错误；支持异步返回。修改返回的谱面副本不会写回编辑器。依赖主线程闭包而无法运行的校验器会明确显示未能独立校验，不会当作检查通过。一般 Shader 重叠和合法瞬时事件仍然允许。深度位置检查复用场景、父线、倍率、视窗比例与内置三维摄像机投影；任意自定义后处理 Shader 的像素扭曲不属于几何位置判断。
+
+放置区使用 `noteView.flow` 将秒数映射为速度积分距离，`noteView.sideAt(y)` 返回上区 1 / 下区 -1；`timeline.timeAt(y, side?)` 反算拍点时间，`timeline.noteVertical(note, endpoint='startTime')` 按音符的 above 和首尾拍计算绘制位置，`vertical(beat,height?,side=1)` 可显式选择区。零速/反向段保留可编辑的单调距离轴；与实际预览有偏差时绘制对应连线，不改谱面数据。`preview.noteOpacity` 只乘音符本体透明度，展开期间为 0.3，退出恢复原值；`preview.noteCenterLine` 与 `preview.noteCenters` 仅收集目标线已绘制音符的中心几何，避免额外遍历全部谱面。以上为进阶实现接口，不增加协议版本。
+
+普通音符与放置面板拖拽时，`editor.timeline.previewNotes()` 提供临时的 `Map<线号, Map<音符索引, 音符>>`（无草稿时为 null），不改已提交谱面或撤销历史。原生预览通过 `preview.noteOverrides`、`preview.noteDraft` 对受影响音符增量绘制，保留其余场景索引；包装原生 `drawScene` 的模组会沿用此效果。完全自行绘制音符的模组需自行读取草稿。松开提交或取消后草稿撤回，谱面格式不变。
 
 ### 6.1. 保存、个人设置与平台存储
 
@@ -258,11 +303,15 @@ export function activate(api) {
 
 `editor.skin.noteScale(highlight)` 返回当前资源包普通 / 高亮音符的贴图尺寸倍率；默认皮肤为 1。自定义点击范围或剔除边界时应计入此倍率；`skin.head` / `skin.hold` 绘制时会内部应用倍率，传入绘制宽度时不应再次相乘。
 
-进阶绘制接口中，`LineRuntime.noteState` 的 `size` 为宽度倍率，`sizeY` 为不含音符自身 `size` 的高度倍率；尺寸控制曲线仍作用于两轴。`RpeSkin.head` 在既有 `minimumHeight` 后可接 `heightWidth`，`hold` 在 `color` 后可接 `heightWidth`，表示计算贴图高度的基准宽度，省略时沿用传入宽度以保持旧调用兼容。模组自绘或生成碰撞框时应使用两轴各自的倍率。判定线 `anchor` 是左下原点的归一化纹理锚点，图片和文本共用；线坐标及音符判定位置不因它移动。`bpmfactor` 文件语义仍为拍时倍率，面板的“BPM 倍率”显示其倒数，读取谱面时不可再把字段倒置一次。
+密集音符可由编辑器批量提交绘制，仍保留逐个音符的取样与碰撞信息，以及原有的绘制顺序、透明度、头尾和图集参数。内置绘制器通过 `skin.noteBatchCompatible` 表明可批量绘制；覆盖 `head` / `hold` 的模组和使用重复 Hold 身体的皮肤自动沿用原 Canvas 路径。模组不得仅为启用优化而把自定义绘制器声明为兼容；批量上下文只实现标准音符绘制所需的图片、矩形和矩阵操作。设备不支持或批次失败时会重新用原路径绘制当前批次。
+
+进阶绘制接口中，`LineRuntime.noteState` 的 `size` 为宽度倍率，`sizeY` 为不含音符自身 `size` 的高度倍率；尺寸控制曲线仍作用于两轴。`RpeSkin.head` 在既有 `minimumHeight` 后可接 `heightWidth`，`hold` 在 `color` 后可接 `heightWidth`，表示计算贴图高度的基准宽度，省略时沿用传入宽度以保持旧调用兼容。`hold` 在 `heightWidth` 后还可接 `zeroDirection`（默认 `1`），仅在首尾坐标相等时决定头尾贴图的朝向；预览自绘应按音符原始上下侧传入，上方为 `1`，下方为 `-1`，避免零长度 Hold 的两侧尾贴图重叠。模组自绘或生成碰撞框时应使用两轴各自的倍率。判定线 `anchor` 是左下原点的归一化纹理锚点，图片和文本共用；线坐标及音符判定位置不因它移动。`bpmfactor` 文件语义仍为拍时倍率，面板的“BPM 倍率”显示其倒数，读取谱面时不可再把字段倒置一次。
 
 ## 8. 示例、恢复与兼容
 
-内置“星航 · 谱面躲避”展示预览覆层、快捷键、临时编辑锁、几何碰撞、音效、成绩存储及完整恢复；“像素矿工”展示控件移动、布局恢复、动画与音效；“三维摄像机”展示全局事件、透视渲染和三维交互。它们都是普通 `mod.json + ES module` 包，使用同一加载器，可导出查看和派生，不拥有专有游戏接口。
+性能监控默认通过 F10 开关，可在快捷键设置中修改。关闭时不启动采样定时器或桌面硬件工作线程；开启后只记录实际编辑器绘制帧，按低频率更新图表与硬件指标。网页端不具备系统 CPU/GPU 查询权限，不可用指标显示 `—`；桌面端 CPU、应用内存与系统内存由原生接口提供，NVIDIA 驱动工具可用时优先读取 NVIDIA GPU/显存，其他 Windows 设备使用系统性能计数器（GPU 取最忙引擎）；这些硬件读数不代表仅编辑器的用量。应用 CPU 以整机逻辑处理器总容量为 100%。测试从音频零秒开始，保持当前播放倍率和预览设置，暂时跳过循环区间；停止、退出预览、切换谱面或隐藏窗口时均保留截至当时的统计。模组正常的预览绘制钩子仍参与测试，监控不改变谱面数据。
+
+内置“星航 · 谱面躲避”展示预览覆层、快捷键、临时编辑锁、几何碰撞、音效、成绩存储及完整恢复；“像素矿工”展示控件移动、布局恢复、动画与音效；“三维摄像机”展示全局事件、透视渲染和三维交互；“Nyamon 模组市场”展示网络请求、安装审阅、取消与恢复副本。它们都是普通 `mod.json + ES module` 包，使用同一加载器，可导出查看和派生。
 
 内置“像素矿工”展示提前输入拦截、真实控件的暂存/放置、九格物品栏、掉落与经验动画以及恢复。默认 F9 开关工具状态，Ctrl+Shift+F9 恢复全部；1–9 选栏位，文本框输入和滚轮保留原行为。关工具状态保留挖掘结果，停用模组才全部恢复。经验球先受重力落地，停留半秒后飞向鼠标；控件掉落物使用方形边框。控件暂存期间会拦截皮肤重新整理，面板按同一 ID 或同一表单语义字段重建控件时更新持有的真实控件，避免自动补回。控件状态仅在本次页面有效；没有稳定标识的自定义控件，或切换谱面后含义变化的控件，应恢复后重新操作。与星航声明冲突，避免同时接管输入。
 
@@ -277,7 +326,7 @@ export function activate(api) {
 3. 重载地址末尾加 `?mods=off`（已有查询时用 `&mods=off`）本次不装载模组，再到管理器排查。桌面版可从开发者控制台执行 `location.search='?mods=off'` 后重载。
 4. 如果上次在激活途中被关闭，下次会跳过自动装载并提示。严重死循环需先关闭窗口，再以恢复地址启动；桌面启动可用 `--mods-off`。
 
-API 1 的托管方法、清单和钩子是稳定契约；新增可选字段与钩子可兼容加入。对内部类、DOM 结构和 raw 流程的依赖需要随编辑器版本验证。API 不兼容时宿主拒绝装载，不悄悄执行。模组作者应注明测试的编辑器版本、是否改变格式/语义、与联机的兼容性以及停用后需不需要重载。协议没有模组签名、在线市场、网络权限白名单或进程级隔离。
+API 1 的托管方法、清单和钩子是稳定契约；新增可选字段与钩子可兼容加入。对内部类、DOM 结构和 raw 流程的依赖需要随编辑器版本验证。API 不兼容时宿主拒绝装载，不悄悄执行。模组作者应注明测试的编辑器版本、是否改变格式/语义、与联机的兼容性以及停用后需不需要重载。协议没有模组签名、网络权限白名单或进程级隔离；内置市场仍执行本节的信任与恢复规则。
 
 ## 9. 制作与测试
 
@@ -293,4 +342,12 @@ API 1 的托管方法、清单和钩子是稳定契约；新增可选字段与�
 
 `Preview.drawBackground`、`Preview.drawUi` 使用同样的绘制阶段签名，分别位于背景阶段及第一层 shader 后的游戏 UI 阶段。前者支持 center 捕获窗口偏移；后者使用 frame.viewport 定义 UI 的逻辑布局范围，并依赖 frame.states。三维摄像机的“跟随谱面”选项组合这两个可恢复补丁，让背景图片和游戏 UI 参与投影，同时保留它们在 shader 与噪域前后的顺序。
 
+替换谱面内 Shader 资源字节后，可调用 `editor.shaderAssetsChanged()` 标记素材未保存、更新谱面检查与预览源码缓存，避免无关图片重载。资源字节应替换为新的 `Uint8Array`，不要原地修改旧对象；此接口只负责素材变更通知，不创建编辑事务或自动联机传输。
+
 发布前至少验证：导入后不执行、启用及再次启用、修改快捷键、文本输入不穿透、切换谱面、撤销/重做、禁用时清理、依赖/冲突和异常恢复；自定义数据还须验证保存、重开、Next 导出及兼容导出的行为。支持桌面端的模组还应验证更新后设置继承、切换谱面库、大素材保存、冲突或写入失败时保留编辑。替换素材优先提交新的字节数组；保存仍会重新校验可变数组内容，不以对象引用相同作为素材未变化的保证。高自由度来自同页执行能力，可靠性来自模组作者对状态与恢复的完整管理。
+
+编辑器更新入口位于设置的“关于”，更新包的选择、下载、校验与程序替换由宿主负责，没有新增模组安装权限。模组应将用户数据保存至既有谱面、设置或工作区接口，不要写入程序安装目录，也不要依赖安装目录保持不变；宿主重启更新沿用正常的保存、设置写入与关闭流程。
+
+事件可包含 customEasing，具体见 ANIMATION-CURVES-PROTOCOL.zh-CN.md 和 schemas/animation-curve-v1.schema.json。提供方应使用共用 EventTrack / event-easing 求值，不能只读取 easingType。修改标准缓动须移除 customEasing；未知字段与裁切区间应保留。模组类型声明增加 AnimationCurve / CustomEventEasing。
+
+视频渲染模块创建独立 Preview，沿用 preview:before 和 onPreview 的传入 chart/seconds，payload.purpose 为 autoplay/export；离线输出不依赖真实播放头。需要包装渲染实例的扩展可从 @rpen/ui/render-extensions.mjs 导入 registerRenderExtension(attach)，attach 返回释放函数；同时保留原编辑器实例的接入。三维摄像机已使用此机制。详见 VIDEO-RENDER.zh-CN.md。

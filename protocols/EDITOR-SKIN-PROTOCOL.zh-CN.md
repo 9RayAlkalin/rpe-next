@@ -1,10 +1,26 @@
 # RPEN 编辑器皮肤协议 v1
 
+AI辅助沿用API3，新增 `@ai-tool`、`@ai-panel`、`@tab-ai` 与页面名 `ai`。入口可参与organize，页签仅在本次谱面首次开启后常驻；不得改变应用控制的显隐规则或妨碍审批与停止按钮。
+
+AI发送栏的 `.agent-route-toggle` 将模型与推理档位合并显示，`.agent-route-menu` 为点击后浮动展开的设置面板，支持原生Popover顶层显示；样式调整应保留其浮动定位、自动收起与键盘关闭行为，不将其展开为常驻内容。
+
 模组管理界面提供 `@mods-open/@mod-manager/@mod-list/@mod-details/@mod-status/@mod-warning` 别名，沿用 API 3。模组入口可参与 organize；皮肤不会改变外部模组导入的确认流程。
 
 本文同时是皮肤作者的实现规范和 AI agent 的制作指南。协议标识为 `rpen-editor-skin`，协议版本为整数 `1`。编辑器皮肤管理位于 **设置 → 编辑器皮肤**，适用于网页端和桌面端。
 
 当前界面契约版本为 **API 3**。旧的 v1 清单继续有效；使用 API 2 能力（响应式规则、参数、变体等）的皮肤应声明 `"compatibility":{"minApi":2}`，在画布色板中引用参数（API 3）的皮肤应声明 `"minApi":3`。API 版本针对编辑器皮肤接口，与应用版本、皮肤自身版本和文件协议 version 各自独立。
+
+兼容增加 `@note-tracking-tool`、`@note-tracking-panel` 和 `@agent-images`。音符追踪页面名为 `note-tracking`，属于从谱面工具打开的临时页面；墨线将入口放入生成组。Agent 图片使用 `.agent-image-list/.agent-image-card/.agent-image-open/.agent-image-remove`，保留缩略图的可辨识性、移除按钮和放大预览，不加载远程 Markdown 图片。横向间距设置的字段为 `note-spacing`，只改变音符坐标映射，不影响资源包贴图尺寸。`notes-only-note-scale` 仅缩放单线仅音符视图中的音符视觉宽高，默认 0.9，不改变坐标映射。
+
+右键默认值设置增加 `@placement-defaults-menu`（入口）及 `@placement-defaults`（浮动面板）。面板包含 `.placement-defaults-tabs` 的 `role=tab` 按钮、`.placement-defaults-body` 与 `.placement-defaults-reset`；当前页签通过 `aria-selected=true` 标识，输入控件以 `data-rpen-field` 标识属性。颜色、判定颜色和打击音效复用音符属性控件。应保留两个页签、重置和关闭的可用性，并允许内容在窗口高度不足时滚动。
+
+谱面检查增加 `@diagnostics-panel`、`@diagnose-deep`、`@diagnose-target`。`.diagnose-actions` 放置目标格式和深度检查/取消按钮，`.diagnose-state` 显示后台进度，`.diagnose-item[data-diagnostic-code]` 标识检查类型。结果按严重性和物件类别分组、分批展开；不要把“显示更多”或深度检查的进行中状态隐藏。检查不得由皮肤动画或重新布局自动触发。
+
+物件类别下的 `.diagnose-type[data-diagnostic-type]` 按具体问题类型再次分组，折叠状态会保留。定位时检查面板继续显示，左侧使用 `.diagnostic-highlight` SVG 覆盖层临时描出目标物件，`.diagnostic-highlight-outline` 的虚线沿边移动约数秒；覆盖层无指针事件，不应改变其相对 stage 的定位或尺寸，也不应让其影响画布布局。动画只更新该覆盖层，不触发谱面画布重绘。报错文案显示实际检测值，不重复显示规则阈值。
+
+直接放置沿用 API 3，新增 `@direct-placement-toggle`（工具栏开关）、`@direct-placement-close`（退出按钮）、`@direct-placement`（预览中的裁剪容器）、`@direct-placement-surface`（旋转编辑面）与 `@preview-line-picker`（重合线列表）。开启后原 `#notes` 画布临时移入编辑面，继续沿用 `notes` 画布色板，关闭后放回原位；皮肤应按画布自身定位，不依赖父元素层级，不覆盖编辑面或画布运行时管理的位置、尺寸和 transform。重合线列表的每项只显示线号与 alpha，保留应用控制的显隐。
+
+工具栏开关显示“直接放置音符”，右侧退出按钮显示“× 放置”。展开区的背景和网格不透明度由应用设置控制（默认 0.5），编辑音符与控制点不随背景变淡；不要对整个编辑面或画布加 opacity 来实现背景透明。应用将预览音符临时降至 30%，退出后恢复。上下双区沿判定线汇合并独立裁剪，位置偏差的对应音符用细虚线连接；此映射由编辑器维护，皮肤不要覆盖画布 transform。工具栏提供只读布局变量 `--rpen-placement-align-gap`，表示放置控件与上方拍数控件左端对齐所需的 margin-left；墨线采用此变量，并保留最小间距。窗口或控件尺寸变化时更新，空间不足时保留控件之间的间距。
 
 本文描述已经实现的能力。结构校验参见 [`schemas/editor-skin-v1.schema.json`](../schemas/editor-skin-v1.schema.json)，组件、变量及静态控件清单参见 [`schemas/editor-skin-components.v1.json`](../schemas/editor-skin-components.v1.json)。最终导入还会进行文件、引用、CSS、图片和字体校验；只通过 JSON Schema 不代表包一定有效。
 
@@ -87,9 +103,9 @@ my-skin/
 | `protocol` | 必填字符串 | 固定 `rpen-editor-skin` |
 | `version` | 必填整数 | 固定 `1`，不是应用版本 |
 | `id` | 必填字符串 | 稳定标识，见下文；同 id 导入会询问是否替换 |
-| `name` | 必填，1–80 字符 | 显示名称 |
+| `name` | 必填，1–80 字符 | 显示名称；也可写成 `{ "zh-CN": "…", "en-US": "…" }` |
 | `author` | 可选，1–100 字符 | 在名称后以括号显示 |
-| `description` | 可选，1–2000 字符 | 设置中显示的说明 |
+| `description` | 可选，1–2000 字符 | 设置中显示的说明；同样支持多语言映射 |
 | `colorScheme` | `dark` | `light` 或 `dark`，影响浏览器原生控件 |
 | `assets` | `{}` | 图片和字体注册表 |
 | `tokens` | `{}` | 基础设计变量，未填写时使用下表缺省值 |
@@ -178,8 +194,18 @@ tokens 是初始默认值，不是只能读取的常量。可在 `@root` 状态/
 | `footer` / `status` | `body > footer` / `#status` |
 | `notifications` | `#notifications` |
 | `dialog` / `settings` / `settings-body` | `#modal` / `#settings-modal` / `.settings-body` |
+| `settings-header` / `settings-navigation` / `settings-navigation-item` / `settings-search` | 设置页头、左侧分类导航、分类链接、搜索框；当前分类链接带 `aria-current="location"`，滚动与点击同步 |
+| `settings-category` / `settings-card` | 连续滚动的分类区块、原设置分组；分类用 `data-settings-section` 标识，值为 `general`、`appearance`、`editor`、`preview`、`audio`、`input`、`storage`、`compatibility`、`about`。搜索仅临时隐藏未匹配分组，不移除控件及状态 |
+| `about-settings` / `app-version` / `app-update-badge` | 关于设置卡片、底栏版本按钮、新版本文字标记；版本按钮在发现新版时具有 `has-update` 类，标记单独使用 `--rpen-info` 颜色，点击定位到关于页 |
+| `update-progress` / `update-notes` / `update-dialog` | 原生下载进度条、默认折叠的更新日志、下载完成及安装确认对话框；进度用 `value/max` 表达，不确定时移除 `value`。皮肤仅改变呈现，不改写下载地址、校验、权限或安装过程 |
+| `update-release-dialog` / `update-release-content` | 成功更新后首次进入的独立更新日志窗口和滚动正文。标题包含实际安装的版本；显示后即记录为已展示，普通重启不会再次弹出。关于页的折叠日志标题同样包含对应版本 |
+| `language-settings` / `language-select` | `#language-settings` / `#ui-language`，语言分类与选择控件 |
+| `dictation-settings` / `dictation-indicator` / `dictation-candidate` / `dictation-permission` | 本地语音输入设置、按住说话状态浮层、可复制结果、麦克风授权与系统权限说明面板；听写状态浮层不改变当前输入焦点 |
+| `performance-monitor` | 默认 F10 开关的性能浮层；位于浏览器顶层，支持拖拽并记住位置。内部用 Shadow DOM 保持深色半透明面板的可读性，皮肤可调整宿主样式，不移动或复制内部数值及图表节点 |
+| `graphics-settings` / `graphics-warning` | Windows 桌面端“图形设备”设置和启动显卡提示。显示实际渲染器，保留独显偏好、检测、系统设置、复制程序路径及“不再提示”交互；网页版不显示 |
 | `theme-settings` | `#editor-skin-settings` |
 | `context-menu` | `.timeline-context-menu` |
+| `speed-curve-menu` / `speed-curve-panel` | 单音符右键“调速曲线”入口与按需创建的浮动面板；保留模式按钮、节点数值、横向范围和纵向缩放控件。仅选中节点显示紧凑属性标签，其他节点保留图形标记；状态消息留在底部，不覆盖曲线。绘图区内沿用 Tap 放置快捷键直接添加节点，面板内删除沿用普通删除/快速删除的快捷键配置 |
 | `line-overview` | `.line-switcher`，Ctrl+滚轮线缩略图 |
 | `clipboard-history` | `#clipboard-results` |
 | `version-control-tool` / `version-control-panel` | 谱面版本控制入口按钮 / 右侧版本控制页面根节点 |
@@ -193,6 +219,7 @@ tokens 是初始默认值，不是只能读取的常量。可在 `@root` 状态/
 | `clock` / `beat-display` / `bpm-display` | 当前秒数与总时长 / 当前拍数 / 当前 BPM 读数，可分别设置样式或隐藏 |
 | `note-properties` / `event-properties` / `line-properties` / `noise-properties` | 四类属性表单 |
 | `noise-layers` / `noise-list` / `line-list` / `multi-line-list` | 对应层/物件列表 |
+| `multi-line-event-columns` | 多线列表上方默认折叠的事件栏勾选组；内部 `.multi-line-event-options` 自动换行，保留原生勾选交互 |
 | `asset-tree` / `asset-details` | 素材树 / 素材详情 |
 | `sample-bar` / `sample-panel` | 预览取样操作条 / 原地取样面板 |
 | `field` / `hint` / `panel-title` / `panel-actions` | 字段行 / 提示 / 标题 / 页面操作区 |
@@ -200,6 +227,8 @@ tokens 是初始默认值，不是只能读取的常量。可在 `@root` 状态/
 | `chat` / `peer-markers` | 联机聊天框 / 他人时间位置 |
 | `tab-notes` / `tab-events` / `tab-lines` / `tab-chart` / `tab-noise` | 对应右侧页签，移动后别名仍有效 |
 | `tool-select` / `tool-tap` / `tool-hold` / `tool-flick` / `tool-drag` | 选择与各类音符工具 |
+
+调速面板中的 `.speed-curve-y-control` 与曲线区域等高；`.speed-curve-y-zoom` 是真正的竖向范围控件，应沿绘图区完整高度显示，不能套用横向滑条的固定高度或轨道样式。工具栏 `.speed-curve-snap-step` 是独立的纵轴吸附步长数值框，不能隐藏或被挤出面板。“后段缓动”直接描述当前节点到下一个同层节点的距离曲线；默认判定锚点坐标不可改，但用户节点重合时优先编辑真实节点，拍数输入、拖拽和删除保持可用，只有距离受判定约束而禁用。末节点缓动为原生 `disabled`，保留灰显和原因提示。近似识别的缓动编号以 ≈ 标注。面板位置、尺寸和视图设置自动记忆，皮肤不得覆盖用户保存的位置和大小。
 
 以下命令的别名均直接展开为同名 id，例如 `@save` → `#save`：
 
@@ -223,12 +252,15 @@ tokens 是初始默认值，不是只能读取的常量。可在 `@root` 状态/
 | `chart` | 谱面工具 |
 | `assets` | 素材库，`#asset-library` |
 | `collaboration` | 联机，`#collaboration-panel` |
-| `audio-analysis` | 波形/频谱，`#audio-analysis-panel` |
+| `audio-analysis` | 音频分析，`#audio-analysis-panel` |
 | `multi` | 多音符/多事件，`#multi-editor` |
 | `multi-line` | 多线，`#multi-line-editor` |
 | `metadata` | 谱面信息，`#metadata-editor` |
 | `bpm` | BPM，`#bpm-editor` |
 | `trajectory` | 曲线轨迹，`#trajectory-editor` |
+| `spatial` | 空间轨迹右侧面板，`#spatial-editor`（`@spatial-panel`）；入口为 `@spatial-tool` |
+
+`@sampling-controls` 对应普通事件、噪域及空间轨迹共用的取样设置区。取样期间设置停留在右侧，不覆盖预览；空间轨迹曲线使用谱面颜色，编辑器皮肤不重映射其画布颜色。
 | `text-lines` | 文字拼合，`#text-lines-editor` |
 | `noise-fit` | 噪域图案，`#noise-fit-editor` |
 | `curve` | 曲线音符，`#curve-editor` |
@@ -238,9 +270,15 @@ tokens 是初始默认值，不是只能读取的常量。可在 `@root` 状态/
 | `noise-properties` | 噪域及内部事件属性，`#noise-properties` |
 | `clipboard` | 剪贴板历史 |
 
+`@sampling-controls` 对应普通事件、噪域及空间轨迹共用的取样设置区。取样期间设置停留在右侧，不覆盖预览；空间轨迹曲线使用谱面颜色，编辑器皮肤不重映射其画布颜色。
+
 常见样式入口：`.panel-title` 标题、`.field` 标签/控件行、`.hint` 提示、`.action-grid` 操作网格、`.primary` 主操作、`.wide-button` 整行按钮、`details > summary` 折叠头、`.modal-actions` 窗口底栏。例如 `[data-panel="events"] .field input` 只修改事件输入框。不要将 CSS 绑定到某一行索引或中文标签文本；可参考组件目录中的静态 id，动态字段以所属面板加控件类型作通用定制。
 
 音符属性字段与普通事件的首尾等输入提供 `data-rpen-field`，采用数据字段名，如 `positionX`、`startTime`、`start`、`end`；设置字段采用其控件 id。使用 data-key 的轨迹等工具也会映射同名字段。示例：`@note-properties input[data-rpen-field=positionX]`。没有显式登记此属性的历史表单不能按它定位，请使用对应稳定组件别名，不能用翻译后的 aria-label 充当字段契约。
+
+音频分析的“显著音高”使用按需创建的 `#audio-pitch-overlay`，通过 `data-skin-canvas="audio"` 复用既有音频画布色板、字体及透明度参数。原位与右侧模式均为编辑画布下方的透明衬图，使用 `pointer-events:none`，不遮挡或接管编辑操作；`#audio-pitch-source`、`#audio-pitch-position` 分别为单声部选择及显示位置控件，`.audio-pitch-panel`、`.audio-pitch-options`、`.audio-pitch-status` 可用于界面样式。未开启时不创建音高画布或推理 Worker。
+音高额外显示设置统一放在默认折叠的 `.audio-pitch-options`，阈值/不透明度/粗细滑条为 `#audio-pitch-threshold`、`#audio-pitch-opacity`、`#audio-pitch-lineWidth`，波形透明度与参考线开关为 `#audio-pitch-followWaveform`、`#audio-pitch-showGrid`。音域使用 `#audio-pitch-auto-range`、`#audio-pitch-low`、`#audio-pitch-high`，滑条旁的 `output` 显示音名和频率，`.audio-pitch-slider-control` 管理轨道及读数布局。上述调节不改变控件焦点、谱面数据或撤销记录。
+`#audio-pitch-reset` 为显示设置内的重置按钮，保留当前声部、显示位置、控件及折叠状态，只恢复显示参数及自动音域。事件编辑区不提供音高悬停提示；原位模式的提示仍使用音符画布，衬图始终不命中鼠标。
 
 本文登记的别名、面板名、变量、画布角色、状态属性与已经明确标注的字段名在同一 API 内保留意义；底层 class/id 可以调整，别名会同步适配。未登记的实现 class/id 不作此承诺。清单可用 compatibility.maxApi 限制未经作者验证的后续 API。旧运行时曾忽略未知字段，不能指望这些历史构建识别 API 2 的兼容声明；发布时请同时标注需要支持 API 2 的编辑器。
 
@@ -411,7 +449,9 @@ hide 为选择器字符串数组，最多 300 项，默认空。支持与 styles
 }
 ```
 
-最多 300 项。每项需要 selector，其他字段可选，内容为最多 1000 字符的纯文本，允许空字符串。text 替换第一个非空的**直接文本节点**，保留 img、kbd、input 等子节点；不会用 innerHTML，不解释标签。没有直接文字节点时不制造整段内容，可改为针对内部 span 的选择器。input、textarea、select、canvas 及皮肤管理内的 text 不被替换，避免改变输入值或破坏恢复入口。
+最多 300 项。每项需要 selector，其他字段可选，内容为最多 1000 字符的纯文本，允许空字符串。每个字段也可写成语言映射（`{ "zh-CN": "…", "en-US": "…" }`），匹配顺序为完整语言标签、同语种、`zh-CN`、映射首项。text 优先替换第一个非空的**直接文本节点**；控件标签被界面翻译包装进 `[data-i18n]` 元素时，兼容替换该标签的文字，仍保留包装、img、kbd、input 等子节点，不进入内嵌按钮或表单控件查找。皮肤提供的文案优先于应用默认翻译，中英文各自采用皮肤对应的名称，不用默认皮肤的称呼替换。不会用 innerHTML，不解释标签。没有可替换的标签时不制造整段内容，可改为针对内部 span 的选择器。input、textarea、select、canvas 及皮肤管理内的 text 不被替换，避免改变输入值或破坏恢复入口。
+
+设置中的语言分类以“界面语言 / Language”显示，语言选择会持久保存并重新加载界面；有未保存谱面时先提示保存。`@language-settings`、`@language-select` 是 API 3 的兼容扩展，按这些入口定位，不依赖中文或英文标签内容。新用户默认音符资源包为内置 `builtin-sea-of-dreams`（Sea of Dreams - Neo），用户保存的音符皮肤选择优先；它独立于编辑器皮肤，不改变编辑器皮肤包的格式和词条。
 
 title、ariaLabel、placeholder 分别修改同名 HTML 提示、aria-label、占位属性，不修改表单值。页面动态生成和状态改变后会重新匹配；同一元素同一字段的后续匹配项覆盖前项。状态不再匹配或卸载皮肤时复原应用原来的内容。应用主动更新的状态文字仍作为复原来源，不永久回写。
 
@@ -435,7 +475,9 @@ title、ariaLabel、placeholder 分别修改同名 HTML 提示、aria-label、�
 
 palette 的键必须为 `#rrggbb`；值为 `#rrggbb`，或以 `parameter(id)` 引用一个 type 为 color 的参数（API 3），例如 `"#e58d24": "parameter(event-fill)"`。引用在应用皮肤时解析为参数当前值，用户在设置中调整后画布随之重绘；引用不存在或非颜色参数会在导入时被拒绝。全局 palette、targets 和变体中的 palette 都可以引用。源色按绘制时的 RGB 匹配，支持原调用中的 #RGB、#RGBA、#RRGGBB、#RRGGBBAA、rgb()/rgba() 逗号写法，替换时保留原透明度。键推荐小写。经适配器创建的渐变，其 addColorStop 颜色同样映射；未匹配颜色、已经存在的外部渐变对象和图像像素保持原状；不存在自动反色或调换游戏素材的机制。
 
-当前接入时间轴音符/事件/噪域、密度条与历史条（包括其离屏缓存）、波形/频谱、框选层、批量编辑虚线预览、事件缓动与 Bezier 编辑、曲线音符对话框、文字拼合结果、轨迹/噪域图案小预览、切线/剪贴板缩略图。接入依靠绘制入口显式包装上下文，不会自动拦截浏览器所有 canvas；新增绘制功能必须登记角色并接入。字体测量、文字/图片二值化等算法用画布不接入，避免改变生成结果。编辑器后面的 `#realtime-preview` 和播放 `#preview` 完全排除，取样实际渲染和 shader 输出不做色板改写。
+当前接入时间轴音符/事件/噪域、密度条与历史条（包括其离屏缓存）、音频分析、框选层、批量编辑虚线预览、事件缓动与 Bezier 编辑、曲线音符对话框、文字拼合结果、轨迹/噪域图案小预览、切线/剪贴板缩略图。接入依靠绘制入口显式包装上下文，不会自动拦截浏览器所有 canvas；新增绘制功能必须登记角色并接入。字体测量、文字/图片二值化等算法用画布不接入，避免改变生成结果。编辑器后面的 `#realtime-preview` 和播放 `#preview` 完全排除，取样实际渲染和 shader 输出不做色板改写。
+
+编辑区域底部的横向判定线在网格之上单独绘制，颜色以用户设置为准，不受画布色板、透明度、线宽缩放或虚线配置覆盖；多线与全局事件的栏间空隙仍不绘制该线。
 
 可参考的常用源色：
 
@@ -449,7 +491,7 @@ palette 的键必须为 `#rrggbb`；值为 `#rrggbb`，或以 `parameter(id)` �
 | `#80ffa0`, `#ffe080`, `#efe5ff`, `#a0ffdb` | 不同类别的事件数值 |
 | `#00ffff`, `#ffff00`, `#80ffff`, `#81bfff`, `#ffdd77` | 选框、辅助线等强调 |
 
-这是一种**绘制色板映射**，并非每一个图形都有独立语义 token；不要假设一个源色只属于一种对象。对不希望改变的语义色不作映射即可。属性中可设置的底部判定线颜色也可能经过同 RGB 映射。
+这是一种**绘制色板映射**，并非每一个图形都有独立语义 token；不要假设一个源色只属于一种对象。对不希望改变的语义色不作映射即可。编辑区底部判定线使用用户设置的颜色、宽度与不透明度，绕过皮肤画布映射，并绘制在横竖网格之上；预览缩放大于1时的默认视野白框同样属于编辑辅助，不受场景shader改变。
 
 fontScale 为 0.7–1.8，默认 1，仅缩放画布文本的 px 字号，不改变音符几何、坐标、拍数与命中范围。canvas.font 可引用一个 font 素材，替换被接入的画布中 RPE/RPEGame 字族；不强制覆盖工具绘图有意选择的其他字体。DOM 字体使用 tokens.font-family 单独指定。
 
@@ -578,7 +620,7 @@ node tools/pack-editor-skin.mjs path/to/my-skin release/editor-skins/my-skin.rpe
 }
 ```
 
-参数 type 为 number/color/boolean/select，需要 label 和 default。数值必须提供有限的 min/max/default，可提供正 step（默认 1）和 unit：空、px、em、rem、%、ms、s、deg。应用时钳制范围；颜色为 #rrggbb，开关编译为 0/1，选择参数的键是安全 CSS 值、值为界面标签，default 必须是已有键。`parameter(id)` 编译为 `var(--rpen-param-id)`；可在 calc 等表达式中使用，定义参数本身不会自动引入编辑器行为。颜色参数还可以直接作为 canvas palette 的值（API 3，见第 9 节），让时间轴等画布与界面配色一起调整；画布值只接受完整的 `parameter(id)`，不支持 color-mix 等表达式，需要派生色时请另设参数。
+参数 type 为 number/color/boolean/select，需要 label 和 default；label 与 select 的选项文本同样可以写成语言映射。数值必须提供有限的 min/max/default，可提供正 step（默认 1）和 unit：空、px、em、rem、%、ms、s、deg。应用时钳制范围；颜色为 #rrggbb，开关编译为 0/1，选择参数的键是安全 CSS 值、值为界面标签，default 必须是已有键。`parameter(id)` 编译为 `var(--rpen-param-id)`；可在 calc 等表达式中使用，定义参数本身不会自动引入编辑器行为。颜色参数还可以直接作为 canvas palette 的值（API 3，见第 9 节），让时间轴等画布与界面配色一起调整；画布值只接受完整的 `parameter(id)`，不支持 color-mix 等表达式，需要派生色时请另设参数。
 
 variants 的每个条目需要 name，可覆盖 colorScheme、tokens、styles、canvas。基础规则与变体规则依次叠加，变量按键覆盖，画布全局 palette 按键合并，targets 按角色替换后由绘制器与全局配置合并；不会重建另一套功能结构。最多 12 个变体，id 不可为 base/auto；base 为基础外观，auto 为跟随系统。systemVariants 必须指向已有的 light/dark 两个变体，可指向同一变体。
 
@@ -620,3 +662,11 @@ variants 的每个条目需要 name，可覆盖 colorScheme、tokens、styles、
 builtin 必须使用组件目录 builtinAssets 表中登记的有限名称，不能输入任意应用文件路径。当前包含 folder、save、setting、help、play、replay、showback、jump、copy、shear、paste、delete0、switch、layout、return、info、waves、bezier、addline、mute；复用时无需把这些图片拷贝进包，应用升级由目录保持引用映射。未列出的音符/打击素材不作通用资源接口。
 
 普通 image 的 path 为 1x 来源，sources 提供最多 4 个额外倍率，倍率须大于 1、不超过 4 且互不重复。每张来源都计入文件与大小上限并解码校验。asset()/icons 的背景生成 image-set，装饰使用 srcset，浏览器按显示密度选择；显式预览图使用 path 的基础来源。字体与 builtin 不接受 sources。为了避免接入任意资源字符串，直接在 CSS 中手写 image-set/url 仍禁止。
+
+动画曲线是编辑器内的大浮窗，直接继承当前皮肤；不创建系统子窗口。组件别名 animation-curve 指向 #animation-curve-editor，custom-easing-templates 指向 .custom-easing-group。布局保留可拖动标题栏、画布、长纵向滑条、侧栏、帮助与右下角缩放柄。帮助图示使用当前颜色令牌；无额外的模组运行环境。
+
+视频渲染：render-video 指向顶部唯一入口 #render-video（首页禁用），render-studio 指向按需创建的 #rpen-render-studio。不得在皮肤中复制渲染入口。面板继承皮肤颜色；详见 VIDEO-RENDER.zh-CN.md。
+
+整窗录制渲染使用快捷键；`@editor-recording-status` 为录制期间才创建的左下角状态／停止按钮，`@editor-render-fps` 为设置中的目标帧率。均继承普通控件外观，无须皮肤添加新入口。
+
+`@editor-render-settings` 为统一默认折叠的播放渲染设置面板，`@editor-render-auto-play` 为开始时自动播放。`@key-display` 是独立的按键显示开关；`@key-display-overlay` 为启用时才创建的右下角顶层键帽容器，pointer-events 为 none，不影响布局、焦点和鼠标操作。

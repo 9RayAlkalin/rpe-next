@@ -1,12 +1,18 @@
+import { ANIMATION_CURVE_VERSION, chartHasAnimationCurves, internChartAnimationCurves, chartCurveEvents } from './chart-animation-curves.mjs';
+import { assertEventEasing } from './event-easing.mjs';
 import { beatValue, fromNumber } from './beat.mjs';
 import { integerChartAlpha } from './alpha-values.mjs';
 import { TempoMap } from './tempo.mjs';
 import { sampleCurveTrajectory } from './curve-trajectory.mjs';
 import { trajectorySplitSettings } from './trajectory-simplify.mjs';
-import { validateNoiseAreas, diagnoseNoiseAreas, normalizeNoiseAreas, NOISE_VERSION } from './noise-areas.mjs';
+import { validateNoiseAreas, normalizeNoiseAreas, NOISE_VERSION } from './noise-areas.mjs';
 import { validateNoiseLayers, NOISE_LAYER_VERSION } from './noise-skin.mjs';
 import { emitModHook } from './mod-hooks.mjs';
 import { validateGlobalEvents, GLOBAL_EVENT_VERSION } from './global-events.mjs';
+import { t } from '../i18n.mjs';
+import { normalizeLineGroups, reservedLineGroupName } from './line-groups.mjs';
+import { diagnoseChart } from './chart-diagnostics.mjs';
+import { resourceDiagnostics, compatibilityDiagnostics } from './diagnostic-resources.mjs';
 
 export const EVENT_TYPES = ['moveXEvents', 'moveYEvents', 'rotateEvents', 'alphaEvents', 'speedEvents'];
 export const EXTENDED_TYPES = ['scaleXEvents', 'scaleYEvents', 'colorEvents', 'paintEvents', 'textEvents', 'inclineEvents', 'gifEvents'];
@@ -23,8 +29,12 @@ export function createLine(name = '判定线'): any {
     isCover: 1, zOrder: 0, anchor: [0.5, 0.5], isGif: false, eventLayers: [layer], extended: {}, notes: [], numOfNotes: 0 };
 }
 
-export function createChart(): any {
-  return { META: { RPEVersion: 170, name: '未命名谱面', composer: '', charter: '', illustration: '', level: '', song: '', background: '', offset: 0 },
+// Stored in new charts so older builds show a readable name. The editor swaps
+// this sentinel for the localized "Untitled chart" when displaying it.
+export const DEFAULT_CHART_NAME = '未命名谱面';
+
+export function createChart() {
+  return { META: { RPEVersion: 170, name: DEFAULT_CHART_NAME, composer: '', charter: '', illustration: '', level: '', song: '', background: '', offset: 0 },
     BPMList: [{ bpm: 120, startTime: [0, 0, 1] }], judgeLineGroup: ['Default'], judgeLineList: [createLine('Line 1')], blockAreaList: [] };
 }
 
@@ -36,10 +46,11 @@ export function createNote(type: any, beat: any, positionX: any, endBeat: any = 
 export function parseChart(text) {
   let chart;
   try { chart = JSON.parse(text.replace(/^\uFEFF/, '')); }
-  catch { throw new Error('无效的 RPE JSON 文档'); }
+  catch { throw new Error(t('chart.sa8af1fb')); }
+  chart = normalizeLineGroups(chart);
   if (chart.blockAreaList != null) chart.blockAreaList = normalizeNoiseAreas(chart.blockAreaList);
   assertChart(chart);
-  return integerChartAlpha(chart);
+  return internChartAnimationCurves(integerChartAlpha(chart));
 }
 
 export function noteIsAbove(note) {
@@ -50,7 +61,7 @@ export function serializeChart(chart, { compact = false } = {}) {
   const custom=emitModHook('chart:serialize',{chart,compact,text:null});if(custom.text!==null)return String(custom.text);chart=custom.chart;compact=custom.compact;
   assertChart(chart);
   chart = integerChartAlpha(chart);
-  const version = Math.max(chart.META.RPEVersion ?? 0, chart.globalEvents ? GLOBAL_EVENT_VERSION : 0, chart.noiseAreaLayers ? NOISE_LAYER_VERSION : chart.blockAreaList?.length ? NOISE_VERSION : 0);
+  const version = Math.max(chartHasAnimationCurves(chart) ? ANIMATION_CURVE_VERSION : 0, chart.META.RPEVersion ?? 0, chart.globalEvents ? GLOBAL_EVENT_VERSION : 0, chart.noiseAreaLayers ? NOISE_LAYER_VERSION : chart.blockAreaList?.length ? NOISE_VERSION : 0);
   const snapshot = version !== chart.META.RPEVersion ? { ...chart, META: { ...chart.META, RPEVersion: version } } : chart;
   return stringifyPreservingNumbers(snapshot, compact ? 0 : 2) + (compact ? '' : '\n');
 }
@@ -64,132 +75,84 @@ export function stringifyPreservingNumbers(value, space = 2) {
 
 export function assertChart(chart: any) {
   const validation=emitModHook('chart:validate',{chart,handled:false});if(validation.handled)return validation.chart;
-  if (!chart || typeof chart !== 'object' || !chart.META || typeof chart.META !== 'object' || Array.isArray(chart.META)) throw new Error('缺少 META：不是 RPE 谱面');
-  if (chart.judgeLineList != null && !Array.isArray(chart.judgeLineList)) throw new Error('judgeLineList 必须为数组');
+  if (!chart || typeof chart !== 'object' || !chart.META || typeof chart.META !== 'object' || Array.isArray(chart.META)) throw new Error(t('chart.sd96a82c'));
+  if (chart.judgeLineList != null && !Array.isArray(chart.judgeLineList)) throw new Error(t('chart.se63fe61'));
   new TempoMap(chart.BPMList);
-  if (chart.META.offset !== undefined && !Number.isFinite(chart.META.offset)) throw new Error('META.offset 必须为毫秒数');
+  if (chart.judgeLineGroup?.some?.(reservedLineGroupName)) throw Error(t('line-groups.reservedAll'));
+  if (chart.META.offset !== undefined && !Number.isFinite(chart.META.offset)) throw new Error(t('chart.s0f9216b'));
   if (chart.blockAreaList != null) validateNoiseAreas(chart.blockAreaList);
   validateNoiseLayers(chart);
   validateGlobalEvents(chart);
+  for (const event of chartCurveEvents(chart)) if (event.customEasing) assertEventEasing(event);
   if (chart.noiseAreaOptions !== undefined) {
-    if (!chart.noiseAreaOptions || typeof chart.noiseAreaOptions !== 'object' || Array.isArray(chart.noiseAreaOptions)) throw new Error('noiseAreaOptions 必须为对象');
-    for (const key of ['ignoreTripleInversion']) if (chart.noiseAreaOptions[key] !== undefined && typeof chart.noiseAreaOptions[key] !== 'boolean') throw new Error('noiseAreaOptions.' + key + ' 必须为布尔值');
+    if (!chart.noiseAreaOptions || typeof chart.noiseAreaOptions !== 'object' || Array.isArray(chart.noiseAreaOptions)) throw new Error(t('chart.s9704a67'));
+    for (const key of ['ignoreTripleInversion']) if (chart.noiseAreaOptions[key] !== undefined && typeof chart.noiseAreaOptions[key] !== 'boolean') throw new Error('noiseAreaOptions.' + key + t('chart.sdb758e5'));
   }
   (chart.judgeLineList ?? []).forEach((line, lineIndex) => {
     const path = `judgeLineList[${lineIndex}]`;
-    if (!line || typeof line !== 'object') throw new Error(`${path}: 无效判定线`);
-    if (line.bpmfactor !== undefined && (!Number.isFinite(line.bpmfactor) || line.bpmfactor <= 0)) throw new Error(`${path}.bpmfactor 必须大于零`);
-    if (line.anchor !== undefined && (!Array.isArray(line.anchor) || line.anchor.length !== 2 || !line.anchor.every(Number.isFinite))) throw new Error(`${path}.anchor 必须为两个有限数字`);
-    if (line.notes != null && !Array.isArray(line.notes)) throw new Error(`${path}.notes 必须为数组`);
+    if (!line || typeof line !== 'object') throw new Error(t('chart.s587a0b4', { p0: path }));
+    if (line.bpmfactor !== undefined && (!Number.isFinite(line.bpmfactor) || line.bpmfactor <= 0)) throw new Error(t('chart.s5b181b6', { p0: path }));
+    if (line.anchor !== undefined && (!Array.isArray(line.anchor) || line.anchor.length !== 2 || !line.anchor.every(Number.isFinite))) throw new Error(t('chart.s21228c4', { p0: path }));
+    if (line.notes != null && !Array.isArray(line.notes)) throw new Error(t('chart.s3fc86e5', { p0: path }));
     for (const [index, note] of (line.notes ?? []).entries()) {
-      if (!note || typeof note !== 'object') throw new Error(`${path}.notes[${index}]: 无效音符`);
+      if (!note || typeof note !== 'object') throw new Error(t('chart.sb457910', { p0: path, p1: index }));
       beatValue(note.startTime, `${path}.notes[${index}].startTime`);
       beatValue(note.endTime, `${path}.notes[${index}].endTime`);
-      if (!NOTE_NAMES[note.type] || !Number.isFinite(note.positionX)) throw new Error(`${path}.notes[${index}]: 非法类型或坐标`);
+      if (!NOTE_NAMES[note.type] || !Number.isFinite(note.positionX)) throw new Error(t('chart.sd030bf4', { p0: path, p1: index }));
       for (const property of ['speed', 'size', 'alpha', 'yOffset', 'visibleTime']) {
-        if (note[property] !== undefined && !Number.isFinite(note[property])) throw new Error(`${path}.notes[${index}].${property} 必须为有限数字`);
+        if (note[property] !== undefined && !Number.isFinite(note[property])) throw new Error(t('chart.s5000dde', { p0: path, p1: index, p2: property }));
       }
     }
-    if (line.eventLayers != null && !Array.isArray(line.eventLayers)) throw new Error(`${path}.eventLayers 必须为数组`);
+    if (line.eventLayers != null && !Array.isArray(line.eventLayers)) throw new Error(t('chart.sa6d63e2', { p0: path }));
     for (const layer of [...(line.eventLayers ?? []), line.extended]) {
       if (!layer) continue;
       for (const type of [...EVENT_TYPES, ...EXTENDED_TYPES]) {
-        if (layer[type] != null && !Array.isArray(layer[type])) throw new Error(`${path}.${type} 必须为数组`);
+        if (layer[type] != null && !Array.isArray(layer[type])) throw new Error(t('chart.s3496237', { p0: path, p1: type }));
         for (const [index, event] of (layer[type] ?? []).entries()) {
           if (event?.trajectory) {
-            if (type !== 'moveXEvents' || event.trajectory.version !== 1) throw new Error('整体轨迹必须位于 X 轨道，且使用受支持的版本');
+            if (type !== 'moveXEvents' || event.trajectory.version !== 1) throw new Error(t('chart.sbaf82f3'));
             sampleCurveTrajectory(event.trajectory.options, 65);
             trajectorySplitSettings(event.trajectory.split);
-            if (!Number.isInteger(event.trajectory.segments) || event.trajectory.segments < 4 || event.trajectory.segments > 8192) throw new Error('轨迹拆分段数无效');
+            if(event.trajectory.domain && (!Array.isArray(event.trajectory.domain)||event.trajectory.domain.length!==2||!event.trajectory.domain.every(Number.isFinite)||event.trajectory.domain[0]<0||event.trajectory.domain[1]>1||event.trajectory.domain[0]>=event.trajectory.domain[1]))throw Error(t('animation-curve.invalidDomain'));
+            if(event.trajectory.offsets && Object.entries(event.trajectory.offsets).some(([axis,values])=>!['x','y','rotation'].includes(axis)||!Array.isArray(values)||values.length!==2||!values.every(Number.isFinite)))throw Error(t('animation-curve.invalidNumber'));
+            if (!Number.isInteger(event.trajectory.segments) || event.trajectory.segments < 4 || event.trajectory.segments > 8192) throw new Error(t('chart.s7953a23'));
           }
           beatValue(event?.startTime, `${path}.${type}[${index}].startTime`);
           beatValue(event?.endTime, `${path}.${type}[${index}].endTime`);
           const validValue = value => type === 'textEvents' ? typeof value === 'string' : type === 'colorEvents' ? Array.isArray(value) && value.length === 3 && value.every(Number.isFinite) : Number.isFinite(value);
-          if (type !== 'paintEvents' && (!validValue(event.start) || !validValue(event.end))) throw new Error(`${path}.${type}[${index}]: 无效事件起始/结束值`);
+          if (type !== 'paintEvents' && (!validValue(event.start) || !validValue(event.end))) throw new Error(t('chart.s36d3319', { p0: path, p1: type, p2: index }));
           for (const property of ['easingLeft', 'easingRight']) {
-            if (event[property] !== undefined && !Number.isFinite(event[property])) throw new Error(`${path}.${type}[${index}].${property} 必须为有限数字`);
+            if (event[property] !== undefined && !Number.isFinite(event[property])) throw new Error(t('chart.s19e1a42', { p0: path, p1: type, p2: index, p3: property }));
           }
-          if (event.bezier && (!Array.isArray(event.bezierPoints) || event.bezierPoints.length !== 4 || !event.bezierPoints.every(Number.isFinite))) throw new Error(`${path}.${type}[${index}].bezierPoints 必须为四个有限数字`);
+          assertEventEasing(event);
+          if (event.bezier && (!Array.isArray(event.bezierPoints) || event.bezierPoints.length !== 4 || !event.bezierPoints.every(Number.isFinite))) throw new Error(t('chart.sa6dd197', { p0: path, p1: type, p2: index }));
         }
       }
     }
     for (const [name, property] of Object.entries({ alphaControl: 'alpha', posControl: 'pos', sizeControl: 'size', skewControl: 'skew', yControl: 'y' })) {
       if (line[name] == null) continue;
-      if (!Array.isArray(line[name])) throw new Error(`${path}.${name} 必须为数组`);
+      if (!Array.isArray(line[name])) throw new Error(t('chart.se4b3c03', { p0: path, p1: name }));
       for (const [index, point] of line[name].entries()) {
-        if (!Number.isFinite(point?.x) || !Number.isFinite(point?.[property])) throw new Error(`${path}.${name}[${index}]: 无效控制点`);
+        if (!Number.isFinite(point?.x) || !Number.isFinite(point?.[property])) throw new Error(t('chart.s2f74a3a', { p0: path, p1: name, p2: index }));
       }
     }
   });
 }
 
-export function diagnose(chart) {
-  const issues = [];
-  issues.push(...diagnoseNoiseAreas(chart.blockAreaList ?? []));
-  const addIssue = (issue, severity = 'warning') => issues.push({ severity, ...issue });
-  const bpmBeats = new Set();
-  for (const [index, entry] of chart.BPMList.entries()) {
-    const beat = beatValue(entry.startTime);
-    if (bpmBeats.has(beat)) addIssue({ line: 0, beat, index, path: `BPMList[${index}]`, message: '同拍重复 BPM，运行时采用文件中最后一项；原数据保留' }, 'info');
-    bpmBeats.add(beat);
-  }
-  for (const [lineIndex, line] of (chart.judgeLineList ?? []).entries()) {
-    const seen = new Map();
-    for (const [index, note] of (line.notes ?? []).entries()) {
-      const beat = beatValue(note.startTime);
-      const report = (message, severity = 'error') => addIssue({ line: lineIndex, beat, index, path: `notes[${index}]`, message }, severity);
-      if (beatValue(note.endTime) < beat) report('结束拍早于开始拍');
-      if (note.type === 2 && beatValue(note.endTime) === beat) report('Hold 时长为零');
-      if (Math.abs(note.positionX) > 675) report('音符超出标准横向范围', 'warning');
-      if (note.isFake === true || Number(note.isFake) === 1) continue;
-      const type = Number(note.type);
-      const category = type === 1 || type === 2 ? 1 : type === 3 ? 2 : 0;
-      if (!category) continue;
-      const key = `${beat}:${note.positionX}:${noteIsAbove(note)}`;
-      const previous = seen.get(key) ?? 0;
-      if (previous & category) report('同位置同时音符重叠', 'warning');
-      seen.set(key, previous | category);
-    }
-    const inspectEvents = (layer, layerIndex, extended) => {
-      for (const type of [...EVENT_TYPES, ...EXTENDED_TYPES]) {
-        if (type === 'paintEvents') continue;
-        const events = layer?.[type] ?? [];
-        if (!Array.isArray(events)) continue;
-        const ordered = events.map((event, index) => ({ event, index })).sort((left, right) => beatValue(left.event.startTime) - beatValue(right.event.startTime));
-        for (let position = 1; position < ordered.length; position++) {
-          const previous = ordered[position - 1]; const current = ordered[position];
-          if (beatValue(current.event.startTime) < beatValue(previous.event.endTime)) {
-            addIssue({ line: lineIndex, beat: beatValue(current.event.startTime), index: current.index, layer: layerIndex, extended, path: `${type}[${current.index}]`, message: `${type} 事件时间重叠` }, 'error');
-          }
-        }
-      }
-    };
-    for (const [layerIndex, layer] of (line.eventLayers ?? []).entries()) inspectEvents(layer, layerIndex, false);
-    inspectEvents(line.extended, -1, true);
-    const visited = new Set([lineIndex]);
-    let parent = line.father ?? -1;
-    while (parent !== -1) {
-      if (!Number.isInteger(parent) || !chart.judgeLineList[parent] || visited.has(parent)) {
-        addIssue({ line: lineIndex, beat: 0, path: 'father', message: '父线无效或循环引用' }, 'error');
-        break;
-      }
-      visited.add(parent);
-      parent = chart.judgeLineList[parent].father ?? -1;
-    }
-  }
-  return issues;
+export function diagnose(chart, options = {}) {
+  return [...diagnoseChart(chart, options), ...resourceDiagnostics(chart, options), ...compatibilityDiagnostics(chart, (options as any).target)];
 }
 
 export function previewLimitations(chart) {
   const features = new Set();
-  if ((chart.META.RPEVersion ?? 0) < 100) features.add('旧版事件语义');
+  if ((chart.META.RPEVersion ?? 0) < 100) features.add(t('chart.sc829ef2'));
   for (const line of chart.judgeLineList ?? []) {
-    if (line.Texture && line.Texture !== 'line.png') features.add('纹理颜色混合');
+    if (line.Texture && line.Texture !== 'line.png') features.add(t('chart.scda1fcd'));
     if (line.isGif) features.add('GIF');
-    if (line.attachUI && !['pause', 'combonumber', 'combo', 'score', 'bar', 'name', 'level'].includes(line.attachUI)) features.add(`未知 UI 绑定 ${line.attachUI}`);
-    if (line.extended?.gifEvents?.length) features.add('GIF 进度');
-    if (line.extended?.textEvents?.some(event => event.font)) features.add('自定义字体');
-    if (line.notes?.some(note => Array.isArray(note.color))) features.add('音符贴图颜色混合');
+    if (line.attachUI && !['pause', 'combonumber', 'combo', 'score', 'bar', 'name', 'level'].includes(line.attachUI)) features.add(t('chart.sea93ab6', { p0: line.attachUI }));
+    if (line.extended?.gifEvents?.length) features.add(t('chart.s3fea3f3'));
+    if (line.extended?.textEvents?.some(event => event.font)) features.add(t('chart.s07fa720'));
+    if (line.notes?.some(note => Array.isArray(note.color))) features.add(t('chart.s5621bcd'));
   }
   return [...features];
 }

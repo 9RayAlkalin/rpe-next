@@ -1,13 +1,15 @@
+import { assertEventEasing } from './event-easing.mjs';
 import { beatValue, fromNumber, upperBound } from './beat.mjs';
 import { EventTrack } from './events.mjs';
 import { NOISE_LAYER_VERSION } from './noise-skin.mjs';
+import { t } from '../i18n.mjs';
 
 const TIME_EPSILON = 1e-9;
 
 export const NOISE_VERSION = 220;
 export const NOISE_TRACKS = [
-  ['activeIntervals', '激活'], ['moveXEvents', '移动 X'], ['moveYEvents', '移动 Y'],
-  ['rotateEvents', '旋转'], ['scaleXEvents', '缩放 X'], ['scaleYEvents', '缩放 Y'],
+  ['activeIntervals', t('noise-areas.s4c25820')], ['moveXEvents', t('noise-areas.s033bd7d')], ['moveYEvents', t('noise-areas.s1d4d2d2')],
+  ['rotateEvents', t('noise-areas.sa69e51e')], ['scaleXEvents', t('noise-areas.s4175cf1')], ['scaleYEvents', t('noise-areas.sd55daa9')],
 ];
 export const NOISE_AREA_COLORS = {
   appearance: [127, 35, 35, 0.4], active: [182, 60, 60, 0.667], edge: [255, 84, 84, 1],
@@ -69,21 +71,41 @@ function cumulativeTrack(track, type, center) {
 const sampleOverrides = new WeakMap();
 export function setNoiseSampleOverride(area, overrides) { sampleOverrides.set(area, overrides); }
 
+export function noiseActivationIntervals(area, tempo) {
+  const appear = tempo.seconds(area.appearTime), disappear = tempo.seconds(area.disappearTime);
+  const intervals = (area.activeIntervals ?? []).flatMap(interval => {
+    const originalStart = tempo.seconds(interval.startTime), originalEnd = tempo.seconds(interval.endTime);
+    const start = Math.max(appear, originalStart), end = Math.min(disappear, originalEnd);
+    return end > start || originalStart === originalEnd && start === end ? [{ start, end, readyFlash: readyFlashSeconds(interval.readyFlash) }] : [];
+  }).sort((left, right) => left.start - right.start);
+  const merged = [];
+  for (const interval of intervals) {
+    const previous = merged.at(-1);
+    if (previous?.start === interval.start) { previous.end = Math.max(previous.end, interval.end); previous.readyFlash = Math.max(previous.readyFlash, interval.readyFlash); }
+    else merged.push(interval);
+  }
+  return merged;
+}
+
 export class NoiseAreaRuntime {
-  area: any;
-  tempo: any;
-  center: any;
-  appear: any;
-  disappear: any;
-  intervals: any;
-  tracks: any;
-  prefixes: any;
-  corners: any;
+  declare activations: any;
+
+  declare area: any;
+  declare tempo: any;
+  declare center: any;
+  declare appear: any;
+  declare disappear: any;
+  declare intervals: any;
+  declare tracks: any;
+  declare prefixes: any;
+  declare corners: any;
 
   constructor(area, tempo) {
     this.area = area; this.tempo = tempo; this.center = noiseCenter(area);
     this.appear = tempo.seconds(area.appearTime); this.disappear = tempo.seconds(area.disappearTime);
-    this.intervals = (area.activeIntervals ?? []).map(interval => ({ start: Math.max(this.appear, tempo.seconds(interval.startTime)), end: Math.min(this.disappear, tempo.seconds(interval.endTime)), readyFlash: readyFlashSeconds(interval.readyFlash) })).filter(interval => interval.end > interval.start).sort((left, right) => left.start - right.start);
+    this.intervals = noiseActivationIntervals(area, tempo);
+    this.activations = this.intervals.filter(interval => interval.end > interval.start);
+    if (this.activations.length === this.intervals.length) this.activations = this.intervals;
     this.tracks = Object.fromEntries(NOISE_TRACKS.slice(1).map(([type]) => [type, new EventTrack(area[type], tempo)]));
     this.prefixes = Object.fromEntries(['scaleXEvents', 'scaleYEvents', 'rotateEvents'].map(type => [type, cumulativeTrack(this.tracks[type], type, this.center)]));
     const left = Math.min(area.bottomLeft.x, area.topRight.x); const right = Math.max(area.bottomLeft.x, area.topRight.x);
@@ -95,8 +117,8 @@ export class NoiseAreaRuntime {
     return { value: entry ? track.sample(entry, seconds) : fallback, event: entry?.event };
   }
   sample(seconds, overrides = sampleOverrides.get(this.area) ?? {}) {
-    const activeIndex = upperBound(this.intervals, seconds + TIME_EPSILON, interval => interval.start) - 1;
-    const active = this.intervals[activeIndex]; const next = this.intervals[activeIndex + 1];
+    const activeIndex = upperBound(this.activations, seconds + TIME_EPSILON, interval => interval.start) - 1;
+    const active = this.activations[activeIndex]; const next = this.intervals[this.activations === this.intervals ? activeIndex + 1 : upperBound(this.intervals, seconds + TIME_EPSILON, interval => interval.start)];
     let state = active && seconds + TIME_EPSILON < active.end ? 'active' : next?.readyFlash > 0 && seconds + TIME_EPSILON >= next.start - next.readyFlash ? 'ready' : 'disabled';
     if (seconds + TIME_EPSILON < this.appear) state = 'hiddenBefore';
     if (seconds + TIME_EPSILON >= this.disappear) state = 'hiddenAfter';
@@ -138,29 +160,30 @@ export function normalizeNoiseAreas(areas = []) {
 }
 
 function validatePosition(value, path) {
-  if (!value || !Number.isFinite(value.x) || !Number.isFinite(value.y)) throw new Error(path + ': 坐标必须包含有限 x/y');
+  if (!value || !Number.isFinite(value.x) || !Number.isFinite(value.y)) throw new Error(path + t('noise-areas.sfdd822d'));
 }
 function validateTrack(events, path, type) {
-  if (!Array.isArray(events)) throw new Error(path + ' 必须为数组');
+  if (!Array.isArray(events)) throw new Error(path + t('noise-areas.s0e19a28'));
   const intervals = events.map((event, index) => {
     const eventPath = path + '[' + index + ']';
     const start = beatValue(event?.startTime, eventPath + '.startTime'); const end = beatValue(event?.endTime, eventPath + '.endTime');
-    if (start > end) throw new Error(eventPath + ': 开始拍不能晚于结束拍');
+    if (start > end) throw new Error(eventPath + t('noise-areas.s53fbe6d'));
     if (type === 'activeIntervals') {
-      if (event.readyFlash !== undefined && !((typeof event.readyFlash === 'number' && Number.isFinite(event.readyFlash)) || typeof event.readyFlash === 'boolean')) throw new Error(eventPath + '.readyFlash 必须为秒数');
+      if (event.readyFlash !== undefined && !((typeof event.readyFlash === 'number' && Number.isFinite(event.readyFlash)) || typeof event.readyFlash === 'boolean')) throw new Error(eventPath + t('noise-areas.s8b0bb56'));
     } else {
-      if (!Number.isFinite(event.start) || !Number.isFinite(event.end)) throw new Error(eventPath + ': 首尾值必须为有限数字');
+      if (!Number.isFinite(event.start) || !Number.isFinite(event.end)) throw new Error(eventPath + t('noise-areas.scd1dc94'));
       if (noiseHasAnchor(type)) validatePosition(event.anchor, eventPath + '.anchor');
-      for (const field of ['transformStart', 'transformEnd']) if (event[field] !== undefined && (!noiseHasAnchor(type) || !Number.isFinite(event[field]))) throw new Error(eventPath + '.' + field + ': 仅旋转及缩放事件可使用有限变换参考值');
-      if (event.transformStep !== undefined && (typeof event.transformStep !== 'boolean' || !noiseHasAnchor(type) || event.transformStep && start !== end)) throw new Error(eventPath + '.transformStep: 仅旋转及缩放的零时长事件可标记瞬时累计步骤');
-      for (const flag of ['inst', 'bezier']) if (event[flag] !== undefined && ![0, 1, false, true].includes(event[flag])) throw new Error(eventPath + '.' + flag + ': 只接受 0/1 或布尔值');
-      if (event.inst && event.start !== event.end) throw new Error(eventPath + ': 钩定事件首尾值必须相同');
-      if (!Number.isInteger(event.easingType ?? 1) || (event.easingType ?? 1) < 1 || (event.easingType ?? 1) > 29) throw new Error(eventPath + ': 缓动编号须在 1–29 内');
+      for (const field of ['transformStart', 'transformEnd']) if (event[field] !== undefined && (!noiseHasAnchor(type) || !Number.isFinite(event[field]))) throw new Error(eventPath + '.' + field + t('noise-areas.sd2b9948'));
+      if (event.transformStep !== undefined && (typeof event.transformStep !== 'boolean' || !noiseHasAnchor(type) || event.transformStep && start !== end)) throw new Error(eventPath + t('noise-areas.s65ab131'));
+      for (const flag of ['inst', 'bezier']) if (event[flag] !== undefined && ![0, 1, false, true].includes(event[flag])) throw new Error(eventPath + '.' + flag + t('noise-areas.s7cf6903'));
+      if (event.inst && event.start !== event.end) throw new Error(eventPath + t('noise-areas.s51d2bdc'));
+      assertEventEasing(event);
+      if (!Number.isInteger(event.easingType ?? 1) || (event.easingType ?? 1) < 1 || (event.easingType ?? 1) > 29) throw new Error(eventPath + t('noise-areas.s123949d'));
       const left = event.easingLeft ?? 0; const right = event.easingRight ?? 1;
-      if (!Number.isFinite(left) || !Number.isFinite(right) || left < 0 || right > 1 || left >= right) throw new Error(eventPath + ': 缓动边界须满足 0 ≤ 左 < 右 ≤ 1');
+      if (!Number.isFinite(left) || !Number.isFinite(right) || left < 0 || right > 1 || left >= right) throw new Error(eventPath + t('noise-areas.s030f9c3'));
       if (event.bezier) {
         const points = event.bezierPoints;
-        if (!Array.isArray(points) || points.length !== 4 || !points.every(Number.isFinite) || points[0] < 0 || points[0] > 1 || points[2] < 0 || points[2] > 1) throw new Error(eventPath + ': Bezier 控制点无效');
+        if (!Array.isArray(points) || points.length !== 4 || !points.every(Number.isFinite) || points[0] < 0 || points[0] > 1 || points[2] < 0 || points[2] > 1) throw new Error(eventPath + t('noise-areas.s486ff17'));
       }
     }
     return { start, end, index, event };
@@ -168,22 +191,22 @@ function validateTrack(events, path, type) {
   let previous;
   for (const interval of intervals) {
     const instantChain = noiseHasAnchor(type) && interval.start === previous?.start && previous.end === previous.start && previous.event.transformStep;
-    if (previous && (interval.start < previous.end || type !== 'activeIntervals' && interval.start === previous.start && !instantChain)) throw new Error(path + '[' + interval.index + ']: 时间重叠或同起点冲突');
+    if (previous && (interval.start < previous.end || type !== 'activeIntervals' && interval.start === previous.start && !instantChain)) throw new Error(path + '[' + interval.index + t('noise-areas.s3c12bc0'));
     previous = interval;
   }
 }
 export function validateNoiseArea(area, path = 'blockAreaList[]') {
-  if (!area || typeof area !== 'object' || Array.isArray(area)) throw new Error(path + ': 无效噪域');
+  if (!area || typeof area !== 'object' || Array.isArray(area)) throw new Error(path + t('noise-areas.sdc9e863'));
   for (const key of ['bottomLeft', 'topRight']) validatePosition(area[key], path + '.' + key);
-  if (area.Name !== undefined && typeof area.Name !== 'string') throw new Error(path + '.Name 必须为文本');
-  if (area.editorPositionX !== undefined && !Number.isFinite(area.editorPositionX)) throw new Error(path + '.editorPositionX 必须为有限数值');
-  if (area.isInvert !== undefined && typeof area.isInvert !== 'boolean') throw new Error(path + '.isInvert 必须为布尔值');
-  if (beatValue(area.appearTime, path + '.appearTime') > beatValue(area.disappearTime, path + '.disappearTime')) throw new Error(path + ': 出现拍不能晚于消失拍');
+  if (area.Name !== undefined && typeof area.Name !== 'string') throw new Error(path + t('noise-areas.sa020334'));
+  if (area.editorPositionX !== undefined && !Number.isFinite(area.editorPositionX)) throw new Error(path + t('noise-areas.s95b16ec'));
+  if (area.isInvert !== undefined && typeof area.isInvert !== 'boolean') throw new Error(path + t('noise-areas.sf3eafce'));
+  if (beatValue(area.appearTime, path + '.appearTime') > beatValue(area.disappearTime, path + '.disappearTime')) throw new Error(path + t('noise-areas.sf7b1fc1'));
   for (const [type] of NOISE_TRACKS) validateTrack(area[type] ?? [], path + '.' + type, type);
   return area;
 }
 export function validateNoiseAreas(areas = []) {
-  if (!Array.isArray(areas)) throw new Error('blockAreaList 必须为数组');
+  if (!Array.isArray(areas)) throw new Error(t('noise-areas.s2a9db5e'));
   areas.forEach((area, index) => validateNoiseArea(area, 'blockAreaList[' + index + ']')); return areas;
 }
 export function diagnoseNoiseAreas(areas = []) {
@@ -193,9 +216,9 @@ export function diagnoseNoiseAreas(areas = []) {
     const add = (message, options = {}) => issues.push({ severity: 'warning', noiseArea: index, beat: beatValue(area.appearTime), path, message, ...options });
     try { validateNoiseArea(area, path); } catch (error) { issues.push({ severity: 'error', noiseArea: index, beat: 0, path, message: error.message }); continue; }
     const { appear, disappear } = noiseAreaLifetime(area);
-    if (appear === disappear || area.bottomLeft.x === area.topRight.x || area.bottomLeft.y === area.topRight.y) add('噪域生命周期或矩形面积为零');
+    if (appear === disappear || area.bottomLeft.x === area.topRight.x || area.bottomLeft.y === area.topRight.y) add(t('noise-areas.se26c525'));
     for (const [type] of NOISE_TRACKS) for (const [eventIndex, event] of (area[type] ?? []).entries()) {
-      if (beatValue(event.startTime) < appear || beatValue(event.endTime) > disappear) add('噪域内部时间超出生命周期；原数据保留，仅限制显示范围', { beat: beatValue(event.startTime), path: path + '.' + type + '[' + eventIndex + ']', noiseTrack: type, index: eventIndex });
+      if (beatValue(event.startTime) < appear || beatValue(event.endTime) > disappear) add(t('noise-areas.sf2ff2b4'), { beat: beatValue(event.startTime), path: path + '.' + type + '[' + eventIndex + ']', noiseTrack: type, index: eventIndex });
     }
   }
   return issues;

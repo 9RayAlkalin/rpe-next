@@ -1,24 +1,25 @@
 import { formatBeat } from '../core/beat.mjs';
+import { t } from '../i18n.mjs';
 
 const ROW_HEIGHT = 44;
 const OVERSCAN = 4;
 
 export class NoiseAreaList {
   [key: string]: any;
-  areas: any;
-  content: any;
-  element: any;
-  indices: any;
-  pending: any;
-  resize: any;
-  rows: any;
-  select: any;
-  selected: any;
+  declare areas: any;
+  declare content: any;
+  declare element: any;
+  declare indices: any;
+  declare pending: any;
+  declare resize: any;
+  declare rows: any;
+  declare select: any;
+  declare selected: any;
 
   constructor(select) {
     this.select = select; this.areas = []; this.indices = []; this.selected = -1; this.rows = new Map<any, any>();
     this.element = document.createElement('div'); this.element.className = 'noise-list';
-    this.element.setAttribute('role', 'listbox'); this.element.setAttribute('aria-label', '噪域列表'); this.element.tabIndex = 0;
+    this.element.setAttribute('role', 'listbox'); this.element.setAttribute('aria-label', t('noise-list.s61d33c8')); this.element.tabIndex = 0;
     this.content = document.createElement('div'); this.content.className = 'noise-list-content'; this.element.append(this.content);
     this.element.addEventListener('scroll', () => this.schedule(), { passive: true });
     this.element.addEventListener('keydown', event => {
@@ -64,7 +65,7 @@ export class NoiseAreaList {
         row.onclick = () => this.select(Number(row.dataset.noiseIndex)); this.rows.set(index, row); this.content.append(row);
       }
       row.dataset.noiseIndex = globalIndex;
-      const text = globalIndex + ' · ' + (area.Name || '未命名噪域') + (area.isInvert ? ' · 反转' : '');
+      const text = globalIndex + ' · ' + (area.Name || t('noise-list.s91c83b5')) + (area.isInvert ? t('noise-list.sbc16842') : '');
       if (row.textContent !== text) row.textContent = text;
       row.title = formatBeat(area.appearTime) + ' → ' + formatBeat(area.disappearTime);
       row.classList.toggle('active', globalIndex === this.selected); row.setAttribute('aria-selected', String(globalIndex === this.selected)); row.setAttribute('aria-setsize', this.indices.length);

@@ -4,9 +4,9 @@ export function scheduleSave(callback) {
 }
 
 export class ManualSaveQueue {
-  pending: any;
-  schedule: any;
-  write: any;
+  declare pending: any;
+  declare schedule: any;
+  declare write: any;
 
   constructor(write, schedule = scheduleSave) {
     this.write = write;

@@ -5,12 +5,12 @@ const highlights: any = { 1: 'Tap2HL', 2: 'HoldHeadHL', 3: 'Flick2HL', 4: 'DragH
 
 export class RpeSkin {
   [key: string]: any;
-  images: any;
-  invalidate: any;
-  nextSourceId: any;
-  resourcePack: any;
-  sourceIds: any;
-  tints: any;
+  declare images: any;
+  declare invalidate: any;
+  declare nextSourceId: any;
+  declare resourcePack: any;
+  declare sourceIds: any;
+  declare tints: any;
 
   constructor(invalidate) { this.images = new Map<any, any>(); this.tints = new Map<any, any>(); this.sourceIds = new WeakMap<any, any>(); this.nextSourceId = 1; this.invalidate = invalidate; }
 
@@ -27,6 +27,9 @@ export class RpeSkin {
     this.resourcePack = pack; this.tints.clear(); this.invalidate();
   }
   get hitLifetime() { return this.resourcePack?.hitLifetime; }
+  get hitBatchCompatible() { return this.drawHit === nativeHitDraw && (!this.resourcePack || this.resourcePack.hitBatchCompatible); }
+  get noteBatchCompatible() { return this.head === nativeHeadDraw && this.hold === nativeHoldDraw && (!this.resourcePack || this.resourcePack.noteBatchCompatible); }
+  hitRadius(size) { return this.hitBatchCompatible ? this.resourcePack?.hitRadius(size) ?? size : Infinity; }
   drawHit(context, options) { return this.resourcePack?.drawHit(context, options) ?? false; }
   noteImage(type, highlight = false) { return this.resourcePack?.noteImage(type, highlight) ?? this.images.get((highlight ? highlights : names)[type]); }
   noteScale(highlight = false) { return this.resourcePack?.noteScale?.(highlight) ?? 1; }
@@ -77,22 +80,26 @@ export class RpeSkin {
     return true;
   }
 
-  hold(context, horizontal, head, tail, width, highlight = false, showHead = true, color, heightWidth = width) {
-    if (this.resourcePack) return this.resourcePack.hold(context, horizontal, head, tail, width, highlight, showHead, color, heightWidth);
+  hold(context, horizontal, head, tail, width, highlight = false, showHead = true, color, heightWidth = width, zeroDirection = 1) {
+    if (this.resourcePack) return this.resourcePack.hold(context, horizontal, head, tail, width, highlight, showHead, color, heightWidth, zeroDirection);
     const bodyName = highlight ? 'HoldHL' : this.images.has('Hold3') ? 'Hold3' : 'Hold';
     const body = this.images.get(bodyName);
     const end = this.images.get('HoldEnd');
     if (!body) return false;
-    const direction = tail <= head ? 1 : -1;
+    const direction = tail === head ? zeroDirection : tail < head ? 1 : -1;
     const headPicture = this.images.get(highlight ? 'HoldHeadHL' : 'HoldHead');
     const customTint = Array.isArray(color) && color.length === 3 && color.every(Number.isFinite) && color.some(value => value !== 255);
     const texture = name => customTint ? this.tinted(name, color) : this.images.get(name);
     const unit = width / body.naturalWidth, unitY = heightWidth / body.naturalWidth;
+    const length = Math.abs(tail - head);
     context.save(); context.translate(horizontal, head); context.scale(1, direction);
-    context.drawImage(texture(bodyName), -width / 2, -Math.abs(tail - head), width, Math.max(1, Math.abs(tail - head)));
-    if (end) context.drawImage(texture('HoldEnd'), -end.naturalWidth * unit / 2, -Math.abs(tail - head) - end.naturalHeight * unitY, end.naturalWidth * unit, end.naturalHeight * unitY);
+    if (length > 0) context.drawImage(texture(bodyName), -width / 2, -length, width, Math.max(1, length));
+    if (end) context.drawImage(texture('HoldEnd'), -end.naturalWidth * unit / 2, -length - end.naturalHeight * unitY, end.naturalWidth * unit, end.naturalHeight * unitY);
     if (showHead && headPicture) context.drawImage(texture(highlight ? 'HoldHeadHL' : 'HoldHead'), -headPicture.naturalWidth * unit / 2, 0, headPicture.naturalWidth * unit, headPicture.naturalHeight * unitY);
     context.restore();
     return true;
   }
 }
+
+const nativeHitDraw = RpeSkin.prototype.drawHit;
+const nativeHeadDraw = RpeSkin.prototype.head, nativeHoldDraw = RpeSkin.prototype.hold;

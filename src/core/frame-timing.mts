@@ -3,8 +3,8 @@ export function validFpsLimit(value) {
 }
 
 export class FrameLimiter {
-  limit: any;
-  nextFrame: any;
+  declare limit: any;
+  declare nextFrame: any;
 
   constructor() {
     this.limit = null;

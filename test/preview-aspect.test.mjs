@@ -3,11 +3,20 @@ import assert from 'node:assert/strict';
 import { createChart, createLine, createEvent, createNote } from '../src/core/chart.mjs';
 import { TempoMap } from '../src/core/tempo.mjs';
 import { SceneRuntime } from '../src/core/scene.mjs';
-import { previewViewport, previewPositionScale, previewNoiseGeometry } from '../src/core/editor-display.mjs';
+import { previewViewport, previewDefaultFrame, previewPositionScale, previewNoiseGeometry } from '../src/core/editor-display.mjs';
 import { createNoiseArea, createNoiseEvent, noiseRuntime } from '../src/core/noise-areas.mjs';
 import { Preview } from '../src/ui/preview.mjs';
 
 const near = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-7, `${actual} != ${expected}`);
+
+test('默认视野框仅在缩放大于1时显示，随比例居中缩放但不改变坐标语义', () => {
+  for (const ratio of [1.5, 16 / 9, 4 / 3, 9 / 16]) {
+    const view = previewViewport(1200, 800, ratio);
+    assert.equal(previewDefaultFrame(view, 1), null); assert.equal(previewDefaultFrame(view, 0.5), null);
+    const frame = previewDefaultFrame(view, 2);
+    near(frame.width, view.width / 2); near(frame.height, view.height / 2); near(frame.left + frame.width / 2, 600); near(frame.top + frame.height / 2, 400);
+  }
+});
 function renderer() {
   const calls = [];
   const context = new Proxy({ calls }, { get: (target, key) => key in target ? target[key] : (...args) => calls.push({ key, args }) });
@@ -113,9 +122,13 @@ test('带锚点变换的噪域只在显示阶段适配比例，皮肤和几何�
     preview.aspectRatio = ratio; preview.draw(chart, tempo, 1, 0);
     const positionScale = previewPositionScale(ratio);
     assert.equal(material, geometry);
-    geometry.points.forEach((point, index) => { near(point.x, original.points[index].x * positionScale.x); near(point.y, original.points[index].y * positionScale.y); });
+    const edge = (points, index) => ({ x: points[index + 1].x - points[index].x, y: points[index + 1].y - points[index].y });
+    const first = edge(geometry.points, 0), second = edge(geometry.points, 1);
+    near(first.x * second.x + first.y * second.y, 0);
+    near(Math.hypot(first.x, first.y), Math.hypot(...Object.values(edge(original.points, 0))) * positionScale.x);
+    near(Math.hypot(second.x, second.y), Math.hypot(...Object.values(edge(original.points, 1))) * positionScale.y);
     near(geometry.center.x, original.center.x * positionScale.x); near(geometry.center.y, original.center.y * positionScale.y);
-    near(geometry.rotation, Math.atan2(Math.sin(original.rotation) * positionScale.y, Math.cos(original.rotation) * positionScale.x));
+    near(geometry.rotation, original.rotation);
   }
   assert.deepEqual(runtime.sample(1).points, original.points);
   assert.equal(previewNoiseGeometry(original, { x: 1, y: 1 }), original);

@@ -21,7 +21,7 @@ export async function prepareNative(contents) {
         tx.oncomplete = resolve; tx.onabort = () => reject(tx.error);
       }); } finally { db.close(); }
     };
-    const chart = createChart(); chart.META.name = '迁移测试'; chart['x-native-test'] = { preserved: true };
+    const chart = createChart(); chart.META.name = '迁移测试'; chart.META.background = 'cover.png'; chart['x-native-test'] = { preserved: true };
     const canvas = document.createElement('canvas'); canvas.width = canvas.height = 16; canvas.getContext('2d').fillRect(0, 0, 16, 16);
     const cover = await new Promise(resolve => canvas.toBlob(resolve));
     const music = new Uint8Array(4 * 1024 * 1024); music[123] = 42;
@@ -67,8 +67,22 @@ export async function smokeNative(contents, service, controls) {
   });
   assert.ok(builtins.length > 0); assert.ok(builtins.every(record => record.files > 0));
   checks.push('built-in note skin files and images load through the packaged application protocol');
-  assert.equal(await run(contents, () => document.querySelector('#storage-settings') === document.querySelector('.settings-body').lastElementChild), true);
-  checks.push('storage and backup settings appear after all other settings');
+  const storageSettings = await run(contents, () => {
+    const panel = document.querySelector('#storage-settings');
+    return {
+      count: document.querySelectorAll('#storage-settings').length,
+      category: panel?.closest('[data-settings-section]')?.dataset.settingsSection,
+      navigation: Boolean(document.querySelector('[data-settings-target="storage"]')),
+      missingControls: ['storage-refresh', 'library-export-all', 'storage-recovery-manage', 'storage-open-root',
+        'storage-move-root', 'storage-backup-folder', 'storage-trash', 'storage-use-root', 'storage-rebuild', 'storage-collect']
+        .filter(id => !panel?.querySelector('#' + id))
+    };
+  });
+  assert.equal(storageSettings.count, 1, 'Native storage settings must be present exactly once');
+  assert.equal(storageSettings.category, 'storage', 'Native storage settings must belong to the storage navigation category');
+  assert.equal(storageSettings.navigation, true, 'Native storage settings must have a navigation entry');
+  assert.deepEqual(storageSettings.missingControls, [], 'Native storage and backup controls must remain available');
+  checks.push('storage and backup controls appear in the storage navigation category');
   const migration = await run(contents, async () => {
     const library = await import('/src/platform/library.mjs'), recovery = await import('/src/platform/recovery.mjs');
     const { readEditorSkins } = await import('/src/platform/editor-skins.mjs'), { readNoteSkins } = await import('/src/platform/note-skins.mjs'), { readMods } = await import('/src/platform/mods.mjs');
@@ -93,10 +107,17 @@ export async function smokeNative(contents, service, controls) {
       const stale = { ...project }; await library.storeProject(project);
       let conflict = false; try { await library.storeProject(stale); } catch (error) { conflict = error.name === 'ProjectConflictError'; }
       localPreferences.setItem('rpe-next-native-restart-test', 'persistent'); await flushLocalPreferences();
-      document.querySelector('#settings-modal').showModal(); await new Promise(resolve => setTimeout(resolve, 100));
-      return { ticks, conflict, status: document.querySelector('#storage-status').textContent, persistHidden: document.querySelector('#storage-persist').hidden, controls: ['storage-open-root', 'storage-move-root', 'storage-backup-folder', 'storage-trash', 'storage-rebuild', 'storage-collect'].every(id => document.getElementById(id)), revision: project.storageRevision };
+      const { nativeStorage } = await import('/src/platform/native.mjs');
+      const root = (await nativeStorage.call('status')).root;
+      document.querySelector('#settings-modal').showModal();
+      const deadline = performance.now() + 15000;
+      while (!document.querySelector('#storage-status').textContent.includes(root)) {
+        if (performance.now() > deadline) throw Error('Native storage status did not show the library path: ' + document.querySelector('#storage-status').textContent);
+        await new Promise(resolve => setTimeout(resolve, 25));
+      }
+      return { ticks, conflict, root, status: document.querySelector('#storage-status').textContent, persistHidden: document.querySelector('#storage-persist').hidden, controls: ['storage-open-root', 'storage-move-root', 'storage-backup-folder', 'storage-trash', 'storage-rebuild', 'storage-collect'].every(id => document.getElementById(id)), revision: project.storageRevision };
     });
-    assert.ok(result.ticks > 0); assert.ok(result.conflict); assert.ok(result.controls); assert.ok(result.persistHidden); assert.ok(result.status.includes('谱面库：'));
+    assert.ok(result.ticks > 0); assert.ok(result.conflict); assert.ok(result.controls); assert.ok(result.persistHidden); assert.ok(result.status.includes(result.root));
     checks.push('real preload IPC saves asynchronously, detects stale snapshots and exposes native storage controls');
     const fixtureId = await run(contents, async () => {
       document.querySelector('#settings-modal').close(); document.querySelector('#new').click(); document.querySelector('#metadata').click();

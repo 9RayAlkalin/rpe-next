@@ -3,40 +3,43 @@ import { shaderEvents } from '../core/shader-events.mjs';
 import { NOTE_COLORS } from './timeline.mjs';
 import { editorSkinContext } from './editor-skin-canvas.mjs';
 import { isDefaultLineGroup, isDefaultLineName, lineFeatureLabels, lineGroupName } from '../core/line-groups.mjs';
+import { t } from '../i18n.mjs';
 
 export class LineSwitcher {
+
+
   [key: string]: any;
-  active: any;
-  animateFollow: any;
-  animation: any;
-  browseRow: any;
-  cache: any;
-  cards: any;
-  chart: any;
-  content: any;
-  context: any;
-  empty: any;
-  enabled: any;
-  eventsOnly: any;
-  filterInputs: any;
-  filterKey: any;
-  filters: any;
-  getContext: any;
-  grid: any;
-  host: any;
-  indices: any;
-  lastFrame: any;
-  layout: any;
-  notesOnly: any;
-  select: any;
-  signature: any;
-  slider: any;
-  stage: any;
-  stride: any;
-  targetTop: any;
-  tempo: any;
-  viewport: any;
-  visibleRows: any;
+  declare active: any;
+  declare animateFollow: any;
+  declare animation: any;
+  declare browseRow: any;
+  declare cache: any;
+  declare cards: any;
+  declare chart: any;
+  declare content: any;
+  declare context: any;
+  declare empty: any;
+  declare enabled: any;
+  declare eventsOnly: any;
+  declare filterInputs: any;
+  declare filterKey: any;
+  declare filters: any;
+  declare getContext: any;
+  declare grid: any;
+  declare host: any;
+  declare indices: any;
+  declare lastFrame: any;
+  declare layout: any;
+  declare notesOnly: any;
+  declare select: any;
+  declare signature: any;
+  declare slider: any;
+  declare stage: any;
+  declare stride: any;
+  declare targetTop: any;
+  declare tempo: any;
+  declare viewport: any;
+  declare visibleRows: any;
 
   constructor(stage, getContext, { select = () => {} }: any = {}) {
     this.stage = stage; this.getContext = getContext; this.enabled = true; this.active = false;
@@ -44,14 +47,14 @@ export class LineSwitcher {
     this.notesOnly = false; this.eventsOnly = false;
     this.cache = new Map<any, any>(); this.cards = new Map<any, any>(); this.lastFrame = -Infinity;
     this.host = document.createElement('section'); this.host.className = 'line-switcher'; this.host.hidden = true;
-    this.host.setAttribute('aria-label', '附近判定线速览');
+    this.host.setAttribute('aria-label', t('line-switcher.s4bf9d53'));
     this.filters = document.createElement('div'); this.filters.className = 'line-switcher-filters';
-    this.filterInputs = new Map<any, any>();
-    for (const [key, label] of [['notesOnly', '音符'], ['eventsOnly', '事件']]) {
+    this.filterInputs = new Map();
+    for (const [key, label] of [['notesOnly', t('line-switcher.s7ac3289')], ['eventsOnly', t('line-switcher.s550e328')]]) {
       const control = document.createElement('label'); const input = document.createElement('input'); input.type = 'checkbox';
-      input.setAttribute('aria-label', `只显示编辑可视范围内有${label}的判定线`);
-      control.title = `只显示编辑可视范围内有${label}的判定线；两项勾选时需同时满足`;
-      control.append(input, `视野内有${label}`); this.filters.append(control); this.filterInputs.set(key, input);
+      input.setAttribute('aria-label', t('line-switcher.sb7203c6', { p0: label }));
+      control.title = t('line-switcher.scacc9a5', { p0: label });
+      control.append(input, t('line-switcher.sddb2706', { p0: label })); this.filters.append(control); this.filterInputs.set(key, input);
       input.addEventListener('change', () => {
         this[key] = input.checked; this.browseRow = null; this.animateFollow = false;
         this.lastFrame = -Infinity; this.draw(performance.now());
@@ -62,9 +65,9 @@ export class LineSwitcher {
     this.content = document.createElement('div'); this.content.className = 'line-switcher-content';
     this.grid = document.createElement('div'); this.grid.className = 'line-switcher-grid';
     this.empty = document.createElement('div'); this.empty.className = 'line-switcher-empty'; this.empty.hidden = true;
-    this.empty.textContent = '当前可视范围内没有符合条件的判定线'; this.empty.setAttribute('role', 'status');
+    this.empty.textContent = t('line-switcher.sdb76989'); this.empty.setAttribute('role', 'status');
     this.slider = document.createElement('input'); this.slider.type = 'range'; this.slider.className = 'line-switcher-scroll';
-    this.slider.min = 0; this.slider.step = 1; this.slider.setAttribute('aria-label', '浏览判定线缩略图'); this.slider.setAttribute('aria-orientation', 'vertical');
+    this.slider.min = 0; this.slider.step = 1; this.slider.setAttribute('aria-label', t('line-switcher.s63c4a67')); this.slider.setAttribute('aria-orientation', 'vertical');
     this.content.append(this.grid); this.viewport.append(this.content, this.empty); body.append(this.viewport, this.slider);
     this.host.append(this.filters, body); stage.append(this.host);
     this.slider.addEventListener('input', () => {
@@ -167,7 +170,7 @@ export class LineSwitcher {
     this.host.style.setProperty('--thumbnail-height', `${thumbnailHeight}px`);
     this.host.style.width = `${panelWidth}px`;
     this.slider.hidden = overview.maxRow === 0; this.slider.max = overview.maxRow; this.slider.value = overview.firstRow;
-    this.slider.setAttribute('aria-valuetext', indices.length ? `浏览线 ${indices[overview.indices[0]]} 至 ${indices[overview.indices.at(-1)]}，当前线 ${selected}` : '没有符合条件的判定线');
+    this.slider.setAttribute('aria-valuetext', indices.length ? t('line-switcher.s0070269', { p0: indices[overview.indices[0]], p1: indices[overview.indices.at(-1)], p2: selected }) : t('line-switcher.se23f87b'));
     this.scrollTo(overview.firstRow * this.stride, this.browseRow === null && this.animateFollow && !resized && !changedChart);
     this.renderWindow(true);
   }
@@ -200,10 +203,10 @@ export class LineSwitcher {
       title.querySelector('.line-switcher-number').textContent = `${index === selected ? '▶ ' : ''}${index}`;
       name.textContent = defaultName ? '' : ` · ${String(line.Name).trim()}`;
       lineGroup.textContent = isDefaultLineGroup(chart, line) ? '' : ` · ${lineGroupName(chart, line)}`;
-      group.textContent = lineFeatureLabels(line).map(label => label.replace('父线=', '父=').replace('贴图=', '图=')).join(' · ');
+      group.textContent = lineFeatureLabels(line).map(label => label.replace(t('line-switcher.s5f98b67'), t('line-switcher.s637857c')).replace(t('line-switcher.sbed0812'), t('line-switcher.s9a25acd'))).join(' · ');
       group.hidden = !group.textContent;
-      info.textContent = `余 ${sample.notesLeft} 音 / ${sample.eventsLeft} 事`;
-      card.setAttribute('aria-label', `${title.textContent}${lineGroup.textContent}${name.textContent}，${info.textContent}，视野内 ${sample.notes.length} 音符、${sample.events.length} 事件`);
+      info.textContent = t('line-switcher.sf2c4c5a', { p0: sample.notesLeft, p1: sample.eventsLeft });
+      card.setAttribute('aria-label', t('line-switcher.sda6b6a5', { p0: title.textContent, p1: lineGroup.textContent, p2: name.textContent, p3: info.textContent, p4: sample.notes.length, p5: sample.events.length }));
       drawLineThumbnail(canvas, sample, seconds, start, end);
     }
   }
@@ -225,7 +228,7 @@ export class LineSwitcher {
 }
 
 export function drawLineThumbnail(canvas, sample, seconds, start, end) {
-  const context = editorSkinContext(canvas.getContext('2d')); const width = canvas.width; const height = canvas.height;
+  const context = (editorSkinContext as any)(canvas.getContext('2d')); const width = canvas.width; const height = canvas.height;
   const vertical = time => height - 5 - (time - start) / Math.max(0.01, end - start) * (height - 10);
   context.clearRect(0, 0, width, height); context.fillStyle = '#303030'; context.fillRect(0, 0, width, height);
   context.strokeStyle = '#555555'; context.lineWidth = 1;

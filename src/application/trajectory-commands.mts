@@ -1,23 +1,27 @@
+import { cropCustomEvent } from '../core/event-easing.mjs';
 import { beatValue, fromNumber } from '../core/beat.mjs';
 import { createEvent, assertChart } from '../core/chart.mjs';
-import { compileTrajectory, sampleCurveTrajectory, TRAJECTORY_VERSION, trajectoryHasRotation } from '../core/curve-trajectory.mjs';
+import { compileTrajectory, sampleCurveTrajectory, TRAJECTORY_VERSION, trajectoryHasRotation, trajectoryEventValue } from '../core/curve-trajectory.mjs';
 import { simplifyTrajectorySamples, trajectorySplitSettings } from '../core/trajectory-simplify.mjs';
 import { EventTrack } from '../core/events.mjs';
 import { TempoMap } from '../core/tempo.mjs';
 import { chartWithEventLists } from './event-commands.mjs';
+import { t } from '../i18n.mjs';
 
 export const TRAJECTORY_AXES = { moveXEvents: 'x', moveYEvents: 'y', rotateEvents: 'rotation' };
 
 export function createTrajectoryEvent(options, startTime, endTime, segments = 128, split = {}) {
   const start = beatValue(startTime); const end = beatValue(endTime);
-  if (start < 0 || end <= start) throw new Error('轨迹结束拍须大于开始拍，开始拍不能为负');
-  if (!Number.isInteger(segments) || segments < 4 || segments > 8192) throw new Error('拆分段数须为 4–8192');
+  if (start < 0 || end <= start) throw new Error(t('trajectory-commands.sa257eee'));
+  if (!Number.isInteger(segments) || segments < 4 || segments > 8192) throw new Error(t('trajectory-commands.s6d93f68'));
   sampleCurveTrajectory(options, 257);
   const evaluate = compileTrajectory(options);
   return { ...createEvent(evaluate(0).x, evaluate(1).x, start, end), startTime: [...startTime], endTime: [...endTime], trajectory: { version: 1, options: structuredClone(options), segments, split: trajectorySplitSettings(split) } };
 }
 
 export function trajectoryChart(chart, lineIndex, layerIndex, event, editing = null, replace = false) {
+  if(editing?.trajectory && (editing.trajectory.domain || editing.trajectory.offsets)) event={...event,trajectory:{...event.trajectory,...(editing.trajectory.domain?{domain:[...editing.trajectory.domain]}:{}),...(editing.trajectory.offsets?{offsets:structuredClone(editing.trajectory.offsets)}:{})}};
+  if(event.trajectory.domain||event.trajectory.offsets)event={...event,start:trajectoryEventValue(event,0),end:trajectoryEventValue(event,1)};
   if (editing) {
     for (let sourceLine = 0; sourceLine < chart.judgeLineList.length; sourceLine++) {
       for (let sourceLayer = 0; sourceLayer < (chart.judgeLineList[sourceLine].eventLayers ?? []).length; sourceLayer++) {
@@ -27,7 +31,7 @@ export function trajectoryChart(chart, lineIndex, layerIndex, event, editing = n
     }
   }
   const line = chart.judgeLineList?.[lineIndex];
-  if (!line || !Number.isInteger(layerIndex) || layerIndex < 0 || layerIndex > 3) throw new Error('目标判定线或基础层无效');
+  if (!line || !Number.isInteger(layerIndex) || layerIndex < 0 || layerIndex > 3) throw new Error(t('trajectory-commands.sd093990'));
   const layer = line.eventLayers?.[layerIndex] ?? {};
   const begin = beatValue(event.startTime); const finish = beatValue(event.endTime);
   const tempo = new TempoMap(chart.BPMList); const factor = line.bpmfactor ?? 1;
@@ -39,16 +43,17 @@ export function trajectoryChart(chart, lineIndex, layerIndex, event, editing = n
       if (original === editing) continue;
       const start = beatValue(original.startTime); const end = beatValue(original.endTime);
       if (begin >= end || finish <= start) { entries.push(original); continue; }
-      if (!replace) throw new Error('目标区间已有位移或旋转事件；请选择空白区间，或勾选替换区间内事件');
-      if (original.trajectory) throw new Error('区间内已有整体轨迹，请先删除或拆分该轨迹');
+      if (!replace) throw new Error(t('trajectory-commands.s4a05a50'));
+      if (original.trajectory) throw new Error(t('trajectory-commands.s7c2c568'));
       const track = new EventTrack([original], tempo, factor);
       const secondsStart = tempo.seconds(original.startTime, factor); const secondsEnd = tempo.seconds(original.endTime, factor);
       const clipped = (first, last) => {
         const startTime = fromNumber(first); const endTime = fromNumber(last);
+        if (original.customEasing) return cropCustomEvent(original, (tempo.seconds(startTime, factor) - secondsStart) / (secondsEnd - secondsStart), (tempo.seconds(endTime, factor) - secondsStart) / (secondsEnd - secondsStart), startTime, endTime);
         const left = original.easingLeft ?? 0; const range = (original.easingRight ?? 1) - left;
         return { ...original, startTime, endTime, start: track.value(tempo.seconds(startTime, factor)), end: track.value(tempo.seconds(endTime, factor)), easingLeft: left + range * (tempo.seconds(startTime, factor) - secondsStart) / (secondsEnd - secondsStart), easingRight: left + range * (tempo.seconds(endTime, factor) - secondsStart) / (secondsEnd - secondsStart) };
       };
-      if (original.bezier && (start < begin || end > finish)) throw new Error('替换区间穿过 Bezier 事件，请先切割该事件');
+      if (original.bezier && (start < begin || end > finish)) throw new Error(t('trajectory-commands.s869ce32'));
       if (start < begin) entries.push(clipped(start, begin));
       if (end > finish) entries.push(clipped(finish, end));
     }
@@ -61,11 +66,11 @@ export function trajectoryChart(chart, lineIndex, layerIndex, event, editing = n
   return result;
 }
 
-export function expandTrajectory(event: any, tempo: any, factor = 1, overrides: any = {}) {
-  const evaluate = compileTrajectory(event.trajectory.options);
+export function expandTrajectory(event, tempo, factor = 1, overrides = {}) {
+  const evaluate = progress => Object.fromEntries(Object.values(TRAJECTORY_AXES).map(axis=>[axis,trajectoryEventValue(event,progress,axis)]));
   const start = tempo.seconds(event.startTime, factor); const end = tempo.seconds(event.endTime, factor);
-  const count = overrides.segments ?? event.trajectory.segments ?? 128;
-  if (!Number.isInteger(count) || count < 4 || count > 8192) throw new Error('轨迹拆分段数无效');
+  const count = (overrides as any).segments ?? event.trajectory.segments ?? 128;
+  if (!Number.isInteger(count) || count < 4 || count > 8192) throw new Error(t('trajectory-commands.s7953a23'));
   const settings = trajectorySplitSettings({ ...event.trajectory.split, ...overrides });
   const samples = Array.from({ length: count + 1 }, (unused, index) => evaluate(index / count));
   const result = new Map(Object.entries(TRAJECTORY_AXES).filter(([type]) => type !== 'rotateEvents' || trajectoryHasRotation(event.trajectory.options)).map(([type]) => [type, []]));
@@ -80,7 +85,7 @@ export function expandTrajectory(event: any, tempo: any, factor = 1, overrides: 
 
 export function splitTrajectoryChart(chart, lineIndex, layerIndex, event, settings = {}) {
   const layer = chart.judgeLineList[lineIndex].eventLayers[layerIndex];
-  if (!layer.moveXEvents?.includes(event) || !event.trajectory) throw new Error('请选择一个整体曲线轨迹事件');
+  if (!layer.moveXEvents?.includes(event) || !event.trajectory) throw new Error(t('trajectory-commands.s91b6dc2'));
   const fragments = expandTrajectory(event, new TempoMap(chart.BPMList), chart.judgeLineList[lineIndex].bpmfactor ?? 1, settings);
   const updates = new Map([...fragments].map(([type, entries]) => [type, [...(layer[type] ?? []).filter(candidate => candidate !== event), ...entries].sort((left, right) => beatValue(left.startTime) - beatValue(right.startTime))]));
   return chartWithEventLists(chart, lineIndex, layerIndex, updates);

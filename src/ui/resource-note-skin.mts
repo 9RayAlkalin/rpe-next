@@ -1,5 +1,6 @@
 import { NOTE_SKIN_IMAGES, holdSkinLayout, noteSkinColor, noteSkinFrame } from '../core/note-skin.mjs';
 import { hitParticles } from '../core/editor-display.mjs';
+import { t } from '../i18n.mjs';
 
 const names: any = {1:'click',2:'hold',3:'flick',4:'drag'};
 const dimensions = image => ({width:image.naturalWidth??image.width,height:image.naturalHeight??image.height});
@@ -7,16 +8,18 @@ const tint = color => Array.isArray(color)&&color.length===3&&color.every(Number
 const HIT_FRAME_BYTES = 64 * 1024 * 1024;
 const HIT_FRAME_COUNT = 512;
 export class ResourceNoteSkin {
+
+
   [key: string]: any;
-  crops: any;
-  highlightScale: any;
-  hitFrameBytes: any;
-  hitFrames: any;
-  id: any;
-  images: any;
-  info: any;
-  patterns: any;
-  tintSource: any;
+  declare crops: any;
+  declare highlightScale: any;
+  declare hitFrameBytes: any;
+  declare hitFrames: any;
+  declare id: any;
+  declare images: any;
+  declare info: any;
+  declare patterns: any;
+  declare tintSource: any;
 
   constructor(record, images, tintSource) {
     this.id=record.id;this.info=record.info;this.images=images;this.tintSource=tintSource;this.crops=new Map<any, any>();this.patterns=new WeakMap<any, any>();
@@ -27,10 +30,10 @@ export class ResourceNoteSkin {
     this.highlightScale=Number.isFinite(ratio)&&ratio>0?ratio:1;
   }
   static async prepare(record,tintSource) {
-    const images=new Map<any, any>(await Promise.all(NOTE_SKIN_IMAGES.map(async name=>{
+    const images=new (Map as any)(await Promise.all(NOTE_SKIN_IMAGES.map(async name=>{
       const url=URL.createObjectURL(new Blob([record.files.get(name)],{type:'image/png'}));const picture=new Image();
-      try {picture.src=url;await picture.decode();return [name,picture] as [string, any];}
-      catch {throw new Error('无法解码音符皮肤图片：'+name);}
+      try {picture.src=url;await picture.decode();return [name,picture];}
+      catch {throw new Error(t('resource-note-skin.s79f19c3')+name);}
       finally {URL.revokeObjectURL(url);}
     })));
     return new ResourceNoteSkin(record,images,tintSource);
@@ -43,6 +46,12 @@ export class ResourceNoteSkin {
   }
   source(name,color) {const picture=this.images.get(name);return this.tintSource(`${this.id}:${name}`,picture,tint(color));}
   get hitLifetime() {return this.info.hitFxDuration;}
+  get hitBatchCompatible() {return this.drawHit === nativeHitDraw;}
+  get noteBatchCompatible() {return this.head === nativeHeadDraw && this.hold === nativeHoldDraw && !this.info.holdRepeat;}
+  hitRadius(size) {
+    const sheet = dimensions(this.images.get('hit_fx.png')), width = size * this.info.hitFxScale, height = width * sheet.height / this.info.hitFx[1] / (sheet.width / this.info.hitFx[0]);
+    return Math.max(Math.hypot(width, height) / 2, this.info.hideParticles ? 0 : width / 1.4 * 1.175);
+  }
   get perfectColor() {return noteSkinColor(this.info.colorPerfect);}
   noteImage(type,highlight=false){return this.images.get(names[type]+(highlight?'_mh':'')+'.png');}
   noteScale(highlight=false){return highlight?this.highlightScale:1;}
@@ -57,10 +66,10 @@ export class ResourceNoteSkin {
     const size=dimensions(picture);const height=heightWidth*size.height/size.width;
     context.drawImage(picture,x-width/2,y-height/2,width,height);return true;
   }
-  hold(context,x,head,tail,width,highlight=false,showHead=true,color,heightWidth=width) {
+  hold(context,x,head,tail,width,highlight=false,showHead=true,color,heightWidth=width,zeroDirection=1) {
     const scale=this.noteScale(highlight);width*=scale;heightWidth*=scale;
     const name='hold'+(highlight?'_mh':'')+'.png';const picture=this.source(name,color);if(!picture)return false;
-    const size=dimensions(picture);const layout=holdSkinLayout(this.info,size,highlight,head,tail,width,heightWidth);
+    const size=dimensions(picture);const layout=holdSkinLayout(this.info,size,highlight,head,tail,width,heightWidth,zeroDirection);
     context.save();context.translate(x,head);context.scale(1,layout.direction);
     if(this.info.holdRepeat&&layout.length>0) {
       const key=name+':'+layout.tailPixels+':'+layout.headPixels+':'+tint(color).join(',');
@@ -71,7 +80,7 @@ export class ResourceNoteSkin {
       if(pattern) {const unit=width/body.width,unitY=heightWidth/body.width;context.save();context.translate(-width/2,-layout.length);context.scale(unit,unitY);context.fillStyle=pattern;context.fillRect(0,0,body.width,layout.length/unitY);context.restore();}
     } else if(layout.length>0) context.drawImage(picture,0,layout.tailPixels,size.width,layout.bodyPixels,-width/2,layout.bodyTop,width,layout.bodyHeight);
     if(layout.tailPixels) context.drawImage(picture,0,0,size.width,layout.tailPixels,-width/2,layout.tailY,width,layout.tailHeight);
-    if((showHead||this.info.holdKeepHead)&&layout.headPixels) context.drawImage(picture,0,size.height-layout.headPixels,size.width,layout.headPixels,-width/2,layout.headY,width,layout.headHeight);
+    if((showHead||this.info.holdKeepHead&&layout.length>0)&&layout.headPixels) context.drawImage(picture,0,size.height-layout.headPixels,size.width,layout.headPixels,-width/2,layout.headY,width,layout.headHeight);
     context.restore();return true;
   }
   drawHit(context,{age,x,y,size,rotation=0,color,seed=0,good=false}) {
@@ -111,3 +120,6 @@ export class ResourceNoteSkin {
     return true;
   }
 }
+
+const nativeHitDraw = ResourceNoteSkin.prototype.drawHit;
+const nativeHeadDraw = ResourceNoteSkin.prototype.head, nativeHoldDraw = ResourceNoteSkin.prototype.hold;

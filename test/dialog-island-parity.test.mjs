@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const read = path => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
+import { readLocalizedSource as read } from './localized-source.mjs';
 const TAG_ID = /<(dialog|form|h2|p|div|button)\b[^>]*\bid="([^"]+)"/g;
 const tagMap = text => new Map([...text.matchAll(TAG_ID)].map(match => [match[2], match[1]]));
 

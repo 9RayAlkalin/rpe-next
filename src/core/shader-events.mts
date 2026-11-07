@@ -1,5 +1,7 @@
 import { beatValue, fromNumber } from './beat.mjs';
-import { SHADER_NAMES, shaderIdentity, shaderLine } from './shader.mjs';
+import { SHADER_NAMES, canonicalShaderName, shaderIdentity, shaderLine } from './shader.mjs';
+import { t } from '../i18n.mjs';
+import { shaderUniforms } from './shader-uniforms.mjs';
 export { shaderIdentity, shaderLine } from './shader.mjs';
 
 const cache = new WeakMap();
@@ -19,10 +21,10 @@ export function shaderEventLanes(events) {
 }
 
 export function shaderTypeFields(name) {
-  const index = SHADER_NAMES.indexOf(name);
-  const base = index >= 10 && index < 20 ? SHADER_NAMES[index - 10] : name;
-  const shader = index >= 20 ? `/${base}_pr.glsl` : base.replace(/_(\w)/g, (match, letter) => letter.toUpperCase());
-  return { shader, clone: index >= 10 && index < 20 };
+  const base = canonicalShaderName(name) ?? name;
+  const index = SHADER_NAMES.indexOf(base);
+  const shader = index >= 10 ? `/${base}_pr.glsl` : index >= 0 ? base.replace(/_(\w)/g, (match, letter) => letter.toUpperCase()) : name;
+  return { shader, clone: false };
 }
 
 function eventBeat(value) {
@@ -49,7 +51,7 @@ export function serializeShaderEvent(event, lineIndex) {
 
 export function replaceShaderEvents(chart, lineIndex, events) {
   for (const event of events) {
-    if (beatValue(event.endTime) < beatValue(event.startTime)) throw new Error('着色器结束拍不能早于开始拍');
+    if (beatValue(event.endTime) < beatValue(event.startTime)) throw new Error(t('shader-events.s2a12e0d'));
   }
   const keep = events => (events ?? []).filter(event => !event || typeof event !== 'object' || shaderLine(event, chart) !== lineIndex);
   const lines = [...chart.judgeLineList];
@@ -99,19 +101,12 @@ export function alignShaderParameters(event) {
 }
 
 export function shaderParameters(source) {
-  return [...source.matchAll(/uniform\s+(float|int|bool|vec[234])\s+(\w+)\s*;([^\r\n]*)/g)]
-    .filter(([, , name]) => !['resolution', 'screenSize', 'time', 'u_time'].includes(name))
-    .map(([, type, name, comment]) => {
-      const dimensions = type.startsWith('vec') ? Number(type.at(-1)) : 1;
-      const values = comment.match(/%([^%]+)%/)?.[1].split(',').map(Number);
-      const fallback = values?.length === dimensions && values.every(Number.isFinite) ? values : Array(dimensions).fill(0);
-      return { name, type, dimensions, value: dimensions === 1 ? fallback[0] : fallback };
-    });
+  return shaderUniforms(source).filter(parameter => /^(float|int|bool|vec[234])$/.test(parameter.type));
 }
 
 export function parseShaderValue(text, dimensions) {
   const parts = String(text).split(',').map(part => part.trim());
   const values = parts.map(Number);
-  if (parts.some(part => !part) || values.length !== dimensions || !values.every(Number.isFinite)) throw new Error(`请输入 ${dimensions} 个有限数字，多个分量用逗号分隔`);
+  if (parts.some(part => !part) || values.length !== dimensions || !values.every(Number.isFinite)) throw new Error(t('shader-events.s99fbcbb', { p0: dimensions }));
   return dimensions === 1 ? values[0] : values;
 }

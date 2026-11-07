@@ -43,6 +43,19 @@ test('Hold 头尾沿身体边缘拼接，头尾宽度使用身体缩放基准', 
   assert.deepEqual(calls.map(call => call.slice(1)), [[-25, -150, 50, 150], [-25, -155, 50, 5], [-30, 0, 60, 10]]);
 });
 
+test('默认皮肤的零长度 Hold 不绘制身体，头尾分别可见，判定后只绘制尾', () => {
+  const skin = new RpeSkin(() => {});
+  for (const [name, width, height] of [['Hold', 100, 100], ['HoldHead', 120, 20], ['HoldEnd', 100, 10]]) skin.images.set(name, { name, naturalWidth: width, naturalHeight: height });
+  for (const showHead of [true, false]) for (const direction of [1, -1]) {
+    const calls = [], scales = [], context = { save() {}, restore() {}, translate() {}, scale(...args) { scales.push(args); }, drawImage(...args) { calls.push(args); } };
+    skin.hold(context, 100, 200, 200, 50, false, showHead, undefined, 50, direction);
+    assert.deepEqual(scales, [[1, direction]]);
+    assert.deepEqual(calls.map(call => call[0].name), showHead ? ['HoldEnd', 'HoldHead'] : ['HoldEnd']);
+    assert.deepEqual(calls[0].slice(1), [-25, -5, 50, 5]);
+    if (showHead) assert.deepEqual(calls[1].slice(1), [-30, 0, 60, 10]);
+  }
+});
+
 test('粒子四个、原时长和指数扩散，定位采样结果确定', () => {
   const particles = hitParticles(0.2, 42, 175);
   assert.equal(particles.length, 4); assert.equal(particles[0].alpha, 0.7);
@@ -77,7 +90,8 @@ test('Shift 框选和左拖轨迹生效，右键保留给上下文菜单；Y 缩
   timeline.scale = 144;
   const start = { button: 0, shiftKey: true, clientX: 100, clientY: 380 };
   timeline.down(start); timeline.up(start); assert.equal(timeline.drag.kind, 'rectangle'); assert.equal(session.selection.size, 0);
-  timeline.down({ button: 0, clientX: 400, clientY: 500 }); assert.equal(session.selection.size, 1);
+  timeline.down({ button: 0, clientX: 400, clientY: 500 }); assert.equal(session.selection.size, 0); assert.equal(timeline.drag.kind, 'rectangle');
+  timeline.down({ button: 0, shiftKey: true, clientX: 400, clientY: 500 }); assert.equal(session.selection.size, 1);
   session.selection.clear(); timeline.down({ button: 0, clientX: 50, clientY: 400 }); timeline.move({ clientX: 400, clientY: 450 }); timeline.up({ clientX: 400, clientY: 450 }); assert.equal(session.selection.size, 1);
   timeline.down({ button: 2, clientX: 50, clientY: 400 }); timeline.up({ button: 2, clientX: 400, clientY: 450 }); assert.equal(session.selection.size, 1);
   timeline.scale = 333;

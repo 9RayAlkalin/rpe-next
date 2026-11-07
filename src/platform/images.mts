@@ -1,4 +1,5 @@
 import { assetBytes, resourceReferences, mediaType } from './files.mjs';
+import { t } from '../i18n.mjs';
 
 export function animatedImage(name, bytes) {
   if (/\.(gif|webp|avif|apng)$/i.test(name)) return true;
@@ -14,18 +15,21 @@ export function animatedImage(name, bytes) {
 }
 
 export class ProjectImages {
-  activeLoads: any;
-  background: any;
-  backgroundAnimated: any;
-  backgroundName: any;
-  budget: any;
-  decodedBytes: any;
-  generation: any;
-  images: any;
-  invalidate: any;
-  queue: any;
-  records: any;
-  report: any;
+  declare assets: any;
+  declare chartName: any;
+
+  declare activeLoads: any;
+  declare background: any;
+  declare backgroundAnimated: any;
+  declare backgroundName: any;
+  declare budget: any;
+  declare decodedBytes: any;
+  declare generation: any;
+  declare images: any;
+  declare invalidate: any;
+  declare queue: any;
+  declare records: any;
+  declare report: any;
 
   constructor(invalidate, report: any = () => {}) {
     this.invalidate = invalidate; this.report = report; this.images = new Map(); this.records = new Map();
@@ -34,12 +38,13 @@ export class ProjectImages {
 
   async load(chart, assets, chartName, info: any = undefined) {
     this.clear();
+    this.assets = assets; this.chartName = chartName;
     const references = resourceReferences(chart, assets, chartName, info);
     this.backgroundName = references.background;
     const names = new Set([references.background, ...(chart.judgeLineList ?? []).map(line => line.Texture)].filter(Boolean));
     for (const name of names) {
       const bytes = assetBytes(assets, name, chartName);
-      if (!bytes) { if (name !== 'line.png') this.report(`未找到图片：${name}`); continue; }
+      if (!bytes) { if (name !== 'line.png') this.report(t('images.sa9a32ca', { p0: name })); continue; }
       const dimensions = pngDimensions(bytes);
       this.records.set(name, { name, bytes, ...dimensions, animated: animatedImage(name, bytes), lastUsed: 0, requestedScale: 0, generation: this.generation });
     }
@@ -101,7 +106,7 @@ export class ProjectImages {
       this.trim(); this.invalidate();
     } catch {
       source?.close?.();
-      if (record.generation === this.generation) { record.failed = true; this.report(`图片无法解码：${record.name}，请检查文件内容或改用 PNG/JPEG/WebP`); }
+      if (record.generation === this.generation) { record.failed = true; this.report(t('images.s2ebd935', { p0: record.name })); }
     }
   }
 

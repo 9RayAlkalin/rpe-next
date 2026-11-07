@@ -2,7 +2,7 @@ import { shortcutKey } from '../core/preferences.mjs';
 
 export class PasteGesture {
   [key: string]: any;
-  pending: any;
+  declare pending: any;
 
   constructor({ paste, open, valid, delay = 450, schedule = (callback, milliseconds) => setTimeout(callback, milliseconds), unschedule = timer => clearTimeout(timer), reportError = console.error }) {
     Object.assign(this, { paste, open, valid, delay, schedule, unschedule, reportError }); this.pending = null;

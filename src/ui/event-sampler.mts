@@ -1,41 +1,53 @@
-import { SceneRuntime } from '../core/scene.mjs';
+import { TransformScene } from '../core/transform-scene.mjs';
+import { snapSamplePoint, snapSampleAngle, snapConstrainedPoint, unwrapAngle, sampleInBasis, sampleFromBasis } from '../core/sampling-grid.mjs';
+import { samplingPreferences } from '../platform/sampling-preferences.mjs';
+import { displayNumber, displayPosition } from './spatial-display.mjs';
+import { SamplingControls } from './sampling-controls.mjs';
+import { SamplingTargets } from './sampling-targets.mjs';
+import { drawSamplingGrid, drawSnapGuides } from './sampling-guides.mjs';
 import { previewViewport, previewPositionScale } from '../core/editor-display.mjs';
 import { fitNoiseSampleView } from '../core/noise-sampling.mjs';
 import { beatValue } from '../core/beat.mjs';
 import { chartWithEventLists, eventListAt, eventKey, transformedEventLists } from '../application/event-commands.mjs';
 import { prepareCanvas } from './timeline.mjs';
+import { t } from '../i18n.mjs';
 
 const sampledTypes = new Set<any>(['moveXEvents', 'moveYEvents', 'rotateEvents']);
 const round = value => Math.round(value * 10000) / 10000;
 const now = () => typeof performance === 'undefined' ? Date.now() : performance.now();
 
 export class EventSampler {
+
+
   [key: string]: any;
-  canvas: any;
-  displayCache: any;
-  draftChart: any;
-  drag: any;
-  getContext: any;
-  host: any;
-  invalidate: any;
-  mode: any;
-  notify: any;
-  pause: any;
-  sampleBar: any;
-  sampleHint: any;
-  sampleZoom: any;
-  scene: any;
-  seconds: any;
-  valueDraft: any;
+  declare canvas: any;
+  declare displayCache: any;
+  declare draftChart: any;
+  declare drag: any;
+  declare getContext: any;
+  declare host: any;
+  declare invalidate: any;
+  declare mode: any;
+  declare notify: any;
+  declare pause: any;
+  declare sampleBar: any;
+  declare sampleHint: any;
+  declare sampleZoom: any;
+  declare scene: any;
+  declare seconds: any;
+  declare valueDraft: any;
 
   constructor(host, getContext, { invalidate = () => {}, pause = () => {}, notify = () => {} }: any = {}) {
     this.host = host; this.getContext = getContext; this.invalidate = invalidate; this.pause = pause; this.notify = notify;
-    this.mode = null; this.valueDraft = null; this.draftChart = null; this.drag = null; this.scene = new SceneRuntime();
+    this.mode = null; this.valueDraft = null; this.draftChart = null; this.drag = null; this.scene = new TransformScene(); this.snapTargets = new SamplingTargets();
     this.canvas = document.createElement('canvas'); this.canvas.className = 'event-sampler'; this.canvas.hidden = true; host.append(this.canvas);
-    this.sampleBar = document.createElement('div'); this.sampleBar.className = 'noise-sample-bar event-sample-bar'; this.sampleBar.hidden = true;
-    const hint = document.createElement('p'); hint.className = 'hint'; hint.textContent = '拖动绿色控制点 · 可连续取样，完成统一应用 · Esc 全部取消'; this.sampleHint = hint; this.sampleBar.append(hint);
-    for (const [title, apply] of ([['完成取样', true], ['取消', false]] as [string, boolean][])) { const button = document.createElement('button'); button.type = 'button'; button.textContent = title; button.onclick = () => this.finish(apply); this.sampleBar.append(button); }
-    host.append(this.sampleBar);
+    this.sampleBar = document.createElement('div'); this.sampleBar.className = 'sampling-dock'; this.sampleBar.hidden = true;
+    const hint = document.createElement('p'); hint.className = 'hint'; hint.textContent = t('event-sampler.s5cb983c'); this.sampleHint = hint; this.sampleBar.append(hint);
+    for (const [title, apply] of [[t('event-sampler.s2e0df4a'), true], [t('event-sampler.s4d0b468'), false]]) { const button = document.createElement('button'); button.type = 'button'; button.textContent = title; button.onclick = () => this.finish(apply); this.sampleBar.append(button); }
+    const dock = document.querySelector('[data-panel="events"]');
+    if(dock) dock.insertBefore(this.sampleBar,dock.querySelector('form')); else host.append(this.sampleBar);
+    this.sampleBar.replaceChildren(); this.sampleBar.classList.add('sampling-dock');
+    this.controls = new SamplingControls(this.sampleBar, { change: () => this.invalidate(), apply: () => this.finish(true), cancel: () => this.finish(false) });
     this.canvas.addEventListener('pointerdown', event => this.down(event));
     this.canvas.addEventListener('pointermove', event => this.move(event));
     this.canvas.addEventListener('pointerup', event => this.up(event));
@@ -56,7 +68,8 @@ export class EventSampler {
   syncChrome() {
     this.host.closest('.editor').classList.toggle('event-sampling', this.active);
     this.canvas.hidden = !this.mode;
-    this.sampleBar.hidden = !this.mode;
+    this.sampleBar.hidden = !this.mode;if(this.mode)this.sampleBar.parentElement?.scrollTo?.({top:0});
+    const form=this.sampleBar.parentElement?.querySelector('#event-properties');if(form)form.hidden=Boolean(this.mode);
   }
 
   beginValueDraft() {
@@ -72,7 +85,7 @@ export class EventSampler {
 
   updateValueDraft(target, value) {
     if (!this.beginValueDraft()) return false;
-    const source = this.valueDraft.chart;
+    const source: any = this.valueDraft.chart;
     const lineIndex = target.lineIndex ?? this.session.lineIndex;
     const draft = this.valueDraft;
     const targetKey = `${lineIndex}:${target.type}:${target.index}`;
@@ -82,7 +95,7 @@ export class EventSampler {
       draft.startedAt = now();
     }
     const temporary: any = { chart: source, eventLayer: draft.layer, shaderAutoAlign: this.session.shaderAutoAlign };
-    const event = eventListAt(temporary, lineIndex, target.type)[target.index];
+    const event: any = eventListAt(temporary, lineIndex, target.type)[target.index];
     if (!event) return false;
     const updates = transformedEventLists(temporary, lineIndex, new Set<any>([eventKey(target.type, target.index)]), current => ({
       ...current, [target.field]: structuredClone(value),
@@ -97,7 +110,7 @@ export class EventSampler {
   /** Loop range of the drafted event in seconds, or null when it has no span. */
   valueRange(chart, lineIndex, type, index) {
     const line = chart.judgeLineList?.[lineIndex];
-    const event = eventListAt({ chart, eventLayer: this.session.eventLayer }, lineIndex, type)?.[index];
+    const event: any = eventListAt({ chart, eventLayer: this.session.eventLayer }, lineIndex, type)?.[index];
     if (!line || !event) return null;
     try {
       const factor = line.bpmfactor ?? 1;
@@ -117,7 +130,7 @@ export class EventSampler {
     return draft.range.start + span * phase;
   }
 
-  finishValue(apply, label = '应用事件取样') {
+  finishValue(apply, label = t('event-sampler.s542c443')) {
     if (!this.valueDraft) return;
     const draft = this.valueDraft, chart = draft.chart, current = this.valueDraftCurrent();
     draft.session.liveEventEdit = false;
@@ -130,20 +143,23 @@ export class EventSampler {
 
   begin(target) {
     if (!sampledTypes.has(target.type) || !Number.isInteger(target.index)) return false;
-    const source = this.valueDraft?.chart ?? this.draftChart ?? this.session.chart;
+    const source: any = this.valueDraft?.chart ?? this.draftChart ?? this.session.chart;
     this.valueDraft = null;
     const line = source.judgeLineList?.[target.lineIndex ?? this.session.lineIndex];
-    const event = eventListAt({ chart: source, eventLayer: this.session.eventLayer }, target.lineIndex ?? this.session.lineIndex, target.type)?.[target.index];
+    const event: any = eventListAt({ chart: source, eventLayer: this.session.eventLayer }, target.lineIndex ?? this.session.lineIndex, target.type)?.[target.index];
     if (!line || !event || !Number.isFinite(event[target.field])) return false;
     this.pause();
     this.draftChart = source;
-    this.mode = { ...target, lineIndex: target.lineIndex ?? this.session.lineIndex };
+    this.mode = { ...target, initialValue:event[target.field], lineIndex: target.lineIndex ?? this.session.lineIndex, layer: this.session.eventLayer, base: this.session.chart, owner: this.session };
     if (this.context.pairedMovementSampling !== false && ['moveXEvents', 'moveYEvents'].includes(target.type)) {
       this.mode.paired = this.findPairedMovement(source, this.mode);
     }
+    const entries=[{key:'value',label:t('sampling.value'),value:event[target.field],change:value=>{this.draftChart=this.eventChart(value);this.invalidate();}}];
+    if(this.mode.paired){const paired=eventListAt({chart:source,eventLayer:this.mode.layer},this.mode.lineIndex,this.mode.paired.type)[this.mode.paired.index];entries[0].label=`${target.type==='moveXEvents'?'X':'Y'} · ${t('sampling.value')}`;entries.push({key:'paired',label:`${target.type==='moveXEvents'?'Y':'X'} · ${t('sampling.value')}`,value:paired[target.field],change:value=>{const current=eventListAt({chart:this.draftChart,eventLayer:this.mode.layer},this.mode.lineIndex,this.mode.type)[this.mode.index][this.mode.field];this.draftChart=this.eventChart(current,value);this.invalidate();}});}
+    this.controls?.configure(entries);
     this.sampleHint.textContent = this.mode.paired
-      ? '拖动绿色控制点 · 配套 X/Y 事件同时取样 · 完成统一应用 · Esc 全部取消'
-      : '拖动绿色控制点 · 可连续取样，完成统一应用 · Esc 全部取消';
+      ? t('event-sampler.s266cff8')
+      : t('event-sampler.s5cb983c');
     const factor = line.bpmfactor ?? 1;
     this.seconds = this.context.tempo.seconds(target.field === 'end' ? event.endTime : event.startTime, factor);
     this.session.liveEventEdit = true;
@@ -156,17 +172,19 @@ export class EventSampler {
 
   finish(apply) {
     if (!this.mode) { this.finishValue(apply); return; }
+    if (this.mode.base !== this.session.chart || this.mode.owner !== this.session || this.mode.layer !== this.session.eventLayer) apply = false;
     const chart = this.draftChart;
     for (const { renderer, original } of this.sampleZoom ?? []) renderer.viewDivisor = original;
     this.sampleZoom = null;
     this.mode = null; this.draftChart = null; this.drag = null; this.canvas.hidden = true; this.session.liveEventEdit = false;
     this.syncChrome();
-    if (apply && chart) this.session.commit('预览拖动取样', chart);
+    if (apply && chart && chart !== this.session.chart) this.session.commit(t('event-sampler.seaab4c2'), chart);
     else if (!apply) this.session.notify();
     this.invalidate();
   }
 
   previewState() {
+    if (this.mode && (this.mode.owner !== this.session || this.mode.base !== this.session.chart || this.mode.layer !== this.session.eventLayer)) { this.finish(false); return null; }
     if (this.mode && this.draftChart) { this.fitView(); return { chart: this.samplingChart(this.draftChart), seconds: this.seconds }; }
     if (this.valueDraft && !this.valueDraftCurrent()) { this.finishValue(false); return null; }
     if (this.valueDraft?.chart) return { chart: this.valueDraft.chart, seconds: this.looping ? this.loopSeconds() : this.context.seconds?.() ?? 0 };
@@ -188,7 +206,7 @@ export class EventSampler {
 
   fitView() {
     const previous = this.view(); const handle = this.handle(this.draftChart);
-    const controlsBottom = this.sampleBar.getBoundingClientRect().bottom - previous.rectangle.top;
+    const controlsBottom = this.controls ? 0 : this.sampleBar.getBoundingClientRect().bottom - previous.rectangle.top;
     for (const zoom of this.sampleZoom ?? []) {
       if (this.context.sampleAutoFit !== false) zoom.divisor = fitNoiseSampleView({ x: handle.x, y: -handle.y }, previous.rectangle.width, previous.rectangle.height, zoom.renderer.aspectRatio ?? 1.5, zoom.divisor, controlsBottom);
       zoom.renderer.viewDivisor = this.context.sampleAutoFit === false ? zoom.original : zoom.divisor;
@@ -213,13 +231,19 @@ export class EventSampler {
     };
     update(mode.type, mode.index, value);
     if (mode.paired) update(mode.paired.type, mode.paired.index, pairedValue ?? eventListAt(temporary, lineIndex, mode.paired.type)[mode.paired.index][mode.field]);
-    return chartWithEventLists(this.draftChart, lineIndex, this.session.eventLayer, updates);
+    let chart = this.draftChart;
+    for (const [type, events] of updates) {
+      const index = type === mode.type ? mode.index : mode.paired.index;
+      const linked = transformedEventLists({ chart, eventLayer: this.session.eventLayer }, lineIndex, new Set([eventKey(type,index)]), () => events[index]);
+      chart = chartWithEventLists(chart, lineIndex, this.session.eventLayer, linked);
+    }
+    return chart;
   }
 
   findPairedMovement(chart, mode) {
     const companionType = mode.type === 'moveXEvents' ? 'moveYEvents' : 'moveXEvents';
     const source: any = { chart, eventLayer: this.session.eventLayer };
-    const event = eventListAt(source, mode.lineIndex, mode.type)[mode.index];
+    const event: any = eventListAt(source, mode.lineIndex, mode.type)[mode.index];
     if (!event || event.trajectory) return null;
     const sameBeat = (left, right) => {
       beatValue(left); beatValue(right);
@@ -239,7 +263,7 @@ export class EventSampler {
   samplingChart(chart) {
     if (this.displayCache?.source === chart && this.displayCache.mode === this.mode) return this.displayCache.chart;
     const mode = this.mode;
-    const event = eventListAt({ chart, eventLayer: this.session.eventLayer }, mode.lineIndex, mode.type)?.[mode.index];
+    const event: any = eventListAt({ chart, eventLayer: this.session.eventLayer }, mode.lineIndex, mode.type)?.[mode.index];
     const display: any = { ...event, start: event[mode.field], end: event[mode.field] };
     const updates = new Map<any, any>([[mode.type, [display]]]);
     if (mode.paired) {
@@ -261,8 +285,8 @@ export class EventSampler {
     return { x: state.x + local.x * Math.cos(angle) + local.y * Math.sin(angle), y: -state.y + local.x * Math.sin(angle) - local.y * Math.cos(angle), line };
   }
 
-  applyPoint(point) {
-    const mode = this.mode; const current = this.handle(this.draftChart); const event = eventListAt({ chart: this.draftChart, eventLayer: this.session.eventLayer }, mode.lineIndex, mode.type)?.[mode.index];
+  applyPoint(point, snap = false, free = false) {
+    const mode = this.mode; const current = this.handle(this.draftChart); const event: any = eventListAt({ chart: this.draftChart, eventLayer: this.session.eventLayer }, mode.lineIndex, mode.type)?.[mode.index];
     if (!event) return;
     if (mode.paired) {
       const paired = eventListAt({ chart: this.draftChart, eventLayer: this.session.eventLayer }, mode.lineIndex, mode.paired.type)?.[mode.paired.index];
@@ -273,11 +297,12 @@ export class EventSampler {
       const horizontal = probe.x - current.x, vertical = probe.y - current.y;
       const pairedHorizontal = pairedProbe.x - current.x, pairedVertical = pairedProbe.y - current.y;
       const determinant = horizontal * pairedVertical - pairedHorizontal * vertical;
-      if (Math.abs(determinant) < 1e-10) return;
+      if (Math.abs(determinant) < 1e-10) throw Error(t('spatial.singular'));
       const errorX = point.x - current.x, errorY = point.y - current.y;
       value += (errorX * pairedVertical - errorY * pairedHorizontal) / determinant;
       pairedValue += (horizontal * errorY - vertical * errorX) / determinant;
       if (!Number.isFinite(value) || !Number.isFinite(pairedValue)) return;
+      if (snap && !free && samplingPreferences().coordinates === 'local') { const settings=samplingPreferences(); const snapped=snapSamplePoint(mode.type==='moveXEvents'?{x:value,y:pairedValue}:{x:pairedValue,y:value},{settings}); value=mode.type==='moveXEvents'?snapped.x:snapped.y; pairedValue=mode.type==='moveXEvents'?snapped.y:snapped.x; }
       this.draftChart = this.eventChart(round(value), round(pairedValue)); this.invalidate(); return;
     }
     let value = Number(event[mode.field]);
@@ -285,17 +310,16 @@ export class EventSampler {
       const probe = this.handle(this.eventChart(value + 1));
       const horizontal = probe.x - current.x; const vertical = probe.y - current.y;
       const length = horizontal * horizontal + vertical * vertical;
-      if (length < 1e-8) return;
+      if (length < 1e-8) throw Error(t('spatial.singular'));
       value += ((point.x - current.x) * horizontal + (point.y - current.y) * vertical) / length;
     } else {
-      for (let iteration = 0; iteration < 10; iteration++) {
-        const chart = this.eventChart(value); const now = this.handle(chart); const probe = this.handle(this.eventChart(value + 0.01));
-        const dx = (probe.x - now.x) / 0.01; const dy = (probe.y - now.y) / 0.01; const length = dx * dx + dy * dy;
-        if (length < 1e-8) break;
-        const errorX = point.x - now.x; const errorY = point.y - now.y; value += (errorX * dx + errorY * dy) / length;
-        if (Math.hypot(errorX, errorY) < 1e-4) break;
-      }
+      this.scene.compile(this.samplingChart(this.draftChart),this.context.tempo);
+      const renderer=this.context.previewVisible?this.context.preview:this.context.realtimePreview,state=this.scene.sampler(this.seconds,previewPositionScale(renderer.aspectRatio??1.5))(mode.lineIndex);
+      const dx=point.x-state.x,dy=point.y+state.y;if(Math.hypot(dx,dy)<1e-8)throw Error(t('spatial.singular'));
+      value+=unwrapAngle(Math.atan2(-dx,dy)*180/Math.PI,state.rotation)-state.rotation;
     }
+    if (snap && mode.type === 'rotateEvents') { const settings=samplingPreferences(); const renderer=this.context.previewVisible?this.context.preview:this.context.realtimePreview; const scale=previewPositionScale(renderer.aspectRatio??1.5); const targets=this.snapTargets.get(mode.base,this.context.tempo,this.seconds,scale,{lineIndex:mode.lineIndex}); const state=this.scene.sampler(this.seconds,scale)(mode.lineIndex); const effective=state.rotation+(value-event[mode.field]); const result=snapSampleAngle(effective,{settings,targets,previous:this.angleSnap,free,origin:this.drag?.angle??effective});value+=result.angle-effective;this.angleSnap=result; }
+
     if (!Number.isFinite(value)) return;
     this.draftChart = this.eventChart(round(value)); this.invalidate();
   }
@@ -305,7 +329,9 @@ export class EventSampler {
     event.preventDefault(); event.stopPropagation();
     const view = this.view(); const handle = view.screen(this.handle(this.draftChart)); const point: any = { x: event.clientX - view.rectangle.left, y: event.clientY - view.rectangle.top };
     if (Math.hypot(point.x - handle.x, point.y - handle.y) > 28) return;
-    this.drag = { pointer: { x: event.clientX, y: event.clientY }, offset: { x: point.x - handle.x, y: point.y - handle.y } }; this.canvas.setPointerCapture(event.pointerId);
+    this.snapResult=this.localSnap=this.angleSnap=null;
+    const renderer=this.context.previewVisible?this.context.preview:this.context.realtimePreview;this.scene.compile(this.samplingChart(this.draftChart),this.context.tempo);const angle=this.scene.sampler(this.seconds,previewPositionScale(renderer.aspectRatio??1.5))(this.mode.lineIndex).rotation;
+    this.drag = { angle, pointer: { x: event.clientX, y: event.clientY }, origin: {x:handle.x,y:-handle.y}, offset: { x: point.x - handle.x, y: point.y - handle.y } }; this.canvas.setPointerCapture(event.pointerId);
   }
 
   move(event) {
@@ -313,7 +339,18 @@ export class EventSampler {
     event.preventDefault();
     this.drag.pointer = { x: event.clientX, y: event.clientY };
     const view = this.view(); const point: any = { x: event.clientX - view.rectangle.left - this.drag.offset.x, y: event.clientY - view.rectangle.top - this.drag.offset.y };
-    this.applyPoint(view.world(point)); this.fitView();
+    let world=view.world(point);
+    if (this.snapTargets && this.mode.type!=='rotateEvents' && samplingPreferences().coordinates!=='local') {
+      const renderer=this.context.previewVisible?this.context.preview:this.context.realtimePreview, scale=previewPositionScale(renderer.aspectRatio??1.5);
+      const settings={...samplingPreferences(),stepX:samplingPreferences().stepX*scale.x,stepY:samplingPreferences().stepY*scale.y}, targets=this.snapTargets.get(this.mode.base,this.context.tempo,this.seconds,scale,{lineIndex:this.mode.lineIndex,renderer});
+      const options={settings,targets,scale:view.scale,previous:this.snapResult,origin:this.drag.origin,free:event.altKey};if(this.mode.paired)this.snapResult=snapSamplePoint({x:world.x,y:-world.y},options);else{const mode=this.mode,value=eventListAt({chart:this.draftChart,eventLayer:mode.layer},mode.lineIndex,mode.type)[mode.index][mode.field],base=this.handle(this.draftChart),probe=this.handle(this.eventChart(value+1));this.snapResult=snapConstrainedPoint({x:world.x,y:-world.y},{x:base.x,y:-base.y},{x:probe.x-base.x,y:base.y-probe.y},options);} world={x:this.snapResult.x,y:-this.snapResult.y};
+    }
+    let localSnap=false;
+    if(this.snapTargets&&this.mode.type!=='rotateEvents'&&samplingPreferences().coordinates==='local'){
+      const basis=this.localGrid(),point: any=sampleInBasis({x:world.x,y:-world.y},basis);if(point){const mode=this.mode,renderer=this.context.previewVisible?this.context.preview:this.context.realtimePreview,scale=previewPositionScale(renderer.aspectRatio??1.5),targets=this.snapTargets.get(mode.base,this.context.tempo,this.seconds,scale,{lineIndex:mode.lineIndex,renderer}).map(target=>({...target,...sampleInBasis(target,basis)})),options={settings:samplingPreferences(),targets,scale:{x:view.scale*Math.hypot(basis.x.x,basis.x.y),y:view.scale*Math.hypot(basis.y.x,basis.y.y)},previous:this.localSnap,free:event.altKey};let result;
+      if(mode.paired)result=snapSamplePoint(point,options);else{const current=sampleInBasis({x:this.handle(this.draftChart).x,y:-this.handle(this.draftChart).y},basis);result=snapConstrainedPoint(point,current,mode.type==='moveXEvents'?{x:1,y:0}:{x:0,y:1},options);}this.localSnap=result;const p=sampleFromBasis(result,basis);this.snapResult={...p,guides:result.guides,basis};world={x:p.x,y:-p.y};localSnap=true;}
+    }
+    try{this.applyPoint(world,Boolean(this.controls)&&!localSnap,event.altKey);this.sampleError=null;this.fitView();}catch(error){if(this.sampleError!==error.message)this.notify?.(error.message,'warning');this.sampleError=error.message;}
   }
 
   up(event) {
@@ -321,9 +358,30 @@ export class EventSampler {
     this.canvas.releasePointerCapture?.(event.pointerId); this.drag = null;
   }
 
+  localGrid() {
+    const mode=this.mode;if(!mode||mode.type==='rotateEvents')return;
+    const value=eventListAt({chart:this.draftChart,eventLayer:mode.layer},mode.lineIndex,mode.type)[mode.index][mode.field];
+    const pair=mode.paired?eventListAt({chart:this.draftChart,eventLayer:mode.layer},mode.lineIndex,mode.paired.type)[mode.paired.index][mode.field]:0;
+    const current=this.handle(this.draftChart),probe=this.handle(this.eventChart(value+1,pair));
+    const axis={x:probe.x-current.x,y:current.y-probe.y};
+    const paired=mode.paired?this.handle(this.eventChart(value,pair+1)):null;
+    const other=paired?{x:paired.x-current.x,y:current.y-paired.y}:mode.type==='moveXEvents'?{x:-axis.y,y:axis.x}:{x:axis.y,y:-axis.x};
+    const basis={origin:{x:current.x-value*axis.x-pair*other.x,y:-current.y-value*axis.y-pair*other.y},x:mode.type==='moveXEvents'?axis:other,y:mode.type==='moveYEvents'?axis:other};
+    return basis;
+  }
+
   draw() {
     if (!this.mode) return;
-    const { context, width, height } = prepareCanvas(this.canvas); const view = this.view(); const point = view.screen(this.handle(this.draftChart));
-    context.save(); context.strokeStyle = '#70efaa'; context.lineWidth = 2; context.beginPath(); context.moveTo(point.x - 16, point.y); context.lineTo(point.x + 16, point.y); context.moveTo(point.x, point.y - 16); context.lineTo(point.x, point.y + 16); context.stroke(); context.fillStyle = '#d2ffe4'; context.font = '13px sans-serif'; context.fillText('拖动绿色控制点 · Esc 取消 · 完成后点击完成取样', 14, height - 18); context.restore();
+    const { context, width, height } = prepareCanvas(this.canvas); const view = this.view(); const point: any = view.screen(this.handle(this.draftChart));
+    const worldView={...view,screen:p=>view.screen({x:p.x,y:-p.y})};
+    const renderer=this.context.previewVisible?this.context.preview:this.context.realtimePreview;
+    const state=this.scene.sampler(this.seconds,previewPositionScale(renderer.aspectRatio??1.5))(this.mode.lineIndex);
+    const settings=samplingPreferences(),basis=settings.coordinates==='local'?this.localGrid():settings.coordinates==='delta'&&this.drag?{origin:this.drag.origin,x:{x:previewPositionScale(renderer.aspectRatio??1.5).x,y:0},y:{x:0,y:previewPositionScale(renderer.aspectRatio??1.5).y}}:undefined;
+    drawSamplingGrid(context,worldView,{rotation:this.mode.type==='rotateEvents',center:state,angle:state.rotation*Math.PI/180,positionScale:previewPositionScale(renderer.aspectRatio??1.5),basis});
+    drawSnapGuides(context,worldView,this.snapResult);
+    const source: any=eventListAt({chart:this.draftChart,eventLayer:this.session.eventLayer},this.mode.lineIndex,this.mode.type)[this.mode.index];
+    this.controls?.updateValues({value:source[this.mode.field],paired:this.mode.paired?eventListAt({chart:this.draftChart,eventLayer:this.mode.layer},this.mode.lineIndex,this.mode.paired.type)[this.mode.paired.index][this.mode.field]:NaN});
+    this.controls?.sync(this.mode.type==='rotateEvents',`${t('spatial.lineNumber',{number:this.mode.lineIndex})} · ${t('spatial.eventLayer',{number:this.mode.layer})} · ${this.mode.field==='end'?t('sampling.end'):t('sampling.start')}\n${t('spatial.position')} ${displayPosition(state)}　${displayNumber(state.rotation)}°`);
+    context.save(); context.strokeStyle = '#70efaa'; context.lineWidth = 2; context.beginPath(); context.moveTo(point.x - 16, point.y); context.lineTo(point.x + 16, point.y); context.moveTo(point.x, point.y - 16); context.lineTo(point.x, point.y + 16); context.stroke(); context.restore();
   }
 }

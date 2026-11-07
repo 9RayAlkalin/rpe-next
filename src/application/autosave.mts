@@ -1,9 +1,9 @@
 export class AutoSaveClock {
-  last: any;
-  pending: any;
-  reportError: any;
-  save: any;
-  timer: any;
+  declare last: any;
+  declare pending: any;
+  declare reportError: any;
+  declare save: any;
+  declare timer: any;
 
   constructor(save, reportError) {
     this.save = save;

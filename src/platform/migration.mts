@@ -3,6 +3,7 @@ import { migratePreferences } from '../core/preferences.mjs';
 import { decodeLegacy, parseInfo } from './legacy-text.mjs';
 import { assetBytes } from './files.mjs';
 import { isBackupChartFile, isChartDocumentFile } from '../core/chart-backups.mjs';
+import { t } from '../i18n.mjs';
 export { decodeLegacy, parseInfo } from './legacy-text.mjs';
 
 async function migrationProjectId(sourceName, path) {
@@ -44,8 +45,8 @@ export function uploadedEntries(files) {
 
 async function textEntry(entry) { return entry ? decodeLegacy(await (await entry.getFile()).arrayBuffer()) : ''; }
 
-export async function scanMigration(entries: any, sourceName: any, { includeBackupCharts = false }: any = {}) {
-  if (!entries.some(entry => /^resources\//i.test(entry.path))) throw new Error('请选择包含 Resources 的 RPE 主文件夹（通常是 PhiEditer），不是源码或 build 目录');
+export async function scanMigration(entries, sourceName, { includeBackupCharts = false } = {}) {
+  if (!entries.some(entry => /^resources\//i.test(entry.path))) throw new Error(t('migration.s8a606fd'));
   const ignored = includeBackupCharts ? [] : entries.filter(entry => isBackupChartFile(entry.path)).map(entry => entry.path);
   entries = entries.filter(entry => includeBackupCharts || !isBackupChartFile(entry.path));
   const lookup = new Map(entries.map(entry => [entry.path.toLowerCase(), entry]));
@@ -71,7 +72,7 @@ export async function scanMigration(entries: any, sourceName: any, { includeBack
     const path = directory + (info.Chart ?? '');
     if (!includeBackupCharts && isBackupChartFile(path)) continue;
     const entry: any = lookup.get(path.toLowerCase());
-    if (!entry) { failures.push({ path, message: 'info.txt 引用的谱面不存在' }); continue; }
+    if (!entry) { failures.push({ path, message: t('migration.s4e26df0') }); continue; }
     selectedPaths.add(entry.path);
     projects.push({ path: entry.path, directory, info, entry });
   }
@@ -124,7 +125,7 @@ export async function materializeProject(plan, project) {
   }
   for (const name of [project.info.Song, project.info.Picture, project.chart.META.song, project.chart.META.background]) {
     if (!name || assets.has(name)) continue;
-    const entry = assetBytes(references, name, project.path) ?? assetBytes(references, `Resources/${name}`);
+    const entry: any = assetBytes(references, name, project.path) ?? assetBytes(references, `Resources/${name}`);
     if (entry) {
       const file = await entry.getFile(); bytes += file.size;
       assets.set(name, new Uint8Array(await file.arrayBuffer()));

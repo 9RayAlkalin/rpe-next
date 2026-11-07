@@ -154,7 +154,7 @@ function open(project: RpenHomeSummary) { props.openProject(project.id).catch(pr
 function edit(project: RpenHomeSummary) { props.actions.edit(project).catch(props.reportError); }
 function modify(project: RpenHomeSummary, transform: Parameters<RpenHomePanelProps['actions']['modify']>[1]) { props.actions.modify(project.id, transform).catch(props.reportError); }
 function remove(project: RpenHomeSummary) { props.actions.remove(project).catch(props.reportError); }
-function duplicate(project: RpenHomeSummary) { modify(project, source => ({ ...source, id: crypto.randomUUID(), storageRevision: null, source: 'Next 项目副本', pinned: false, archived: false, chart: { ...source.chart, META: { ...source.chart.META, name: `${source.chart.META.name} 副本` } } })); }
+function duplicate(project: RpenHomeSummary) { modify(project, source => ({ ...source, id: crypto.randomUUID(), vcsId: crypto.randomUUID(), storageRevision: null, source: 'Next 项目副本', pinned: false, archived: false, chart: { ...source.chart, META: { ...source.chart.META, name: `${source.chart.META.name} 副本` } } })); }
 
 function onScroll() {
   if (scrollScheduled) return;

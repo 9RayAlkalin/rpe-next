@@ -1,12 +1,13 @@
 import { beatValue } from '../core/beat.mjs';
 import { editorSkinContext } from './editor-skin-canvas.mjs';
+import { t } from '../i18n.mjs';
 
 const colors: any = { 1: '#8acbff', 2: '#8acbff', 3: '#f596ac', 4: '#f1ce76' };
 
 export function drawClipboardThumbnail(canvas, entry) {
   canvas.classList.add('clipboard-thumbnail');
   canvas.width = 480; canvas.height = 160;
-  const context = editorSkinContext(canvas.getContext('2d'));
+  const context = (editorSkinContext as any)(canvas.getContext('2d'));
   const items = [...entry.notes, ...entry.events.map(item => item.event)];
   let first = Infinity; let last = -Infinity;
   for (const item of items) { first = Math.min(first, beatValue(item.startTime)); last = Math.max(last, beatValue(item.endTime)); }
@@ -40,29 +41,30 @@ export function renderClipboardHistory(host, history, actions) {
   const focused = document.activeElement?.closest('[data-clipboard-id]');
   const focusId = focused?.dataset.clipboardId; const focusAction = document.activeElement?.dataset.action;
   host.replaceChildren();
-  if (!history.entries.length) { const empty = document.createElement('p'); empty.className = 'hint'; empty.textContent = '复制或剪切选中物件后，这里会显示缩览图。'; host.append(empty); return; }
+  if (!history.entries.length) { const empty = document.createElement('p'); empty.className = 'hint'; empty.textContent = t('clipboard-history.s385021c'); host.append(empty); return; }
   for (const entry of [...history.entries].sort((left, right) => Number(right.pinned) - Number(left.pinned))) {
     const card = document.createElement('article'); card.className = 'clipboard-card'; card.dataset.clipboardId = entry.id;
     card.classList.toggle('active', history.activeId === entry.id);
     const select = document.createElement('button'); select.type = 'button'; select.className = 'clipboard-select'; select.dataset.action = 'use';
     select.setAttribute('aria-pressed', String(history.activeId === entry.id));
     const picture = document.createElement('canvas'); picture.setAttribute('aria-hidden', 'true'); drawClipboardThumbnail(picture, entry);
-    const title = document.createElement('strong'); title.textContent = `${entry.pinned ? '◆ ' : ''}${entry.notes.length} 音符 · ${entry.events.length} 事件`;
-    const details = document.createElement('span'); details.textContent = `${entry.source} · 线 ${entry.line} · ${new Date(entry.created).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
-    select.setAttribute('aria-label', `选用：${entry.name || title.textContent}，${details.textContent}`); select.onclick = () => actions.use(entry.id);
+    const noteCount=entry.notes.reduce((sum,note)=>sum+(note._rpenLargeClipboard?.total??note._rpenLargeCopies??1),0);
+    const title = document.createElement('strong'); title.textContent = t('clipboard-history.s444c700', { p0: entry.pinned ? '◆ ' : '', p1: noteCount, p2: entry.events.length });
+    const details = document.createElement('span'); details.textContent = t('clipboard-history.se0c9a04', { p0: entry.source, p1: entry.line, p2: new Date(entry.created).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) });
+    select.setAttribute('aria-label', t('clipboard-history.sc2ebd01', { p0: entry.name || title.textContent, p1: details.textContent })); select.onclick = () => actions.use(entry.id);
     select.append(picture, title, details); card.append(select);
     const name = document.createElement('input'); name.type = 'text'; name.maxLength = 40; name.className = 'clipboard-name'; name.dataset.action = 'name';
-    name.value = entry.name ?? ''; name.placeholder = '命名此组…'; name.setAttribute('aria-label', `物件组名称：${entry.name || title.textContent}`);
+    name.value = entry.name ?? ''; name.placeholder = t('clipboard-history.sb1da9c9'); name.setAttribute('aria-label', t('clipboard-history.sd727ebc', { p0: entry.name || title.textContent }));
     name.oninput = () => {
       history.rename(entry.id, name.value);
-      name.setAttribute('aria-label', `物件组名称：${entry.name || title.textContent}`);
-      select.setAttribute('aria-label', `选用：${entry.name || title.textContent}，${details.textContent}`);
+      name.setAttribute('aria-label', t('clipboard-history.sd727ebc', { p0: entry.name || title.textContent }));
+      select.setAttribute('aria-label', t('clipboard-history.sc2ebd01', { p0: entry.name || title.textContent, p1: details.textContent }));
     };
     name.onchange = () => { name.value = entry.name; };
     name.onkeydown = event => { if (event.key === 'Enter') { event.preventDefault(); name.blur(); } };
     card.append(name);
     const buttons = document.createElement('div'); buttons.className = 'clipboard-actions';
-    for (const [key, label, action] of ([['pin', entry.pinned ? '取消固定' : '固定', () => history.pin(entry.id)], ['delete', '删除记录', () => history.remove(entry.id)]] as [string, string, () => any][])) {
+    for (const [key, label, action] of [['pin', entry.pinned ? t('clipboard-history.s09250f2') : t('clipboard-history.sf34fcf6'), () => history.pin(entry.id)], ['delete', t('clipboard-history.s8f22c99'), () => history.remove(entry.id)]]) {
       const button = document.createElement('button'); button.type = 'button'; button.dataset.action = key; button.textContent = label; button.onclick = action; buttons.append(button);
     }
     card.append(buttons); host.append(card);

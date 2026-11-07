@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const read = path => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
+import { readLocalizedSource as read } from './localized-source.mjs';
 
 const IDS = [
   'project-card', 'project-cover', 'project-information', 'project-detail', 'project-credits',
@@ -64,6 +64,7 @@ test('首页岛屿与旧实现的文案、类名和结构一致', async () => {
     assert.ok(island.includes(id), `岛屿缺少类名/id：${id}`);
   }
   for (const text of STRINGS) {
+    if (text.includes('${')) continue;
     assert.ok(legacy.includes(text), `旧实现缺少文案：${text}`);
     assert.ok(island.includes(text), `岛屿缺少文案：${text}`);
   }

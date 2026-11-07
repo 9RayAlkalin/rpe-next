@@ -1,31 +1,42 @@
-import { groupLineIndices, groupNames } from '../core/line-groups.mjs';
+import { groupLineIndices, groupNames, reservedLineGroupName } from '../core/line-groups.mjs';
+import { t } from '../i18n.mjs';
 
 export function normalizeLineIndices(indices: any, lineCount: any) {
   return [...new Set((indices ?? []).filter((index: any) => Number.isInteger(index) && index >= 0 && index < lineCount))].sort((a: any, b: any) => a - b);
 }
 
-export function parseLineExpression(text: any, lineCount: any, chart: any = null) {
+export function compileLineExpression(text, lineCount, chart = null) {
   const values = [];
+  const dynamic = new Set();
   const groups = new Map(groupNames(chart).map((name, index) => [name, index]));
   for (const token of String(text ?? '').trim().split(/\s+/).filter(Boolean)) {
     const range = token.split(':');
-    if (range.length === 1 && groups.has(token)) values.push(...groupLineIndices(chart, groups.get(token)));
+    if (['@notes', '@events'].includes(token.toLowerCase())) dynamic.add(token.toLowerCase().slice(1));
+    else if (token.toLowerCase() === 'all') values.push(...Array.from({ length: lineCount }, (unused, index) => index));
+    else if (range.length === 1 && groups.has(token)) values.push(...groupLineIndices(chart, groups.get(token)));
     else if (range.length === 1 && /^[-+]?\d+$/.test(token)) values.push(Number(token));
     else if (range.length === 2 && /^[-+]?\d+$/.test(range[0]) && /^[-+]?\d+$/.test(range[1])) {
       const start = Number(range[0]); const end = Number(range[1]);
-      if (start > end) throw new Error(`线号范围无效：${token}`);
-      for (let index = start; index <= end; index++) values.push(index);
-    } else throw new Error(`无法解析线号：${token}`);
+      if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start > end) throw new Error(t('multi-line-edit.s144ae04', { p0: token }));
+      for (let index = Math.max(0, start); index <= Math.min(lineCount - 1, end); index++) values.push(index);
+    } else throw new Error(t('multi-line-edit.s6aa7d11', { p0: token }));
   }
-  return normalizeLineIndices(values, lineCount);
+  return { indices: normalizeLineIndices(values, lineCount), dynamic: [...dynamic] };
+}
+
+export function parseLineExpression(text, lineCount, chart = null, current) {
+  const compiled = compileLineExpression(text, lineCount, chart);
+  if (compiled.dynamic.length && !current) throw new Error(t('multi-line-edit.needsViewport'));
+  return normalizeLineIndices([...compiled.indices, ...(compiled.dynamic.flatMap as any)(kind => current[kind] ?? [])], lineCount);
 }
 
 export function formatLineExpression(indices: any, chart: any = null) {
   const values = normalizeLineIndices(indices, Number.MAX_SAFE_INTEGER);
+  if (chart?.judgeLineList?.length && values.length === chart.judgeLineList.length && values.every((value, index) => value === index)) return 'all';
   const tokens = [];
   const remaining = new Set<any>(values);
   if (chart) for (const [groupIndex, name] of groupNames(chart).entries()) {
-    if (groupIndex === 0 || !name || /\s/.test(name)) continue;
+    if (groupIndex === 0 || !name || /\s/.test(name) || reservedLineGroupName(name)) continue;
     const members = groupLineIndices(chart, groupIndex);
     if (members.length && members.every(index => remaining.has(index))) { tokens.push(name); members.forEach(index => remaining.delete(index)); }
   }
@@ -40,8 +51,8 @@ export function formatLineExpression(indices: any, chart: any = null) {
   return tokens.join(' ');
 }
 
-export function multiLineState(session: any) {
-  return { enabled: Boolean(session.multiLineEnabled), mode: session.multiLineMode === 'events' ? 'events' : 'notes', merge: session.multiLineMerge !== false, indices: normalizeLineIndices(session.multiLineIndices, session.chart.judgeLineList?.length ?? 0) };
+export function multiLineState(session) {
+  return { enabled: Boolean(session.multiLineEnabled), mode: session.multiLineMode === 'events' ? 'events' : 'notes', merge: session.multiLineMerge !== false, indices: normalizeLineIndices(session.multiLineIndices, session.chart.judgeLineList?.length ?? 0), ...(session.multiLineExpression ? { expression: session.multiLineExpression } : {}) };
 }
 
 export function setMultiLineState(session: any, state: any = {}) {
@@ -49,7 +60,9 @@ export function setMultiLineState(session: any, state: any = {}) {
   session.multiLineMode = state.mode === 'events' ? 'events' : 'notes';
   session.multiLineMerge = state.merge !== false;
   session.multiLineIndices = normalizeLineIndices(state.indices, session.chart.judgeLineList?.length ?? 0);
-  if (session.multiLineEnabled && !session.multiLineIndices.length && session.chart.judgeLineList?.length) session.multiLineIndices = [session.lineIndex];
+  session.multiLineExpression = state.expression ?? '';
+  if (session.multiLineExpression) session.multiLineResolvedIndices = session.multiLineIndices;
+  if (session.multiLineEnabled && !session.multiLineIndices.length && !session.multiLineExpression && session.chart.judgeLineList?.length) session.multiLineIndices = [session.lineIndex];
   return multiLineState(session);
 }
 

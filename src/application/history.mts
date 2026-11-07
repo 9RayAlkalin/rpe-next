@@ -1,9 +1,9 @@
 export class History {
-  document: any;
-  limit: any;
-  redoStack: any;
-  savedDocument: any;
-  undoStack: any;
+  declare document: any;
+  declare limit: any;
+  declare redoStack: any;
+  declare savedDocument: any;
+  declare undoStack: any;
 
   constructor(document, limit = 150) {
     this.document = document;

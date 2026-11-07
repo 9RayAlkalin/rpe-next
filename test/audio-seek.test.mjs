@@ -5,6 +5,8 @@ import { EditorPlayback } from '../src/application/playback.mjs';
 import { HitSounds } from '../src/platform/hitsounds.mjs';
 import { createChart, createNote } from '../src/core/chart.mjs';
 import { TempoMap } from '../src/core/tempo.mjs';
+import { SceneRuntime } from '../src/core/scene.mjs';
+import { recentHits } from '../src/core/hit-effects.mjs';
 
 class SeekingMedia extends EventTarget {
   duration = 120;
@@ -20,6 +22,7 @@ class SeekingMedia extends EventTarget {
   finishSeek() { this.current = this.target; this.seeking = false; this.dispatchEvent(new Event('seeked')); }
   play() { this.paused = false; this.plays++; return this.pending ?? Promise.resolve(); }
   pause() { this.paused = true; }
+  removeAttribute() {} load() {}
 }
 
 function setup() {
@@ -32,6 +35,50 @@ function setup() {
   audio.media = new SeekingMedia();
   return { audio, context, starts };
 }
+
+test('从时间滑条结尾重播时先通知视图回到音频零秒，正负 offset 与零秒特效均保留', async () => {
+  for (const offset of [-500, 0, 500]) {
+    const { audio, context, starts } = setup(); audio.media = null; audio.buffer = { duration: 10 };
+    const chart = createChart(); chart.META.offset = offset; chart.BPMList = [{ bpm: 120, startTime: [0, 0, 1] }];
+    chart.judgeLineList[0].notes = [createNote(1, Math.max(0, -offset / 1000) * 2, 0)];
+    const scene = new SceneRuntime(); scene.compile(chart, new TempoMap(chart.BPMList));
+    let since = Infinity, seekCount = 0;
+    const playback = new EditorPlayback(audio, { stop() {}, async prepare() {} }, () => {
+      assert.equal(audio.time, 0); assert.equal(audio.playing, false); assert.equal(starts.length, 0);
+      since = audio.time - offset / 1000 - .001; seekCount++;
+    });
+    audio.seek(audio.duration); await playback.toggle(chart);
+    assert.equal(seekCount, 1); assert.equal(audio.playing, true); assert.equal(starts[0].offset, 0);
+    context.currentTime = Math.max(0, offset / 1000) + .05;
+    assert.equal(recentHits(scene.lines[0], audio.time - offset / 1000, since).length, 1);
+  }
+});
+
+test('中途播放与已取消的结尾播放准备不会隐式回零，迟到的准备结果不会恢复播放', async () => {
+  const { audio } = setup(); audio.media = null; audio.buffer = { duration: 10 };
+  let seekCount = 0, release;
+  const sounds = { stop() {}, prepare: async () => {} }, playback = new EditorPlayback(audio, sounds, () => { seekCount++; });
+  audio.seek(4); await playback.toggle(createChart()); assert.equal(audio.time, 4); assert.equal(seekCount, 0); playback.pause();
+  audio.seek(10); sounds.prepare = () => new Promise(resolve => { release = resolve; });
+  const pending = playback.toggle(createChart()); await playback.toggle(createChart()); release(); await pending;
+  assert.equal(audio.time, 10); assert.equal(audio.playing, false); assert.equal(seekCount, 0); assert.equal(playback.pending, false);
+});
+
+test('超大谱音乐直接使用流式 URL，保持定位与倍速且不解码整首音频', async () => {
+  const original = globalThis.Audio;
+  class LoadedMedia extends SeekingMedia { set src(value) { this.url = value; queueMicrotask(() => this.onloadedmetadata?.()); } }
+  globalThis.Audio = LoadedMedia;
+  const { audio, context } = setup(); audio.media = null;
+  context.createMediaElementSource = () => ({ connect() {}, disconnect() {} });
+  context.decodeAudioData = () => { throw Error('must not decode'); };
+  try {
+    await audio.loadStream('rpe://app/__large-preview/test/music', 1000);
+    assert.equal(audio.buffer, null); assert.equal(audio.usesMedia, true); assert.equal(audio.media.url, 'rpe://app/__large-preview/test/music');
+    audio.seek(30); audio.media.finishSeek(); assert.equal(audio.time, 30);
+    audio.clear(); await audio.loadStream(null, 1000); assert.equal(audio.duration, 1000);
+    audio.clear(); assert.equal(audio.duration, 600);
+  } finally { audio.clear(); globalThis.Audio = original; }
+});
 
 test('载入音乐优先保存解码样本；解码器不支持时仍可回退原生媒体', async () => {
   const original = globalThis.Audio;
@@ -204,4 +251,48 @@ test('媒体负时间预滚不会预先调度越过音乐起点的打击音', as
   assert.equal(starts.length, 0);
   context.currentTime = 0.05; audio.update(); await Promise.resolve(); sounds.tick(chart, tempo);
   assert.equal(starts.length, 1);
+});
+
+test('临时声部播放保持原音乐与时长，暂停/倍速/保调/定位共用同一个时钟，恢复原音乐位置不跳变', async () => {
+  const previous = globalThis.Audio;
+  class StemMedia extends SeekingMedia {
+    set src(value) { queueMicrotask(() => this.onloadedmetadata?.()); }
+    removeAttribute() {} load() {}
+  }
+  globalThis.Audio = StemMedia;
+  const { audio, context } = setup(), streams = [];
+  context.createMediaElementSource = media => ({ connect() { streams.push(media); }, disconnect() {} });
+  const samples = new Float32Array(12000), original = { duration: 100, length: 12000, numberOfChannels: 1, sampleRate: 12000, getChannelData: () => samples }, stem = { ...original, getChannelData: () => Float32Array.from(samples, () => .25) }; audio.buffer = original;
+  try {
+    audio.seek(10); await audio.play(); context.currentTime = 1; await audio.setPlaybackBuffer(stem); assert.equal(audio.time, 11); assert.equal(audio.buffer, original); assert.equal(audio.playbackBuffer, stem); assert.equal(audio.duration, 100); assert.equal(audio.playing, true);
+    audio.setRate(.75); const active = audio.playbackMedia; assert.notEqual(active, audio.media); assert.equal(active.playbackRate, .75); active.finishSeek(); await Promise.resolve(); await Promise.resolve(); active.current = 12.25; audio.pause(); assert.equal(audio.time, 12.25);
+    const seeks = active.seeks; await audio.play(); assert.equal(active.seeks, seeks); assert.equal(audio.time, 12.25); audio.setPreservePitch(false); assert.equal(audio.usesMedia, false); context.currentTime += 1; assert.equal(audio.time, 13);
+    audio.resetPlaybackBuffer(); assert.equal(audio.playbackBuffer, original); assert.equal(audio.time, 13); assert.equal(audio.playing, true); audio.setPreservePitch(true); audio.media.finishSeek(); await Promise.resolve(); assert.equal(audio.media.playbackRate, .75); assert.equal(audio.time, 13);
+    audio.pause(); audio.clear(); assert.equal(audio.playbackOverride, null); assert.equal(audio.buffer, null);
+  } finally { globalThis.Audio = previous; }
+});
+
+test('声部媒体准备途中取消或清空音乐，不会恢复迟到音源', async () => {
+  const previous = globalThis.Audio;
+  class StemMedia extends SeekingMedia { set src(value) { queueMicrotask(() => this.onloadedmetadata?.()); } removeAttribute() {} load() {} }
+  globalThis.Audio = StemMedia;
+  const { audio, context } = setup(); context.createMediaElementSource = () => ({ connect() {}, disconnect() {} });
+  const samples = new Float32Array(96000), original = { duration: 2, length: samples.length, numberOfChannels: 1, sampleRate: 48000, getChannelData: () => samples }; audio.buffer = original;
+  try {
+    const controller = new AbortController(), pending = audio.setPlaybackBuffer({ ...original }, { signal: controller.signal }); controller.abort(); await assert.rejects(pending, { name: 'AbortError' }); assert.equal(audio.playbackOverride, null);
+    const stale = audio.setPlaybackBuffer({ ...original }); audio.clear(); await assert.rejects(stale, { name: 'AbortError' }); assert.equal(audio.playbackOverride, null); assert.equal(audio.buffer, null);
+  } finally { globalThis.Audio = previous; }
+});
+
+test('缓存声部播放资源，切回后复用媒体和PCM地址，清空音乐释放全部缓存', async () => {
+  const previous = globalThis.Audio;
+  class StemMedia extends SeekingMedia { set src(value) { this.url = value; queueMicrotask(() => this.onloadedmetadata?.()); } removeAttribute() {} load() {} }
+  globalThis.Audio = StemMedia;
+  const { audio, context } = setup(); let mediaSources = 0; context.createMediaElementSource = () => { mediaSources++; return { connect() {}, disconnect() {} }; };
+  const samples = new Float32Array(12000), original = { duration: 1, length: 12000, numberOfChannels: 1, sampleRate: 12000, getChannelData: () => samples }, first = { ...original }, second = { ...original }; audio.buffer = original;
+  try {
+    await audio.setPlaybackBuffer(first); const prepared = audio.playbackOverride; await audio.setPlaybackBuffer(second); audio.resetPlaybackBuffer(); audio.seek(.3); audio.setRate(.75);
+    await audio.setPlaybackBuffer(first); assert.equal(audio.playbackOverride, prepared); assert.equal(audio.playbackMedia, prepared.media); assert.equal(mediaSources, 2); assert.equal(audio.playbackMedia.playbackRate, .75); assert.equal(audio.time, .3);
+    assert.equal((await fetch(prepared.url)).ok, true); audio.clear(); assert.equal(audio.playbackCache.size, 0); assert.equal(audio.playbackCache.bytes, 0); await assert.rejects(fetch(prepared.url));
+  } finally { globalThis.Audio = previous; }
 });

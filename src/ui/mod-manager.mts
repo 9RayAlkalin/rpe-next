@@ -4,6 +4,7 @@ import { ModRuntime,shortcutFromEvent,formatShortcut } from './mod-runtime.mjs';
 import { builtinMods,readMods,storeMod,deleteMod,importMod,exportMod } from '../platform/mods.mjs';
 import { download } from '../platform/files.mjs';
 import { installModApi } from './mod-api.mjs';
+import { localizedValue, t } from '../i18n.mjs';
 
 const ENABLED='rpe-next-mod-enabled-v1',OPTIONS='rpe-next-mod-options-v1',BOOT='rpe-next-mod-boot-v1';
 const read=(key,fallback)=>{try{return JSON.parse(localPreferences.getItem(key))??fallback;}catch{return fallback;}};
@@ -12,26 +13,31 @@ const text=(tag,value,className='')=>{const node=document.createElement(tag);nod
 const button=(value,run)=>{const node=document.createElement('button');node.type='button';node.textContent=value;node.onclick=run;return node;};
 const shimText=(apply,initial='')=>{let value=initial;return{get textContent(){return value;},set textContent(next){value=next;apply(next);}};};
 export class ModManager {
+  declare notify: any;
+  declare invalidate: any;
+
+
+
   [key: string]: any;
-  banner: any;
-  busy: any;
-  desired: any;
-  details: any;
-  dialog: any;
-  directory: any;
-  errors: any;
-  file: any;
-  island: any;
-  list: any;
-  message: any;
-  options: any;
-  ready: any;
-  records: any;
-  runtime: any;
-  safe: any;
-  selected: any;
-  warning: any;
-  warningResolve: any;
+  declare banner: any;
+  declare busy: any;
+  declare desired: any;
+  declare details: any;
+  declare dialog: any;
+  declare directory: any;
+  declare errors: any;
+  declare file: any;
+  declare island: any;
+  declare list: any;
+  declare message: any;
+  declare options: any;
+  declare ready: any;
+  declare records: any;
+  declare runtime: any;
+  declare safe: any;
+  declare selected: any;
+  declare warning: any;
+  declare warningResolve: any;
 
   constructor(editor,{notify,invalidate}){
     Object.assign(this,{editor,notify,invalidate});this.records=new Map<any, any>();this.errors=new Map<any, any>();const options=read(OPTIONS,{});this.options=Object.assign(Object.create(null),object(options)?options:{});this.desired=new Set<any>(Array.isArray(read(ENABLED,[]))?read(ENABLED,[]):[]);this.selected=null;this.busy=false;
@@ -42,15 +48,15 @@ export class ModManager {
     window.rpenMods={apiVersion:MOD_API_VERSION,editor,runtime:this.runtime,manager:this,resolveModule:(...args)=>this.runtime.resolveModule(...args),disableAll:()=>this.disableAll(true)};installModApi(window.rpenMods);this.ready=this.load();
   }
   async load(){
-    this.runtime.events.addEventListener('mod:unloaded',event=>{const {id,reason,error}=event.detail;if(reason==='error'){this.errors.set(id,error);this.desired.delete(id);this.persist();this.notify('模组 '+id+' 连续出错，已自动禁用。','warning');if(this.dialog.open)this.renderList();}const loaded=[...this.runtime.loaded.values()].filter(state=>state.record.manifest.dependencies.includes(id));for(const state of loaded)this.disable(state.id).catch(error=>this.notify(error.message,'error'));});
+    this.runtime.events.addEventListener('mod:unloaded',event=>{const {id,reason,error}=event.detail;if(reason==='error'){this.errors.set(id,error);this.desired.delete(id);this.persist();this.notify(t('mod-manager.s86b2076')+id+t('mod-manager.s2112669'),'warning');if(this.dialog.open)this.renderList();}const loaded=[...this.runtime.loaded.values()].filter(state=>state.record.manifest.dependencies.includes(id));for(const state of loaded)this.disable(state.id).catch(error=>this.notify(error.message,'error'));});
     try{
       for(const record of await builtinMods())this.records.set(record.manifest.id,record);
       for(const stored of await readMods())try{const record=parseModPackage(new Map<any, any>(stored.files));if(!this.records.has(record.manifest.id))this.records.set(record.manifest.id,record);}catch(error){this.errors.set(stored.id,error.message);}
       const safe=new URL(location.href).searchParams.get('mods')==='off';const interrupted=read(BOOT,null);
-      if(safe||interrupted){this.safe=true;this.banner.textContent=safe?'恢复启动：本次启动不装载任何模组。':'上次装载模组时未完成，已跳过自动装载。请检查后逐个启用。';this.notify(this.banner.textContent,'warning');localPreferences.removeItem(BOOT);}
-      else {for(const id of [...this.desired])if(this.records.has(id))try{await this.enable(id,false);}catch(error){this.desired.delete(id);this.errors.set(id,error.message);this.notify(`模组 ${id} 未能装载：${error.message}`,'error');}else this.desired.delete(id);this.persist();}
+      if(safe||interrupted){this.safe=true;this.banner.textContent=safe?t('mod-manager.se5ac3ae'):t('mod-manager.s7363c83');this.notify(this.banner.textContent,'warning');localPreferences.removeItem(BOOT);}
+      else {for(const id of [...this.desired])if(this.records.has(id))try{await this.enable(id,false);}catch(error){this.desired.delete(id);this.errors.set(id,error.message);this.notify(t('mod-manager.s10851d3', { p0: id, p1: error.message }),'error');}else this.desired.delete(id);this.persist();}
       this.updateStatus();this.renderList();
-    }catch(error){this.banner.textContent='模组目录读取失败：'+error.message;this.notify(this.banner.textContent,'warning');}
+    }catch(error){this.banner.textContent=t('mod-manager.s39621fa')+error.message;this.notify(this.banner.textContent,'warning');}
   }
   render(){
     if(this.island)this.dialog=this.island.dialog;
@@ -103,6 +109,44 @@ export class ModManager {
     if(active){const commands=[...this.runtime.commands.values()].filter(command=>command.owner===manifest.id);if(commands.length){this.details.append(text('h4','操作'));for(const command of commands)this.details.append(button(command.title??command.id,()=>{this.dialog.close();command.run();}));}this.details.append(text('p',`运行中 · 错误 ${active.errors} 次`,'hint'));}
     const source=document.createElement('details');source.append(text('summary','包内文件与源码'));const code=document.createElement('pre');code.className='mod-source';code.textContent=[...record.files].filter(([name])=>/\.(json|m?js|css|md)$/.test(name)).map(([name,bytes])=>`— ${name} —\n${new TextDecoder().decode(bytes).slice(0,100000)}`).join('\n\n');source.append(code);this.details.append(source);
   }
+  settingsFor(record){const id=record.manifest.id;if(!Object.hasOwn(this.options,id)||!object(this.options[id]))this.options[id]=Object.create(null);const values=this.options[id];for(const [key,definition]of Object.entries(record.manifest.settings)){try{if(!Object.hasOwn(values,key))throw Error();modSettingValue(definition,values[key],key);}catch{values[key]=structuredClone((definition as any).default);}}return values;}
+  async setSetting(id,key,value){const record=this.records.get(id);if(!record)throw Error(t('mod-manager.s9898e8d'));modSettingValue(Object.hasOwn(record.manifest.settings,key)?record.manifest.settings[key]:null,value,key);this.settingsFor(record)[key]=value;localPreferences.setItem(OPTIONS,JSON.stringify(this.options));const state=this.runtime.loaded.get(id);if(state){state.settings=this.options[id];this.runtime.emit('settings:'+id,{key,value});}}
+  persist(){localPreferences.setItem(ENABLED,JSON.stringify([...this.desired]));localPreferences.setItem(OPTIONS,JSON.stringify(this.options));}
+  async enable(id,persist=true,chain=new Set()){
+    if(this.runtime.loaded.has(id)){await this.runtime.loaded.get(id).promise;return;}if(chain.has(id))throw Error(t('mod-manager.se372ea7')+[...chain,id].join(' → '));const record=this.records.get(id);if(!record)throw Error(t('mod-manager.s274b62e')+id);chain.add(id);
+    const checkConflicts=()=>{for(const conflict of record.manifest.conflicts)if(this.runtime.loaded.has(conflict))throw Error(t('mod-manager.s08f0345')+conflict);for(const state of this.runtime.loaded.values())if(state.record.manifest.conflicts.includes(id))throw Error(t('mod-manager.s08f0345')+state.id);};checkConflicts();
+    for(const dependency of record.manifest.dependencies)await this.enable(dependency,persist,new Set(chain));
+    checkConflicts();
+    localPreferences.setItem(BOOT,JSON.stringify({id,time:Date.now()}));
+    try{const state=await this.runtime.load(record,this.settingsFor(record),(key,value)=>this.setSetting(id,key,value));if(state?.status==='loaded'&&this.runtime.loaded.get(id)===state){this.errors.delete(id);this.desired.add(id);if(persist)this.persist();}}
+    finally{localPreferences.removeItem(BOOT);}this.updateStatus();
+  }
+  async disable(id){for(const state of [...this.runtime.loaded.values()])if(state.record.manifest.dependencies.includes(id))await this.disable(state.id);await this.runtime.unload(id);this.desired.delete(id);this.persist();this.updateStatus();}
+  async toggle(id){if(this.busy)return;this.busy=true;try{if(this.runtime.loaded.has(id))await this.disable(id);else await this.enable(id);this.message.textContent=this.runtime.loaded.has(id)?t('mod-manager.s5bb376d'):t('mod-manager.sbc2295f');}catch(error){this.errors.set(id,error.stack??error.message);this.notify(error.message,'error');}finally{this.busy=false;this.renderList();}}
+  async disableAll(emergency=false){this.desired.clear();this.persist();for(const id of [...this.runtime.loaded.keys()].reverse())await this.runtime.unload(id);localPreferences.removeItem(BOOT);this.updateStatus();if(this.dialog.open)this.renderList();if(emergency)this.notify(t('mod-manager.sb66f83f'),'warning');}
+  updateStatus(){const count=[...this.runtime.loaded.values()].filter(state=>state.status==='loaded').length;const node=document.querySelector('#mods-status');node.hidden=count===0;node.textContent=t('mod-manager.s0e1a497', { p0: count });node.title=t('mod-manager.sc43bb7d');this.invalidate();}
+  async review(record){
+    this.warning.replaceChildren(text('h2',t('mod-manager.se2ecae2')),text('p',`${localizedValue(record.manifest.name)} · ${record.manifest.version} · ${localizedValue(record.manifest.author)}`),text('p',t('mod-manager.s8d616da')),text('p',t('mod-manager.sc2a5ae9')));
+    const label=document.createElement('label');label.className='mod-consent';const consent=document.createElement('input');consent.type='checkbox';label.append(consent,t('mod-manager.sc56c250'));this.warning.append(label);
+    const source=document.createElement('details');source.append(text('summary',t('mod-manager.s22ecfdc')));const pre=text('pre',[...record.files].filter(([path])=>/\.(m?js|json)$/.test(path)).map(([path,bytes])=>path+'\n'+new TextDecoder().decode(bytes).slice(0,100000)).join('\n\n'),'mod-source');source.append(pre);this.warning.append(source);
+    const actions=document.createElement('div');actions.className='modal-actions';const accept=button(t('mod-manager.s056e307'),()=>this.finishWarning(true));accept.disabled=true;consent.onchange=()=>accept.disabled=!consent.checked;actions.append(button(t('mod-manager.s4d0b468'),()=>this.finishWarning(false)),accept);this.warning.append(actions);this.warning.showModal();return new Promise(resolve=>{this.warningResolve=resolve;});
+  }
+  finishWarning(accepted){this.warning.close();this.warningResolve?.(accepted);this.warningResolve=null;}
+  async importFiles(files,directory=false){if(!files?.length||this.busy)return;this.busy=true;try{const record=await importMod(files,directory);if(this.records.get(record.manifest.id)?.builtin)throw Error(t('mod-manager.se2a7877'));if(!await this.review(record))return;if(this.records.has(record.manifest.id)&&!confirm(t('mod-manager.s0f1d758')))return;await this.disable(record.manifest.id);await storeMod(record);this.records.set(record.manifest.id,record);this.selected=record.manifest.id;this.message.textContent=t('mod-manager.sc774273');this.renderList();}catch(error){this.notify(error.message,'error');this.message.textContent=error.message;}finally{this.file.value='';this.directory.value='';this.busy=false;this.renderList();}}
+  async remove(id){if(!confirm(t('mod-manager.s667ec6f')))return;await this.disable(id);await deleteMod(id);delete this.options[id];localPreferences.removeItem('rpe-next-mod-data:'+id);this.records.delete(id);this.persist();this.renderList();}
+  showProtocol(){this.details.replaceChildren(text('h3',t('mod-manager.s6ebce19')),text('p',t('mod-manager.s656efc8')),text('p',t('mod-manager.s1b4dfbd')));
+    const pre=text('pre',JSON.stringify({protocol:'rpen-mod',api:1,id:'example-mod',name:t('mod-manager.s30fd4ed'),version:'1.0.0',author:t('mod-manager.s698bea5'),description:t('mod-manager.s26670dd'),entry:'main.mjs'},null,2)+t('mod-manager.s33e5ce9'),'mod-source');this.details.append(pre,text('p',t('mod-manager.scda426f'),'hint'));
+    const actions=document.createElement('div');actions.className='mod-manager-toolbar';for(const [label,path]of [[t('mod-manager.sc854009'),'protocols/MOD-PROTOCOL.zh-CN.md'],[t('mod-manager.s956acaa'),'protocols/GLOBAL-EVENTS-PROTOCOL.zh-CN.md'],[t('mod-manager.sdd30be1'),'schemas/mod-api-v1.d.ts'],[t('mod-manager.s2ae69ce'),'schemas/mod-v1.schema.json']])actions.append(button(label,async()=>{try{const response=await fetch(new URL('../../'+path,import.meta.url));if(!response.ok)throw Error(t('mod-manager.s896431a'));download(await response.blob(),path.split('/').at(-1));}catch(error){this.notify(error.message,'error');}}));this.details.append(actions);
+  }
+  async downloadDoc(path){try{const response=await fetch(new URL('../../'+path,import.meta.url));if(!response.ok)throw Error('文档读取失败');download(await response.blob(),path.split('/').at(-1));}catch(error){this.notify(error.message,'error');}}
+
+  async resetSettings(id){const record=this.records.get(id);if(!record)return;for(const [key,definition]of Object.entries<any>(record.manifest.settings))await this.setSetting(id,key,structuredClone(definition.default));this.renderDetails();}
+
+  async saveSetting(id,key,value){
+    try{await this.setSetting(id,key,value);this.message.textContent='模组设置已保存。';return null;}
+    catch(error){this.message.textContent=error.message;return error.message;}
+  }
+
   viewState(){
     const cards=[];for(const [id,record]of this.records){const active=this.runtime.loaded.has(id);cards.push({id,name:record.manifest.name,active,selected:this.selected===id,span:`${record.builtin?'内置':'导入'} · ${record.manifest.version} · ${record.manifest.author}`,status:active?'已装载':this.errors.has(id)?'装载失败':'已禁用'});}
     const record=this.records.get(this.selected);let detail=null;
@@ -116,39 +160,5 @@ export class ModManager {
     }
     return {cards,detail};
   }
-  async saveSetting(id,key,value){
-    try{await this.setSetting(id,key,value);this.message.textContent='模组设置已保存。';return null;}
-    catch(error){this.message.textContent=error.message;return error.message;}
-  }
-  async resetSettings(id){const record=this.records.get(id);if(!record)return;for(const [key,definition]of Object.entries<any>(record.manifest.settings))await this.setSetting(id,key,structuredClone(definition.default));this.renderDetails();}
-  async downloadDoc(path){try{const response=await fetch(new URL('../../'+path,import.meta.url));if(!response.ok)throw Error('文档读取失败');download(await response.blob(),path.split('/').at(-1));}catch(error){this.notify(error.message,'error');}}
-  settingsFor(record){const id=record.manifest.id;if(!Object.hasOwn(this.options,id)||!object(this.options[id]))this.options[id]=Object.create(null);const values=this.options[id];for(const [key,definition]of Object.entries<any>(record.manifest.settings)){try{if(!Object.hasOwn(values,key))throw Error();modSettingValue(definition,values[key],key);}catch{values[key]=structuredClone(definition.default);}}return values;}
-  async setSetting(id,key,value){const record=this.records.get(id);if(!record)throw Error('模组不存在');modSettingValue(Object.hasOwn(record.manifest.settings,key)?record.manifest.settings[key]:null,value,key);this.settingsFor(record)[key]=value;localPreferences.setItem(OPTIONS,JSON.stringify(this.options));const state=this.runtime.loaded.get(id);if(state){state.settings=this.options[id];this.runtime.emit('settings:'+id,{key,value});}}
-  persist(){localPreferences.setItem(ENABLED,JSON.stringify([...this.desired]));localPreferences.setItem(OPTIONS,JSON.stringify(this.options));}
-  async enable(id,persist=true,chain=new Set<any>()){
-    if(this.runtime.loaded.has(id)){await this.runtime.loaded.get(id).promise;return;}if(chain.has(id))throw Error('模组依赖循环：'+[...chain,id].join(' → '));const record=this.records.get(id);if(!record)throw Error('缺少依赖模组：'+id);chain.add(id);
-    const checkConflicts=()=>{for(const conflict of record.manifest.conflicts)if(this.runtime.loaded.has(conflict))throw Error('与已启用模组冲突：'+conflict);for(const state of this.runtime.loaded.values())if(state.record.manifest.conflicts.includes(id))throw Error('与已启用模组冲突：'+state.id);};checkConflicts();
-    for(const dependency of record.manifest.dependencies)await this.enable(dependency,persist,new Set<any>(chain));
-    checkConflicts();
-    localPreferences.setItem(BOOT,JSON.stringify({id,time:Date.now()}));
-    try{const state=await this.runtime.load(record,this.settingsFor(record),(key,value)=>this.setSetting(id,key,value));if(state?.status==='loaded'&&this.runtime.loaded.get(id)===state){this.errors.delete(id);this.desired.add(id);if(persist)this.persist();}}
-    finally{localPreferences.removeItem(BOOT);}this.updateStatus();
-  }
-  async disable(id){for(const state of [...this.runtime.loaded.values()])if(state.record.manifest.dependencies.includes(id))await this.disable(state.id);await this.runtime.unload(id);this.desired.delete(id);this.persist();this.updateStatus();}
-  async toggle(id){if(this.busy)return;this.busy=true;try{if(this.runtime.loaded.has(id))await this.disable(id);else await this.enable(id);this.message.textContent=this.runtime.loaded.has(id)?'模组已装载。':'模组已禁用，受管理的资源已清理。';}catch(error){this.errors.set(id,error.stack??error.message);this.notify(error.message,'error');}finally{this.busy=false;this.renderList();}}
-  async disableAll(emergency=false){this.desired.clear();this.persist();for(const id of [...this.runtime.loaded.keys()].reverse())await this.runtime.unload(id);localPreferences.removeItem(BOOT);this.updateStatus();if(this.dialog.open)this.renderList();if(emergency)this.notify('已禁用全部模组。若界面仍异常，请重新载入。','warning');}
-  updateStatus(){const count=[...this.runtime.loaded.values()].filter(state=>state.status==='loaded').length;const node=document.querySelector('#mods-status');node.hidden=count===0;node.textContent=`已装载 ${count} 个模组`;node.title='点击管理模组 · Ctrl+Alt+Shift+F11 禁用全部';this.invalidate();}
-  async review(record){
-    this.warning.replaceChildren(text('h2','导入外部模组'),text('p',`${record.manifest.name} · ${record.manifest.version} · ${record.manifest.author}`),text('p','外部模组会在编辑器中执行代码，可读取、修改或删除当前浏览器存储或桌面谱面库中的谱面与设置，并可能通过网络发送数据。它也可以改变界面、谱面结构与编辑语义，产生未知效果。'),text('p','编辑器作者不对外部模组产生的后果承担责任。建议仅从可信来源下载，并在导入前阅读源码或使用 AI 检查；这不能保证模组安全。建议先备份谱面。'));
-    const label=document.createElement('label');label.className='mod-consent';const consent=document.createElement('input');consent.type='checkbox';label.append(consent,'我理解外部模组拥有完整编辑器权限，并接受导入风险');this.warning.append(label);
-    const source=document.createElement('details');source.append(text('summary','查看代码'));const pre=text('pre',[...record.files].filter(([path])=>/\.(m?js|json)$/.test(path)).map(([path,bytes])=>path+'\n'+new TextDecoder().decode(bytes).slice(0,100000)).join('\n\n'),'mod-source');source.append(pre);this.warning.append(source);
-    const actions=document.createElement('div');actions.className='modal-actions';const accept=button('确认导入（默认禁用）',()=>this.finishWarning(true));accept.disabled=true;consent.onchange=()=>accept.disabled=!consent.checked;actions.append(button('取消',()=>this.finishWarning(false)),accept);this.warning.append(actions);this.warning.showModal();return new Promise<any>(resolve=>{this.warningResolve=resolve;});
-  }
-  finishWarning(accepted){this.warning.close();this.warningResolve?.(accepted);this.warningResolve=null;}
-  async importFiles(files,directory=false){if(!files?.length||this.busy)return;this.busy=true;try{const record=await importMod(files,directory);if(this.records.get(record.manifest.id)?.builtin)throw Error('不能覆盖内置模组 id');if(!await this.review(record))return;if(this.records.has(record.manifest.id)&&!confirm('替换已安装模组？替换后将处于禁用状态。'))return;await this.disable(record.manifest.id);await storeMod(record);this.records.set(record.manifest.id,record);this.selected=record.manifest.id;this.message.textContent='模组已导入，尚未启用。';this.renderList();}catch(error){this.notify(error.message,'error');this.message.textContent=error.message;}finally{this.file.value='';this.directory.value='';this.busy=false;this.renderList();}}
-  async remove(id){if(!confirm('删除模组及其参数？'))return;await this.disable(id);await deleteMod(id);delete this.options[id];localPreferences.removeItem('rpe-next-mod-data:'+id);this.records.delete(id);this.persist();this.renderList();}
-  showProtocol(){this.details.replaceChildren(text('h3','模组协议 API 1'),text('p','每个包包含 mod.json 和入口 ES 模块，入口导出 activate(api)。支持 package 内多文件导入、完整编辑器对象、提交谱面、事件钩子、界面挂载、预览叠加、快捷键与自动清理。'),text('p','模组运行于编辑器页面，没有权限沙箱。无法保证任意直接改写都可卸载还原；优先使用 api.patch / api.dispose，异常时禁用并重新载入。'));
-    const pre=text('pre',JSON.stringify({protocol:'rpen-mod',api:1,id:'example-mod',name:'示例',version:'1.0.0',author:'作者',description:'说明',entry:'main.mjs'},null,2)+'\n\nexport function activate(api) {\n  api.commands.register({ id: "hello", title: "问好", shortcut: "F7", run: () => api.notify("Hello") });\n  return () => {};\n}','mod-source');this.details.append(pre,text('p','完整协议：protocols/MOD-PROTOCOL.zh-CN.md · API：window.rpenMods.editor · 恢复启动：?mods=off','hint'));
-    const actions=document.createElement('div');actions.className='mod-manager-toolbar';for(const [label,path]of [['下载完整协议','protocols/MOD-PROTOCOL.zh-CN.md'],['下载全局事件协议','protocols/GLOBAL-EVENTS-PROTOCOL.zh-CN.md'],['下载 API 声明','schemas/mod-api-v1.d.ts'],['下载清单 Schema','schemas/mod-v1.schema.json']])actions.append(button(label,()=>this.downloadDoc(path)));this.details.append(actions);
-  }
+
 }

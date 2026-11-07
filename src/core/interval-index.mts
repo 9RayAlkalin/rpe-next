@@ -1,6 +1,6 @@
 export class IntervalIndex {
-  entries: any;
-  root: any;
+  declare entries: any;
+  declare root: any;
 
   constructor(items, start, end) {
     this.entries = items.map((item, index) => ({ item, index, start: start(item), end: end(item) })).sort((left, right) => left.start - right.start);

@@ -5,11 +5,17 @@ import { beatValue, fromNumber } from '../core/beat.mjs';
 import { eventKey, selectAllEvents, transformEvents, deleteEvents, copyEvents, pasteEvents } from '../application/event-commands.mjs';
 import { GlobalEventInspector } from './global-event-inspector.mjs';
 import { editorSkinContext, editorCanvasRevision } from './editor-skin-canvas.mjs';
+import { t } from '../i18n.mjs';
 
 const node = (tag, className: any = '', text: any = '') => { const element = document.createElement(tag); if (className) element.className = className; if (text) element.textContent = text; return element; };
 class GlobalTimeline extends Timeline {
+  declare owner: any;
+  declare eventsCanvas: any;
+  declare eventBarWidth: any;
+  declare vertical: any;
+
   [key: string]: any;
-  gridReferenceWidth: any;
+  declare gridReferenceWidth: any;
 
   get eventTypes() { return this.owner?.document.columns.map(column => column.key) ?? []; }
   get factor() { return 1; }
@@ -20,6 +26,7 @@ class GlobalTimeline extends Timeline {
     return { channelWidth, left: column.left, x: column.left + (channelWidth - width) / 2, width };
   }
   eventChannelAt(x) { return this.owner.geometry?.findIndex(column => x >= column.left && x < column.left + column.width) ?? -1; }
+  judgementSegments(width, height, playBeat) { return (this.owner.geometry ?? []).map(column => ({ left: column.left, right: column.left + column.width, y: this.vertical(playBeat, height) })); }
   grid(context, width, height, playBeat) {
     context.save(); context.beginPath();
     for (const column of this.owner.geometry ?? []) context.rect(column.left, 0, column.width, height);
@@ -30,25 +37,32 @@ class GlobalTimeline extends Timeline {
 }
 
 export class GlobalEventsEditor {
+  declare activate: any;
+  declare invalidate: any;
+  declare onContextMenu: any;
+  declare wheel: any;
+  declare notify: any;
+  declare seek: any;
+
   [key: string]: any;
-  active: any;
-  canvas: any;
-  defaultWidth: any;
-  densityBars: any;
-  densityRange: any;
-  document: any;
-  gaps: any;
-  geometry: any;
-  geometryColumns: any;
-  getContext: any;
-  host: any;
-  inspector: any;
-  labelColumns: any;
-  properties: any;
-  referenceChrome: any;
-  registry: any;
-  selectionSignature: any;
-  timeline: any;
+  declare active: any;
+  declare canvas: any;
+  declare defaultWidth: any;
+  declare densityBars: any;
+  declare densityRange: any;
+  declare document: any;
+  declare gaps: any;
+  declare geometry: any;
+  declare geometryColumns: any;
+  declare getContext: any;
+  declare host: any;
+  declare inspector: any;
+  declare labelColumns: any;
+  declare properties: any;
+  declare referenceChrome: any;
+  declare registry: any;
+  declare selectionSignature: any;
+  declare timeline: any;
 
   constructor(host, canvas, registry, getContext, options) {
     Object.assign(this, options); this.host = host; this.canvas = canvas; this.registry = registry; this.getContext = getContext; this.active = false;
@@ -66,13 +80,13 @@ export class GlobalEventsEditor {
     this.timeline.panEventColumns = delta => { this.canvas.parentElement.scrollLeft -= delta; };
     this.timeline.onWheel = event => this.wheel(event); this.timeline.onDragScroll = seconds => this.context.timeline.onDragScroll?.(seconds);
     this.timeline.createPlacedEvent = (session, key, first, second, easing, line, inst, preview) => {
-      const entry = this.document.columns.find(column => column.key === key); if (!entry) throw Error('请选择全局事件列');
+      const entry = this.document.columns.find(column => column.key === key); if (!entry) throw Error(t('global-events.s140de47'));
       return placedGlobalEvent(entry.type, entry.column, entry.events, first, second, easing, inst, preview);
     };
     this.timeline.formatEventValue = (value, key) => {
       const column = this.document.columns.find(column => column.key === key)?.column;
       if (column?.formatValue) return String(column.formatValue(value));
-      return typeof value === 'number' ? String(Math.round(value * 1000) / 1000) : typeof value === 'boolean' ? value ? '是' : '否' : typeof value === 'object' ? JSON.stringify(value) : String(value ?? '');
+      return typeof value === 'number' ? String(Math.round(value * 1000) / 1000) : typeof value === 'boolean' ? value ? t('global-events.s30160a2') : t('global-events.s8bf5c10') : typeof value === 'object' ? JSON.stringify(value) : String(value ?? '');
     };
     this.timeline.decorateEvent = (context, rectangle, event, selected) => {
       const entry = this.document.columns.find(column => column.key === rectangle.type);
@@ -112,13 +126,13 @@ export class GlobalEventsEditor {
     if (close.hidden !== !this.active) close.hidden = !this.active;
     if (this.active) {
       for (const selector of ['#mirror', '#batch-run', '#notes-only']) { const button = document.querySelector(selector); if (!button.disabled) button.disabled = true; }
-      const label = document.querySelector('#selection-info'), text = `${this.selection.size} 个全局事件已选`;
+      const label = document.querySelector('#selection-info'), text = t('global-events.sdb21b0d', { p0: this.selection.size });
       if (label.textContent !== text) label.textContent = text;
     }
   }
   sync() {
     const source = this.context.timeline;
-    for (const key of ['origin', 'scale', 'division', 'judgementOffset', 'judgementColor', 'barWidth', 'barAlpha', 'eventBarWidth', 'eventOpacity', 'seamlessEvents', 'drawEventCurves', 'eventValueFontSize', 'eventCurveThreshold', 'eventValueThreshold', 'scrollSpeed', 'selectionInterval']) this.timeline[key] = source[key];
+    for (const key of ['origin', 'scale', 'division', 'judgementOffset', 'judgementColor', 'judgementWidth', 'judgementAlpha', 'barWidth', 'barAlpha', 'eventBarWidth', 'eventOpacity', 'seamlessEvents', 'drawEventCurves', 'eventValueFontSize', 'eventCurveThreshold', 'eventValueThreshold', 'scrollSpeed', 'selectionInterval', 'rpeEventDrag', 'eventEndpointDragHeld']) this.timeline[key] = source[key];
     this.timeline.tempo = this.context.tempo;
     const columns = this.document.columns;
     if (this.labelColumns !== columns) {
@@ -143,7 +157,7 @@ export class GlobalEventsEditor {
     if (!this.active || this.context.previewVisible) return; this.sync();
     if (this.document.columns.length) {
       this.timeline.drawEvents(beat);
-      const context = editorSkinContext(this.canvas.getContext('2d')); context.fillStyle = '#242424';
+      const context = (editorSkinContext as any)(this.canvas.getContext('2d')); context.fillStyle = '#242424';
       for (const gap of this.gaps) context.fillRect(gap.left, 0, gap.width, this.canvas.clientHeight);
       context.strokeStyle = '#334154'; context.lineWidth = 1; context.beginPath();
       for (const x of new Set<any>(this.geometry.flatMap(column => [column.left, column.left + column.width]))) {
@@ -151,8 +165,9 @@ export class GlobalEventsEditor {
         context.moveTo(line, 0); context.lineTo(line, this.canvas.clientHeight);
       }
       context.stroke();
+      this.timeline.drawJudgement(context, this.canvas.clientWidth, this.canvas.clientHeight, beat, 'events');
     }
-    else { const { context, width, height } = prepareCanvas(this.canvas); this.timeline.grid(context, width, height, beat); context.fillStyle = '#dddddd'; context.font = '14px RPE,sans-serif'; context.fillText('暂无可用的全局事件类型', 20, 45); }
+    else { const { context, width, height } = prepareCanvas(this.canvas); this.timeline.grid(context, width, height, beat); context.fillStyle = '#dddddd'; context.font = '14px RPE,sans-serif'; context.fillText(t('global-events.sa95cbd6'), 20, 45); }
     this.drawDensity();
   }
   autoScroll(elapsed) {
@@ -179,13 +194,13 @@ export class GlobalEventsEditor {
       if (!this.selection.size) { const hit = this.timeline.eventCursor && this.timeline.eventInteraction.hit(this.timeline.eventCursor); if (hit) session.eventSelection = new Set<any>([eventKey(hit.type, hit.index)]); }
       this.remove();
     }
-    else if (['NumberMirror', 'NumberFill'].includes(action)) transformEvents(session, '修改全局事件数值', (event, key) => {
+    else if (['NumberMirror', 'NumberFill'].includes(action)) (transformEvents as any)(session, t('global-events.s3f09fbb'), (event, key) => {
       const column = this.document.columns.find(column => column.key === key)?.column;
       if (column?.shortcut) return column.shortcut({ action, event: structuredClone(event) }) ?? event;
       if (typeof event.start !== 'number' || typeof event.end !== 'number') return event;
       return action === 'NumberMirror' ? { ...event, start: -event.start, end: -event.end } : { ...event, end: event.start };
     });
-    else if (['PageUp', 'PageDown'].includes(action)) { const delta = (action === 'PageUp' ? 1 : -1) / this.timeline.division; transformEvents(session, '移动全局事件', event => ({ ...event, startTime: fromNumber(beatValue(event.startTime) + delta), endTime: fromNumber(beatValue(event.endTime) + delta) })); }
+    else if (['PageUp', 'PageDown'].includes(action)) { const delta = (action === 'PageUp' ? 1 : -1) / this.timeline.division; (transformEvents as any)(session, t('global-events.sa0942cd'), event => ({ ...event, startTime: fromNumber(beatValue(event.startTime) + delta), endTime: fromNumber(beatValue(event.endTime) + delta) })); }
     else if (['PageLeft', 'PageRight', 'AddDrag', 'AddFlick', 'AddHold', 'ToggleMultiLine', 'SwitchMultiLineMode', 'SwitchUI', 'ClipboardHistory', 'CurveBegin', 'CurveEnd'].includes(action)) { /* These operations have no global-column equivalent. */ }
     else if (action === 'Esc') { this.timeline.cancelPlacement(); session.eventSelection.clear(); session.clipboardVisible = false; session.notify(); }
     else return false;
@@ -199,26 +214,26 @@ export class GlobalEventsEditor {
   renderOverview() {
     this.inspector.dispose();
     const scroll = this.host.scrollTop; this.host.replaceChildren();
-    const heading = node('div', 'panel-title', '全局事件'); heading.append(node('small', '', `${this.document.types.length} 类`)); this.host.append(heading);
+    const heading = node('div', 'panel-title', t('global-events.s895a20e')); heading.append(node('small', '', t('global-events.s17a8500', { p0: this.document.types.length }))); this.host.append(heading);
     const summary = node('div', 'global-events-types'); this.host.append(summary); this.densityBars = [];
     for (const type of this.document.types) {
       const entries = this.document.columns.filter(entry => entry.type.id === type.id), count = entries.reduce((sum, entry) => sum + entry.events.length, 0);
       const card = node('div', 'global-event-kind'); card.dataset.globalEventType = type.id;
       const title = node('button', 'global-event-kind-title', type.name); title.type = 'button'; title.onclick = () => { const index = this.document.columns.findIndex(entry => entry.type.id === type.id); this.canvas.parentElement.scrollLeft = this.geometry[index]?.left ?? 0; this.canvas.focus({ preventScroll: true }); };
-      title.append(node('small', '', `${count} 个 · ${type.columns.length} 列`)); card.append(title);
-      if (type.source.kind === 'mod') card.append(node('div', 'hint global-event-source', `${type.source.name}（${type.source.author}）${type.readonly ? ' · 未加载' : ''}`));
-      else if (!type.persistent) card.append(node('div', 'hint global-event-source', '临时测试 · 不保存到谱面'));
-      const density = node('canvas', 'global-event-density'); density.dataset.skinCanvas = 'global-density'; density.setAttribute('aria-label', type.name + '全曲分布'); density.title = '点击跳转至对应时间';
+      title.append(node('small', '', t('global-events.s487bf7d', { p0: count, p1: type.columns.length }))); card.append(title);
+      if (type.source.kind === 'mod') card.append(node('div', 'hint global-event-source', t('global-events.s862e20d', { p0: type.source.name, p1: type.source.author, p2: type.readonly ? t('global-events.s90ce677') : '' })));
+      else if (!type.persistent) card.append(node('div', 'hint global-event-source', t('global-events.s2372654')));
+      const density = node('canvas', 'global-event-density'); density.dataset.skinCanvas = 'global-density'; density.setAttribute('aria-label', type.name + t('global-events.s3c63e9d')); density.title = t('global-events.se13c9ff');
       density.onclick = event => { const rect = density.getBoundingClientRect(); this.seek(this.context.tempo.beat(Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)) * this.densityDuration())); };
       card.append(density); summary.append(card); this.densityBars.push({ canvas: density, type: type.id, entries });
     }
-    this.host.append(node('p', 'hint', 'Q / R 两次放置 · 拖动移动或调整首尾 · Shift / 中键框选 · 空白处横向拖动浏览事件列。多选支持时间轴操作，暂不提供右侧批量属性编辑。密度条可点击定位。'));
+    this.host.append(node('p', 'hint', t('global-events.s757a231')));
     this.host.append(this.closeButton());
-    const returnToTools = node('button', 'wide-button', '返回谱面工具'); returnToTools.type = 'button'; returnToTools.onclick = () => this.activate('chart'); this.host.append(returnToTools);
+    const returnToTools = node('button', 'wide-button', t('global-events.sb3669b2')); returnToTools.type = 'button'; returnToTools.onclick = () => this.activate('chart'); this.host.append(returnToTools);
     this.host.scrollTop = scroll; this.drawDensity();
   }
   closeButton() {
-    const button = node('button', 'wide-button', '关闭全局事件编辑'); button.type = 'button'; button.dataset.globalEventsClose = 'true'; button.onclick = () => this.close(); return button;
+    const button = node('button', 'wide-button', t('global-events.s60a080c')); button.type = 'button'; button.dataset.globalEventsClose = 'true'; button.onclick = () => this.close(); return button;
   }
   densityDuration() {
     const context = this.context, duration = Math.max(0, context.duration() - (context.session.chart.META.offset ?? 0) / 1000);
@@ -254,7 +269,7 @@ export class GlobalEventsEditor {
       if (!changed && !resized && bar.marker === marker) continue;
       if (resized) { bar.canvas.width = pixelWidth; bar.canvas.height = pixelHeight; }
       const raw = bar.canvas.getContext('2d'); raw.setTransform(1, 0, 0, 1, 0, 0); raw.clearRect(0, 0, pixelWidth, pixelHeight); raw.drawImage(bar.frame, 0, 0);
-      const context = editorSkinContext(raw); context.setTransform(ratio, 0, 0, ratio, 0, 0); context.fillStyle = '#ffffff'; context.fillRect(marker, 0, 1, height); bar.marker = marker;
+      const context = (editorSkinContext as any)(raw); context.setTransform(ratio, 0, 0, ratio, 0, 0); context.fillStyle = '#ffffff'; context.fillRect(marker, 0, 1, height); bar.marker = marker;
     }
   }
 }

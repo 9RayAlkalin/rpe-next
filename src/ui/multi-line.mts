@@ -1,20 +1,39 @@
 import { formatLineExpression, parseLineExpression } from '../application/multi-line-edit.mjs';
-import { groupLineIndices, groupNames, isDefaultLineName, lineFeatureLabels, lineNameLabel } from '../core/line-groups.mjs';
+import { LineNumberList } from './line-number-list.mjs';
+import { t } from '../i18n.mjs';
+import { EVENT_TYPES } from '../core/chart.mjs';
+import { SPECIAL_TRACKS } from '../core/editor-display.mjs';
 
 export class MultiLinePanel {
-  [key: string]: any;
-  activate: any;
-  drag: any;
-  getSession: any;
-  host: any;
-  listScrollTop: any;
-  notify: any;
-  persist: any;
-  renderSession: any;
-  timeline: any;
+  declare eventColumnsOpen: any;
+  declare count: any;
+  declare expression: any;
+  declare rows: any;
+  declare lineNumbers: any;
 
-  constructor(host, getSession, { activate = () => {}, render = () => {}, notify = () => {}, timeline = null, persist = () => {} }: any = {}) {
-    this.host = host; this.getSession = getSession; this.activate = activate; this.renderSession = render; this.notify = notify; this.timeline = timeline; this.persist = persist; this.drag = null; this.listScrollTop = null;
+  declare activate: any;
+  declare drag: any;
+  declare getSession: any;
+  declare host: any;
+  declare listScrollTop: any;
+  declare notify: any;
+  declare persist: any;
+  declare renderSession: any;
+  declare timeline: any;
+
+  constructor(host, getSession, { activate = () => {}, render = () => {}, notify = () => {}, timeline = null, persist = () => {} } = {}) {
+    this.host = host; this.getSession = getSession; this.activate = activate; this.renderSession = render; this.notify = notify; this.timeline = timeline; this.persist = persist; this.drag = null; this.listScrollTop = null; this.eventColumnsOpen = false;
+  }
+
+  syncSelection() {
+    const session = this.getSession(), selected = new Set(session.multiLineIndices);
+    if (this.count) this.count.textContent = session.multiLineActive ? t('multi-line.s9191962', { p0: selected.size }) : t('multi-line.sb9004e6');
+    if (this.expression && document.activeElement !== this.expression) this.expression.value = session.multiLineExpression || formatLineExpression(session.multiLineIndices, session.chart);
+    for (const [index, { row, checkbox }] of this.rows ?? []) {
+      if (checkbox.checked !== selected.has(index)) { checkbox.checked = selected.has(index); row.classList.toggle('selected', checkbox.checked); }
+      const disabled = !session.multiLineEnabled && index !== session.lineIndex;
+      if (checkbox.disabled !== disabled) checkbox.disabled = disabled;
+    }
   }
 
   render() {
@@ -24,15 +43,15 @@ export class MultiLinePanel {
     const previousScrollTop = this.listScrollTop !== null ? this.listScrollTop : previousList?.scrollTop ?? 0;
     this.host.replaceChildren();
     const title = document.createElement('div'); title.className = 'panel-title';
-    title.append('多线编辑');
-    const count = document.createElement('small'); count.textContent = session.multiLineActive ? `${session.multiLineIndices.length} 条线` : '未开启'; title.append(count);
+    title.append(t('multi-line.s5255093'));
+    const count = document.createElement('small'); this.count = count; count.textContent = session.multiLineActive ? t('multi-line.s9191962', { p0: session.multiLineIndices.length }) : t('multi-line.sb9004e6'); title.append(count);
     this.host.append(title);
-    const intro = document.createElement('p'); intro.className = 'hint'; intro.textContent = '多线模式会将所选判定线并列显示；点击对应区域即可编辑该线。音符合并模式会共用一个编辑区域。'; this.host.append(intro);
-    const widthField = document.createElement('label'); widthField.className = 'field multi-line-width-field'; widthField.append('单线宽度');
+    const intro = document.createElement('p'); intro.className = 'hint'; intro.textContent = t('multi-line.s59e6f4f'); this.host.append(intro);
+    const widthField = document.createElement('label'); widthField.className = 'field multi-line-width-field'; widthField.append(t('multi-line.s5a95e4f'));
     const widthControls = document.createElement('span'); widthControls.className = 'multi-line-width-controls';
     const currentArea = session.multiLineMode === 'events' ? 'events' : 'notes';
     const currentCanvas = currentArea === 'events' ? this.timeline?.eventsCanvas : this.timeline?.notesCanvas;
-    const widthInput = document.createElement('input'); widthInput.type = 'range'; (widthInput as any).min = 30; (widthInput as any).max = 2400; (widthInput as any).step = 10; (widthInput as any).value = (currentArea === 'events' ? this.timeline?.multiLineEventWidth : this.timeline?.multiLineWidth) || currentCanvas?.clientWidth || 640; widthInput.title = '多线模式下每条线编辑区域的宽度';
+    const widthInput = document.createElement('input'); widthInput.type = 'range'; (widthInput as any).min = 30; (widthInput as any).max = 2400; (widthInput as any).step = 10; widthInput.value = (currentArea === 'events' ? this.timeline?.multiLineEventWidth : this.timeline?.multiLineWidth) || currentCanvas?.clientWidth || 640; widthInput.title = t('multi-line.sdb6b83c');
     const widthValue = document.createElement('output'); widthValue.textContent = `${widthInput.value}px`;
     const setWidth = raw => {
       const value = Math.max(30, Math.min(2400, Number(raw) || 640));
@@ -53,85 +72,54 @@ export class MultiLinePanel {
       (widthInput as any).value = value; widthValue.textContent = `${value}px`; this.persist();
     };
     widthInput.oninput = () => setWidth(widthInput.value);
-    const resetWidth = document.createElement('button'); resetWidth.type = 'button'; resetWidth.textContent = '重置'; resetWidth.title = '恢复为当前编辑区域的默认宽度'; resetWidth.onclick = () => { if (this.timeline) { if (currentArea === 'events') { this.timeline.multiLineEventWidth = 0; this.timeline.multiLineEventWidthExplicit = false; } else { this.timeline.multiLineWidth = 0; this.timeline.multiLineWidthExplicit = false; } this.timeline.multiLineScroll = { notes: 0, events: 0 }; this.timeline.changed(); } widthInput.value = currentCanvas?.clientWidth || 640; widthValue.textContent = `${widthInput.value}px`; this.persist(); };
+    const resetWidth = document.createElement('button'); resetWidth.type = 'button'; resetWidth.textContent = t('multi-line.s3d81345'); resetWidth.title = t('multi-line.s2c298fb'); resetWidth.onclick = () => { if (this.timeline) { if (currentArea === 'events') { this.timeline.multiLineEventWidth = 0; this.timeline.multiLineEventWidthExplicit = false; } else { this.timeline.multiLineWidth = 0; this.timeline.multiLineWidthExplicit = false; } this.timeline.multiLineScroll = { notes: 0, events: 0 }; this.timeline.changed(); } widthInput.value = currentCanvas?.clientWidth || 640; widthValue.textContent = `${widthInput.value}px`; this.persist(); };
     widthControls.append(widthInput, widthValue, resetWidth); widthField.append(widthControls); this.host.append(widthField);
     const controls = document.createElement('div'); controls.className = 'multi-line-controls';
-    const toggle = document.createElement('button'); toggle.type = 'button'; toggle.className = session.multiLineEnabled ? 'active' : ''; toggle.textContent = session.multiLineEnabled ? '● 多线' : '○ 多线';
-    toggle.title = '开启或关闭多线编辑'; toggle.onclick = () => { session.setMultiLineEnabled(!session.multiLineEnabled, session.multiLineMode); this.renderSession(); };
-    const notes = document.createElement('button'); notes.type = 'button'; notes.className = session.multiLineMode === 'notes' ? 'active' : ''; notes.textContent = '音符'; notes.title = '多线音符模式'; notes.onclick = () => { session.setMultiLineMode('notes'); this.renderSession(); };
-    const events = document.createElement('button'); events.type = 'button'; events.className = session.multiLineMode === 'events' ? 'active' : ''; events.textContent = '事件'; events.title = '多线事件模式'; events.onclick = () => { session.setMultiLineMode('events'); this.renderSession(); };
-    const merge = document.createElement('button'); merge.type = 'button'; merge.className = session.multiLineMerge && session.multiLineMode === 'notes' ? 'active' : ''; merge.textContent = '合并'; merge.disabled = session.multiLineMode !== 'notes'; merge.title = '合并多线音符编辑区域'; merge.onclick = () => { session.setMultiLineMerge(!session.multiLineMerge); this.renderSession(); };
+    const toggle = document.createElement('button'); toggle.type = 'button'; toggle.className = session.multiLineEnabled ? 'active' : ''; toggle.textContent = session.multiLineEnabled ? t('multi-line.s1d50fad') : t('multi-line.s743ed93');
+    toggle.title = t('multi-line.s59cf922'); toggle.onclick = () => { session.setMultiLineEnabled(!session.multiLineEnabled, session.multiLineMode); this.renderSession(); };
+    const notes = document.createElement('button'); notes.type = 'button'; notes.className = session.multiLineMode === 'notes' ? 'active' : ''; notes.textContent = t('multi-line.s7ac3289'); notes.title = t('multi-line.s6d7885f'); notes.onclick = () => { session.setMultiLineMode('notes'); this.renderSession(); };
+    const events = document.createElement('button'); events.type = 'button'; events.className = session.multiLineMode === 'events' ? 'active' : ''; events.textContent = t('multi-line.s550e328'); events.title = t('multi-line.s6c1e2e2'); events.onclick = () => { session.setMultiLineMode('events'); this.renderSession(); };
+    const merge = document.createElement('button'); merge.type = 'button'; merge.className = session.multiLineMerge && session.multiLineMode === 'notes' ? 'active' : ''; merge.textContent = t('multi-line.se5badf9'); merge.disabled = session.multiLineMode !== 'notes'; merge.title = t('multi-line.sda21a31'); merge.onclick = () => { session.setMultiLineMerge(!session.multiLineMerge); this.renderSession(); };
     controls.append(toggle, notes, events, merge); this.host.append(controls);
     const actions = document.createElement('div'); actions.className = 'multi-line-actions';
-    for (const [label, titleText, handler] of ([['加入当前线', '将当前判定线加入多线编辑', () => session.addMultiLine()], ['移出当前线', '将当前判定线移出多线编辑', () => session.removeMultiLine()], ['清空', '清空参与编辑的判定线', () => session.clearMultiLines()]] as [string, string, () => any][])) {
+    for (const [label, titleText, handler] of [[t('multi-line.sb6b7860'), t('multi-line.s8cb190d'), () => session.addMultiLine()], [t('multi-line.s71ba1bd'), t('multi-line.s25c8560'), () => session.removeMultiLine()], [t('multi-line.s84fcd70'), t('multi-line.s4cb63e2'), () => session.clearMultiLines()]]) {
       const button = document.createElement('button'); button.type = 'button'; button.textContent = label; button.title = titleText; button.onclick = () => { handler(); this.renderSession(); }; actions.append(button);
     }
     this.host.append(actions);
-    const expressionField = document.createElement('label'); expressionField.className = 'field multi-line-expression-field'; expressionField.append('线号');
-    const expression = document.createElement('input'); expression.type = 'text'; expression.inputMode = 'text'; expression.placeholder = '例如 0 2:4 GroupA'; expression.value = formatLineExpression(session.multiLineIndices, session.chart); expression.title = '空格分隔线号；x:y 表示连续线号；输入分组名表示该组全部判定线'; expressionField.append(expression); this.host.append(expressionField);
+    const expressionField = document.createElement('label'); expressionField.className = 'field multi-line-expression-field'; expressionField.append(t('multi-line.s6dcecd0'));
+    const expression = document.createElement('input'); this.expression = expression; expression.type = 'text'; expression.inputMode = 'text'; expression.placeholder = t('multi-line.s188ac1e'); expression.value = session.multiLineExpression || formatLineExpression(session.multiLineIndices, session.chart); expression.title = t('multi-line.s9cd3607'); expressionField.append(expression); this.host.append(expressionField);
     const applyExpression = () => {
-      const previous = [...session.multiLineIndices];
+      if (expression.value.trim() === (session.multiLineExpression || formatLineExpression(session.multiLineIndices, session.chart))) return;
+      const previous = [...session.multiLineIndices], previousExpression = session.multiLineExpression;
       try {
-        const indices = parseLineExpression(expression.value, session.chart.judgeLineList?.length ?? 0, session.chart);
-        if (!indices.length) throw new Error('至少需要一条有效判定线');
-        session.multiLineIndices = indices; session.multiLineEnabled = true; session.normalizeMultiLine(); session.notify(); this.renderSession();
-      } catch (error) { expression.value = formatLineExpression(previous, session.chart); this.notify(error.message, 'warning'); }
+        const result = this.timeline?.resolveMultiLineExpression(expression.value) ?? { indices: (parseLineExpression as any)(expression.value, session.chart.judgeLineList?.length ?? 0, session.chart) };
+        if (!result.indices.length && !result.dynamic) throw new Error(t('multi-line.sa828e01'));
+        if (this.timeline) this.timeline.setMultiLineExpression(expression.value); else session.multiLineIndices = result.indices;
+        session.multiLineEnabled = true; session.normalizeMultiLine(); session.notify(); this.renderSession();
+      } catch (error) { expression.value = previousExpression || formatLineExpression(previous, session.chart); this.notify(error.message, 'warning'); }
     };
     expression.addEventListener('change', applyExpression); expression.addEventListener('blur', applyExpression); expression.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); applyExpression(); } });
-    const list = document.createElement('div'); list.className = 'multi-line-list';
-    list.addEventListener('scroll', () => { this.listScrollTop = list.scrollTop; }, { passive: true });
-    const syncExpression = () => { expression.value = formatLineExpression(session.multiLineIndices, session.chart); };
-    const setRow = (index, selected) => {
-      const values = new Set<any>(session.multiLineIndices);
-      if (selected) values.add(index); else values.delete(index);
-      session.multiLineIndices = [...values].sort((left, right) => left - right);
-      session.multiLineEnabled = session.multiLineIndices.length > 0;
-      syncExpression();
-      list.querySelectorAll('.multi-line-row').forEach(row => {
-        const rowIndex = Number(row.dataset.lineIndex); const active = session.multiLineIndices.includes(rowIndex);
-        row.classList.toggle('selected', active); const checkbox = row.querySelector('input'); if (checkbox) checkbox.checked = active;
-      });
-    };
-    const lines = session.chart.judgeLineList ?? []; const names = groupNames(session.chart);
-    const createRow = (index, line) => {
-      const row = document.createElement('label'); row.className = 'multi-line-row'; row.dataset.lineIndex = index;
-      const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.checked = session.isTargetLine(index); checkbox.disabled = !session.multiLineEnabled && index !== session.lineIndex;
-      checkbox.onchange = () => { setRow(index, checkbox.checked); session.notify(); this.renderSession(); };
-      const label = document.createElement('span'); label.className = 'multi-line-name'; const name = document.createElement('span'); name.className = 'multi-line-line-name';
-      const lineLabel = lineNameLabel(line, index); name.textContent = isDefaultLineName(line, index) ? lineLabel : `线 ${index} · ${lineLabel}`;
-      const features = lineFeatureLabels(line); const featureText = document.createElement('small'); featureText.className = 'multi-line-features'; featureText.textContent = features.join(' · '); featureText.hidden = !features.length; label.append(name, featureText);
-      const stats = document.createElement('small'); const events = [...(line.eventLayers ?? []), line.extended ?? {}].reduce((sum, layer) => sum + Object.values<any>(layer ?? {}).reduce((total, value) => total + (Array.isArray(value) ? value.length : 0), 0), 0); stats.textContent = `${line.notes?.length ?? 0} 音符 · ${events} 事件`;
-      row.classList.toggle('current', index === session.lineIndex); row.classList.toggle('selected', checkbox.checked); row.append(checkbox, label, stats); return row;
-    };
-    const hasNamedGroups = names.slice(1).some((unused, groupIndex) => groupLineIndices(session.chart, groupIndex + 1).length > 0);
-    if (hasNamedGroups) {
-      for (const [groupIndex, groupName] of names.entries()) {
-        const group = document.createElement('details'); group.className = 'multi-line-group'; group.open = true;
-        const summary = document.createElement('summary'); const label = document.createElement('span'); label.className = 'multi-line-group-name'; label.textContent = groupName; const count = document.createElement('small'); count.textContent = `${groupLineIndices(session.chart, groupIndex).length} 条`; summary.append(label, count); group.append(summary);
-        const rows = document.createElement('div'); rows.className = 'multi-line-group-rows';
-        for (const index of groupLineIndices(session.chart, groupIndex)) rows.append(createRow(index, lines[index]));
-        group.append(rows); list.append(group);
-      }
-    } else {
-      for (const [index, line] of lines.entries()) list.append(createRow(index, line));
+    const columns = document.createElement('details'); columns.className = 'multi-line-event-columns'; columns.open = this.eventColumnsOpen;
+    columns.addEventListener('toggle', () => { if (columns.isConnected) this.eventColumnsOpen = columns.open; });
+    const summary = document.createElement('summary'); summary.textContent = t('multi-line.eventColumns'); columns.append(summary);
+    const options = document.createElement('div'); options.className = 'multi-line-event-options';
+    for (const type of this.timeline?.extended ? SPECIAL_TRACKS.map(track => track.key) : EVENT_TYPES) {
+      const label = document.createElement('label'), input = document.createElement('input'); input.type = 'checkbox'; input.checked = this.timeline?.multiLineEventVisibility?.[type] !== false;
+      label.append(input, this.timeline?.eventLabel(type) ?? type);
+      input.onchange = () => {
+        if (!this.timeline) return;
+        this.timeline.multiLineEventVisibility = { ...this.timeline.multiLineEventVisibility, [type]: input.checked };
+        this.timeline.cancelPlacement(); this.timeline.changed(); this.persist();
+      };
+      options.append(label);
     }
-    const finishDrag = () => { if (!this.drag) return; this.listScrollTop = list.scrollTop; this.drag = null; session.normalizeMultiLine(); session.notify(); this.renderSession(); };
-    list.addEventListener('pointerdown', event => {
-      const row = event.target.closest('.multi-line-row'); if (!row || event.button !== 0) return;
-      event.preventDefault(); this.listScrollTop = list.scrollTop; list.setPointerCapture?.(event.pointerId); const index = Number(row.dataset.lineIndex); this.drag = { selected: !session.multiLineIndices.includes(index), pointerId: event.pointerId }; setRow(index, this.drag.selected);
+    columns.append(options); this.host.append(columns);
+    this.lineNumbers ??= new LineNumberList(this.host, {
+      state: () => { const current = this.getSession(); return { chart: current.chart, indices: current.multiLineIndices, lineIndex: current.lineIndex, disabled: index => !current.multiLineEnabled && index !== current.lineIndex }; },
+      change: indices => { const current = this.getSession(); current.multiLineIndices = indices; current.multiLineExpression = ''; current.multiLineEnabled = indices.length > 0; if (this.expression) this.expression.value = formatLineExpression(indices, current.chart); },
+      finish: () => { const current = this.getSession(); current.normalizeMultiLine(); current.notify(); this.renderSession(); },
     });
-    list.addEventListener('pointermove', event => {
-      if (!this.drag || (this.drag.pointerId !== undefined && event.pointerId !== this.drag.pointerId)) return;
-      const rectangle = list.getBoundingClientRect(); const edge = 22;
-      if (event.clientY < rectangle.top + edge) list.scrollTop -= 12;
-      else if (event.clientY > rectangle.bottom - edge) list.scrollTop += 12;
-      const row = document.elementFromPoint(event.clientX, event.clientY)?.closest?.('.multi-line-row');
-      if (row && list.contains(row)) setRow(Number(row.dataset.lineIndex), this.drag.selected);
-    });
-    list.addEventListener('pointerup', finishDrag); list.addEventListener('pointercancel', finishDrag); list.addEventListener('lostpointercapture', finishDrag);
-    this.listScrollTop = Math.max(0, previousScrollTop);
-    list.scrollTop = this.listScrollTop;
-    requestAnimationFrame(() => { if (list.isConnected) list.scrollTop = this.listScrollTop; });
-    this.host.append(list);
+    this.lineNumbers.render(); this.rows = this.lineNumbers.rows;
+
   }
 }
